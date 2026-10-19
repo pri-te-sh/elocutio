@@ -29,6 +29,10 @@ fn path() -> Result<PathBuf, String> {
         .ok_or_else(|| "Could not find the application support directory.".to_string())
 }
 
+fn can_restore(record: &UndoRecord, pid: i32, text: &str) -> bool {
+    record.pid == pid && record.after == text
+}
+
 pub fn record(pid: i32, before: &str, after: &str) -> Result<(), String> {
     let record = UndoRecord {
         pid,
@@ -78,7 +82,7 @@ pub async fn undo_last_edit<R: Runtime>(app: &AppHandle<R>) -> Result<String, St
     let Some(focused) = focused else {
         return Err("Focus the edited field again before undoing.".into());
     };
-    if focused.pid != record.pid || focused.text != record.after {
+    if !can_restore(&record, focused.pid, &focused.text) {
         return Err("The field changed after the edit, so Elocutio did not overwrite it.".into());
     }
 
@@ -101,6 +105,19 @@ pub async fn undo_last_edit<R: Runtime>(app: &AppHandle<R>) -> Result<String, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn undo_only_applies_to_the_same_pid_and_text() {
+        let record = UndoRecord {
+            pid: 7,
+            before: "before".into(),
+            after: "after".into(),
+            created_at: 1,
+        };
+        assert!(can_restore(&record, 7, "after"));
+        assert!(!can_restore(&record, 8, "after"));
+        assert!(!can_restore(&record, 7, "changed"));
+    }
 
     #[test]
     fn undo_record_round_trips() {

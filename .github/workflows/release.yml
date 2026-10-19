@@ -1,0 +1,26 @@
+name: Release
+
+# Placeholder until M5. The release pipeline will build a universal macOS app,
+# sign it with Developer ID, notarize it, staple the DMG, generate Tauri updater
+# artifacts, and publish a GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for example v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  placeholder:
+    name: Release pipeline (not implemented yet)
+    runs-on: macos-15
+    steps:
+      - name: Explain
+        run: |
+          echo "The signed/notarized release pipeline is scheduled for M5."
+          echo "Requested tag: ${{ inputs.tag }}"
+          echo "See docs/PLAN.md and docs/ARCHITECTURE.md section 17."

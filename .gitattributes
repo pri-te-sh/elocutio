@@ -1,0 +1,18 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.icns binary
+*.ico binary
+*.dmg binary
+*.zip binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+*.svg text
+*.md text
+*.rs text
+*.ts text

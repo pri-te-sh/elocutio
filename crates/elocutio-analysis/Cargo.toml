@@ -1,0 +1,16 @@
+[package]
+name = "elocutio-analysis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Chunking and offset resolution for Elocutio suggestions"
+
+[dependencies]
+elocutio-core = { path = "../elocutio-core" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+unicode-segmentation = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

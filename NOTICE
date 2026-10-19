@@ -1,0 +1,20 @@
+Elocutio
+Copyright 2026 Elocutio contributors
+
+This product is derived from Harper (https://github.com/Automattic/harper),
+Copyright (c) Automattic, licensed under the Apache License, Version 2.0.
+
+The following components are included or adapted from Harper:
+
+- harper-core and related crates (local grammar engine)
+- harper-desktop (macOS Accessibility broker, highlighter, Tauri shell),
+  renamed and modified as elocutio-desktop
+
+Modifications Copyright 2026 Elocutio contributors, licensed under the
+Apache License, Version 2.0.
+
+Elocutio is not affiliated with, endorsed by, or sponsored by Automattic.
+"Harper" is a trademark of its owner and is used here only for attribution.
+
+Third-party dependencies retain their own licenses; see the generated
+third-party notices for the full list.

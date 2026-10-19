@@ -1,0 +1,10 @@
+# Pinned upstream source for the M0 fork.
+# The source is not vendored into this repository; fetch it with
+# ./scripts/fetch-upstream.sh into .upstream/harper.
+
+[harper]
+tag = "v2.13.0"
+commit = "f4ebc61d77df1fc00b6aa8bc604e91af3534dad1"
+repository = "https://github.com/Automattic/harper"
+fetched_at = "2026-10-19"
+license = "Apache-2.0"

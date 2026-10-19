@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a reproducible problem in Elocutio.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping. Please do not paste API keys, private text, or voice samples.
+        For security issues, use the private process in SECURITY.md instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+      placeholder: "Elocutio suggested an edit in the wrong place when..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Mail
+        2. Select this sentence
+        3. Press Control+Option+G
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: App and field
+      description: Which app, site, or field were you writing in?
+      placeholder: "Mail compose, Chrome / Gmail, Word, Notes..."
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      description: Which provider/model was selected? Do not include the key.
+      placeholder: "OpenRouter / anthropic/claude-haiku-5.5"
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "26.6 (25G83)"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Elocutio version or commit
+      placeholder: "0.1.0 (abc1234)"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the redacted diagnostics export or relevant log lines. Never include keys or full documents.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I removed API keys, private text, and voice samples from this report.
+          required: true

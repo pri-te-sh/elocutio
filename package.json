@@ -1,0 +1,29 @@
+{
+  "name": "elocutio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An open-source, bring-your-own-key writing assistant for macOS",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pri-te-sh/elocutio.git"
+  },
+  "homepage": "https://elocutio.app",
+  "bugs": {
+    "url": "https://github.com/pri-te-sh/elocutio/issues"
+  },
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:docs": "python3 scripts/check_docs.py",
+    "check": "pnpm run check:docs && pnpm run format:check",
+    "test": "cargo test --all"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

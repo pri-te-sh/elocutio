@@ -1,0 +1,56 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Rust
+target/
+**/*.rs.bk
+
+# Node / web
+node_modules/
+.pnpm-store/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Tauri
+apps/desktop/src-tauri/target/
+*.app
+*.dmg
+*.pkg
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+*.mobileprovision
+*.provisionprofile
+.tauri/
+
+# Local upstream Harper checkout (fetched by scripts/fetch-upstream.sh)
+.upstream/
+
+# Python
+__pycache__/
+*.pyc
+
+# Local-only tooling
+plugins/
+
+# IDE and editor state
+.idea/
+.vscode/
+*.swp
+
+# Local fixtures and private samples
+fixtures/private/
+*.voice-sample

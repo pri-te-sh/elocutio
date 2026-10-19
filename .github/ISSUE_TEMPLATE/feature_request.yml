@@ -1,0 +1,51 @@
+name: Feature request
+description: Propose a capability or a change in behavior.
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the problem, not only the solution. The roadmap and non-goals
+        are in ROADMAP.md and docs/PLAN.md.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Elocutio do? Include examples if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other tools, workarounds, or designs you considered.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - macOS app / inline suggestions
+        - Voice learning
+        - Providers / models
+        - Browser extension
+        - Assistant / compose / rewrite
+        - Privacy / security
+        - Docs / website
+        - Other
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: This is not a request for plagiarism detection or an AI-detector verdict.
+          required: false

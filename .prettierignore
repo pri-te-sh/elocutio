@@ -1,0 +1,10 @@
+node_modules/
+target/
+dist/
+build/
+docs/
+research/
+*.md
+pnpm-lock.yaml
+Cargo.lock
+assets/

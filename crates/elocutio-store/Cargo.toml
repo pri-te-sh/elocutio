@@ -1,0 +1,9 @@
+[package]
+name = "elocutio-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Local persistence for Elocutio (SQLite schema, migrations, repositories)"
+
+[dependencies]

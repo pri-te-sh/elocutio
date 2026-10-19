@@ -1,0 +1,4 @@
+# Elocutio Clippy configuration
+# Keep the lints strict but avoid noise in generated or test code.
+
+avoid-breaking-exported-api = false

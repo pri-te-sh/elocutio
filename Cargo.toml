@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/elocutio-core",
+    "crates/elocutio-analysis",
+    "crates/elocutio-llm",
+    "crates/elocutio-voice",
+    "crates/elocutio-store",
+    "crates/elocutio-bridge",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/pri-te-sh/elocutio"
+authors = ["Elocutio contributors"]
+rust-version = "1.85"
+description = "An open-source, bring-your-own-key writing assistant for macOS"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+unicode-segmentation = "1.12"
+proptest = "1.6"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"
+
+[profile.dev]
+opt-level = 0
+debug = 1

@@ -27,6 +27,7 @@ Verified:
 - [x] App launches as a menu-bar agent; first-run setup window opens.
 - [x] Accessibility permission is granted; highlighter subprocess starts.
 - [x] Config is written to `~/Library/Application Support/elocutio/`, not the Harper path.
+- [x] A clean `git archive HEAD` export passes `pnpm install --frozen-lockfile`, `svelte-check`, and `cargo check` against the committed vendored tree.
 
 ## Overlay matrix
 

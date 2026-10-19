@@ -2,10 +2,10 @@ use accessibility::attribute::AXUIElementAttributes;
 use accessibility::ui_element::AXUIElement;
 use accessibility::{Error, TreeVisitor, TreeWalker, TreeWalkerFlow};
 use accessibility_sys::{
-    AXUIElementCopyParameterizedAttributeValue, AXValueCreate, AXValueGetType, AXValueGetValue,
-    AXValueRef, kAXBoundsForRangeParameterizedAttribute, kAXErrorIllegalArgument, kAXErrorNoValue,
-    kAXErrorParameterizedAttributeUnsupported, kAXErrorSuccess, kAXValueTypeCFRange,
-    kAXValueTypeCGRect,
+    AXUIElementCopyParameterizedAttributeValue, AXUIElementGetPid, AXValueCreate, AXValueGetType,
+    AXValueGetValue, AXValueRef, kAXBoundsForRangeParameterizedAttribute, kAXErrorIllegalArgument,
+    kAXErrorNoValue, kAXErrorParameterizedAttributeUnsupported, kAXErrorSuccess,
+    kAXValueTypeCFRange, kAXValueTypeCGRect, pid_t,
 };
 use core::{ffi::c_void, mem::MaybeUninit};
 use core_foundation::base::{CFRange, CFType, TCFType};
@@ -368,7 +368,20 @@ fn apply_suggestion_to_element(
     );
 
     match element.set_value(value.as_CFType()) {
-        Ok(()) => eprintln!("Applied suggestion via AX write"),
+        Ok(()) => {
+            let mut pid: pid_t = 0;
+            let pid_error = unsafe { AXUIElementGetPid(element.as_concrete_TypeRef(), &mut pid) };
+            if pid_error == kAXErrorSuccess {
+                let after = element
+                    .value()
+                    .ok()
+                    .and_then(|value| cf_type_to_string(&value))
+                    .unwrap_or(updated);
+                if let Err(error) = crate::undo::record(pid, &source_text, &after) {
+                    eprintln!("Could not record undo: {error}");
+                }
+            }
+        }
         Err(error) => eprintln!("Unable to apply suggestion: {error}"),
     }
 }

@@ -90,6 +90,8 @@
   let budgetInput = "";
   let budgetBusy = false;
   let budgetMessage = "";
+  let undoBusy = false;
+  let undoMessage = "";
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";
@@ -132,6 +134,18 @@
       model = await invoke<string>("get_provider_model");
     } catch (error) {
       providerMessage = String(error);
+    }
+  }
+
+  async function undoLastEdit() {
+    undoBusy = true;
+    undoMessage = "";
+    try {
+      undoMessage = await invoke<string>("undo_last_edit");
+    } catch (error) {
+      undoMessage = String(error);
+    } finally {
+      undoBusy = false;
     }
   }
 
@@ -824,6 +838,14 @@
       <li>Type a sentence with a deliberate typo, such as “this is tehre test”.</li>
       <li>Elocutio should underline the issue and show the floating suggestion card; use its AI side for a model-backed pass.</li>
     </ol>
+
+    <div class="actions">
+      <button class="ghost" onclick={undoLastEdit} disabled={undoBusy}>Undo last Elocutio edit</button>
+    </div>
+
+    {#if undoMessage}
+      <p class="message">{undoMessage}</p>
+    {/if}
     <p class="muted">
       If nothing appears, confirm Accessibility is granted, then stop and start suggestions.
       Secure fields, terminals, and Google Docs are intentionally unsupported.

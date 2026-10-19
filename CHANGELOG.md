@@ -45,6 +45,8 @@ to follow [Semantic Versioning](https://semver.org/).
 - Optional USD budget warning computed from the local metadata-only usage log.
 - Merge policy: local lints win on overlapping spans; LLM suggestions are ordered
   by screen position and validated severity.
+- One-shot undo for accepted suggestions via ⌥⌘Z, the tray, or Settings; it
+  restores the prior field text only when the applied result is still present.
 - LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,

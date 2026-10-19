@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T23:30:00Z",
+  "updatedAt": "2026-10-19T23:45:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -419,7 +419,7 @@
           "priority": "P1",
           "estimateDays": 1,
           "status": "in_progress",
-          "notes": "Settings covers provider model, key status, usage, onboarding, auto-analysis, per-app enablement, auto-enable new apps, and the budget warning. Provider choice beyond OpenRouter and deeper privacy controls remain."
+          "notes": "Settings covers provider model, key status, usage, onboarding, auto-analysis, per-app enablement, auto-enable new apps, budget warning, and undo. Provider choice beyond OpenRouter and deeper privacy controls remain."
         },
         {
           "id": "m1-keychain",

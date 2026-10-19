@@ -1,11 +1,11 @@
 //! Run AppKit/Accessibility work on the Tauri main thread.
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Runtime};
 
-pub fn run<T, F>(app: &AppHandle, f: F) -> Result<T, String>
+pub fn run<R: Runtime, T, F>(app: &AppHandle<R>, f: F) -> Result<T, String>
 where
     T: Send + 'static,
-    F: FnOnce(&AppHandle) -> T + Send + 'static,
+    F: FnOnce(&AppHandle<R>) -> T + Send + 'static,
 {
     let (sender, receiver) = std::sync::mpsc::channel();
     let app_for_thread = app.clone();

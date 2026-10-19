@@ -9,6 +9,7 @@ mod focused_window_pid;
 mod window_stability;
 
 use accessibility::TreeWalker;
+use accessibility::attribute::AXUIElementAttributes;
 use accessibility::ui_element::AXUIElement;
 use accessibility_sys::{
     AXIsProcessTrusted, AXIsProcessTrustedWithOptions, kAXFocusedUIElementAttribute,
@@ -498,6 +499,17 @@ impl OsBroker for MacBroker {
             ax_string_attribute(&focused, "AXSelectedText").map_err(|error| error.to_string())?;
 
         Ok((!selected.is_empty()).then_some(selected))
+    }
+
+    fn replace_focused_text(&mut self, text: &str) -> Result<bool, String> {
+        let element = focused_text_element()?;
+        let value = CFString::new(text);
+        element
+            .set_value(value.as_CFType())
+            .map_err(|error| format!("Could not restore the field: {error}"))?;
+        let actual = ax_string_attribute(&element, "AXValue")
+            .map_err(|error| format!("Could not verify the restored field: {error}"))?;
+        Ok(actual == text)
     }
 
     fn focused_text(&mut self) -> Result<Option<FocusedText>, String> {

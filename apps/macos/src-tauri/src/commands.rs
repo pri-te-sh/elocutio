@@ -58,6 +58,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_accessibility_permission_status,
         request_accessibility_permission,
         get_highlighter_service_status,
+        undo_last_edit,
         start_highlighter_service,
         stop_highlighter_service,
         launch_app,
@@ -568,6 +569,11 @@ fn request_accessibility_permission(
             AccessibilityPermissionStatus::Unsupported
         }
     }
+}
+
+#[tauri::command]
+async fn undo_last_edit<R: Runtime>(app: tauri::AppHandle<R>) -> Result<String, String> {
+    crate::undo::undo_last_edit(&app).await
 }
 
 #[tauri::command]

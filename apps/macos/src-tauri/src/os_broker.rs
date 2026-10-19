@@ -97,6 +97,11 @@ pub trait OsBroker {
     fn focused_text(&mut self) -> Result<Option<FocusedText>, String> {
         Ok(None)
     }
+
+    /// Replace the full value of the focused editable field for undo.
+    fn replace_focused_text(&mut self, _text: &str) -> Result<bool, String> {
+        Err("This platform does not support field undo yet.".into())
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

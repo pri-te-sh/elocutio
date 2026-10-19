@@ -242,7 +242,25 @@ fn openrouter_error(status: reqwest::StatusCode, body: &str) -> String {
         })
         .unwrap_or_else(|| body.chars().take(400).collect());
 
-    format!("OpenRouter error (HTTP {status}): {message}")
+    match status.as_u16() {
+        401 | 403 => format!(
+            "OpenRouter rejected the API key (HTTP {status}). Check it in Settings → OpenRouter. ({message})"
+        ),
+        402 => format!(
+            "OpenRouter says this account is out of credits (HTTP 402). Add credits or use another key. ({message})"
+        ),
+        404 => format!(
+            "The selected model was not found (HTTP 404). Check the model id in Settings. ({message})"
+        ),
+        429 => format!(
+            "OpenRouter rate limit reached (HTTP 429). Wait a moment and try again. ({message})"
+        ),
+        400 | 422 => format!("OpenRouter rejected the request: {message}"),
+        status if (500..=599).contains(&status) => format!(
+            "OpenRouter is having trouble right now (HTTP {status}). Try again shortly. ({message})"
+        ),
+        _ => format!("OpenRouter error (HTTP {status}): {message}"),
+    }
 }
 
 #[cfg(test)]
@@ -263,6 +281,18 @@ mod tests {
         );
         assert!(message.contains("No auth credentials found"));
         assert!(message.contains("401"));
+    }
+
+    #[test]
+    fn openrouter_error_explains_auth_and_quota() {
+        let auth = openrouter_error(reqwest::StatusCode::UNAUTHORIZED, "denied");
+        assert!(auth.contains("API key"));
+        let quota = openrouter_error(reqwest::StatusCode::PAYMENT_REQUIRED, "no credits");
+        assert!(quota.contains("out of credits"));
+        let rate = openrouter_error(reqwest::StatusCode::TOO_MANY_REQUESTS, "slow down");
+        assert!(rate.contains("rate limit"));
+        let model = openrouter_error(reqwest::StatusCode::NOT_FOUND, "missing");
+        assert!(model.contains("model was not found"));
     }
 
     #[test]

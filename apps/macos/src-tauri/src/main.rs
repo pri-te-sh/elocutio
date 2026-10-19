@@ -3,6 +3,7 @@
 
 mod debug_broker;
 mod tray;
+mod undo;
 mod windows;
 
 use self::debug_broker::DebugBroker;
@@ -141,6 +142,27 @@ fn register_shortcuts(app: &tauri::AppHandle) {
 
     if let Err(error) = analyze_result {
         eprintln!("Could not register the Analyze Field shortcut: {error}");
+    }
+
+    let undo_shortcut = Shortcut::new(Some(Modifiers::ALT | Modifiers::SUPER), Code::KeyZ);
+    let undo_result = app
+        .global_shortcut()
+        .on_shortcut(undo_shortcut, |app, _shortcut, event| {
+            if event.state() != ShortcutState::Pressed {
+                return;
+            }
+
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                match crate::undo::undo_last_edit(&app).await {
+                    Ok(message) => crate::rewrite::notify(&app, "Elocutio undo", &message),
+                    Err(error) => crate::rewrite::notify(&app, "Nothing to undo", &error),
+                }
+            });
+        });
+
+    if let Err(error) = undo_result {
+        eprintln!("Could not register the Elocutio Undo shortcut: {error}");
     }
 }
 

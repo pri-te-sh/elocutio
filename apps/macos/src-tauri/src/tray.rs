@@ -18,6 +18,7 @@ fn tray_menu<R: Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<Menu<R>> {
         .text("toggle-service", "Toggle Service")
         .text("rewrite-selection", "Rewrite Selection")
         .text("analyze-field", "Analyze Field")
+        .text("undo-edit", "Undo Last Edit")
         .text("open-editor", "Open Editor")
         .text("settings", "Settings")
         .text("report-issue", "Report Issue")
@@ -59,6 +60,15 @@ pub fn set_up_tray_menu(app: &AppHandle) -> tauri::Result<()> {
                     tauri::async_runtime::spawn(async move {
                         let result = crate::llm_analysis::analyze_focused_field(&app).await;
                         crate::llm_analysis::notify_result(&app, result);
+                    });
+                }
+                "undo-edit" => {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        match crate::undo::undo_last_edit(&app).await {
+                            Ok(message) => crate::rewrite::notify(&app, "Elocutio undo", &message),
+                            Err(error) => crate::rewrite::notify(&app, "Nothing to undo", &error),
+                        }
                     });
                 }
                 "open-editor" => {

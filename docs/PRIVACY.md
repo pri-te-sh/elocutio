@@ -18,7 +18,7 @@ Elocutio is a desktop app, not a service. There is no Elocutio account, no Elocu
 | Accepted/dismissed suggestions | Local SQLite | When you act on a suggestion | Off by default; clear |
 | Provenance events (hashes, not text) | Local SQLite | Opt-in | Off by default; export/clear |
 | Documents (Docs editor) | Local SQLite | When you create one | Delete |
-| Voice samples (uploads/pastes) | Local SQLite, encrypted at rest | When you add them | Delete sample/profile; "features only" mode |
+| Voice samples (uploads/pastes) | Never stored; analyzed in memory | When you add them | Delete the profile |
 | Voice style card + exemplars | Local SQLite; sent to your provider on voice-aware tasks | When you use "Use my voice" | Preview, strength, style-card-only mode |
 | Voice feedback (accept/dismiss/rate) | Local SQLite | Only when voice learning is on | Disable learning; clear |
 | Crash reports | Nowhere by default | Opt-in only | Toggle |
@@ -31,7 +31,7 @@ Elocutio is a desktop app, not a service. There is no Elocutio account, no Elocu
 
 Voice learning is **off by default**. When you enable it:
 
-- **Samples stay on your Mac**, encrypted at rest with AES-256-GCM; the data key is wrapped by the macOS Keychain. A "features only" mode stores no raw text.
+- **Samples stay on your Mac during analysis and are then discarded.** v0 stores only the aggregate style card as a local JSON file; it is not encrypted at rest yet. Encryption at rest and a features-only mode remain roadmap work.
 - **Only the style card and 2–4 user-reviewable excerpts** are sent to your provider, and only when a voice-aware rewrite/compose/reply runs. "Style card only" mode sends no excerpts.
 - **You can preview the exact payload** before the first voice-aware request.
 - **You can delete any sample**, which removes its exemplars and its contribution to the profile.
@@ -48,9 +48,9 @@ Voice is intended for your own writing or a brand you are authorized to represen
 
 | Data | Default | Configurable |
 | --- | --- | --- |
-| Raw samples | Encrypted, until deleted | Features-only mode; delete all |
+| Raw samples | Never stored | Delete the profile |
 | Style card / traits | Until profile deleted | Reset learned values |
-| Exemplars | Until sample/profile deleted | Exclude sensitive samples |
+| Exemplars | Not stored in v0 | — |
 | Feedback events | 180-day half-life weighting; rows until cleared | Clear |
 | Usage metadata (`usage.jsonl`) | timestamp, model, token counts, provider-reported cost; no text | Delete the file from Application Support |
 
@@ -114,7 +114,7 @@ The app shows a **preview of the exact request** (redacted key) before sending, 
 | Provenance | Off | Yes |
 | Documents | Until deleted | Yes |
 
-"Clear all data" removes usage, logs, cache, events, provenance, documents, and voice samples/profiles. Keys are deleted separately with a confirmation.
+"Clear all data" is not implemented yet. Today, deleting the voice profile removes the style card and accepted-edit feedback; deleting the key removes the Keychain item; usage and the transient caches can be removed from Application Support. A single clear-all action remains roadmap work.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T17:35:00Z",
+  "updatedAt": "2026-10-19T18:35:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -231,7 +231,7 @@
           "priority": "P0",
           "estimateDays": 1.5,
           "status": "in_progress",
-          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay and click-to-replace check. Chrome reaches AX text-range bounds but draws no overlay; Mail exposes no usable text-range bounds. 3 of 5 apps pass; see docs/M0-VERIFICATION.md.",
+          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay; Chrome and Mail do not produce overlays yet (Chrome needs the M3 extension, Mail needs a text-bounds fallback). The write ladder passes in TextEdit, Safari, and Chrome.",
           "dependsOn": [
             "m0-fork"
           ],
@@ -274,12 +274,12 @@
           "area": "build",
           "priority": "P0",
           "estimateDays": 1,
-          "notes": "In-app OpenRouter rewrite works and the spelling click path replaces text correctly. System-wide AI rewrite through pasteboard + \u2318V with read-back verification is still M1 work.",
+          "notes": "System-wide Rewrite Selection works through the pasteboard + \u2318V ladder with read-back verification and clipboard restore in TextEdit, Safari, and Chrome. The overlay still uses the AX fast path for local lints. A global shortcut is next.",
           "dependsOn": [
             "m0-build",
             "m0-llm"
           ],
-          "status": "in_progress"
+          "status": "done"
         },
         {
           "id": "m0-ipc",
@@ -330,7 +330,7 @@
         },
         {
           "text": "A rewrite replaces the selection correctly via pasteboard + \u2318V, with AX fast path where settable",
-          "accepted": false
+          "accepted": true
         },
         {
           "text": "The suggestion card never steals focus",

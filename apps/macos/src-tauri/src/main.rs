@@ -50,6 +50,7 @@ pub mod lint_kind_color;
 mod openrouter;
 mod os_broker;
 pub mod rect;
+mod rewrite;
 
 #[cfg(target_os = "macos")]
 mod mac_broker;
@@ -191,6 +192,7 @@ pub fn run_tauri() {
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(commands::application_message_handler())
         .setup(move |app| {
             let highlighter_service = HighlighterService::new(config, app.handle().clone());

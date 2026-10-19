@@ -88,7 +88,10 @@ apps/macos/
   `elocutio-llm` + `elocutio-platform` dependencies.
 - Replaced the inherited Svelte settings UI with a small Svelte 5 setup/status
   shell. The full settings UI is M1 work.
-- Added Keychain-backed OpenRouter key validation and an in-app rewrite.
+- Added Keychain-backed OpenRouter key validation, an in-app rewrite, and a
+  system-wide **Rewrite Selection** tray action using pasteboard + ⌘V with
+  read-back verification and clipboard restore.
+- Added macOS notifications for rewrite success/failure.
 - Removed the inherited updater for M0; it returns in M5 with our own minisign
   keypair.
 - Added AX tree-walk bounds and activation scoping so large Mail/Chrome trees
@@ -102,8 +105,10 @@ apps/macos/
   (M3) as the real browser path.
 - **Mail:** exposes a supported text element but no usable text-range bounds.
   Keep it out of the supported matrix until the fallback lands.
-- **System-wide AI rewrite:** only in-app rewrite works today; the pasteboard
-  + ⌘V ladder with read-back verification is M1.
+- **Global shortcut:** Rewrite Selection is in the tray menu only; add a
+  configurable shortcut in M1.
+- **Clipboard fidelity:** only text is restored after the paste; non-text
+  pasteboard items are replaced. Use a transient pasteboard type in M1.
 - **Settings/onboarding:** the developer shell opens setup on every launch
   because onboarding is not completed; wire the real onboarding in M1.
 - **Unsigned debug build:** no notarization, updater, or release packaging yet.

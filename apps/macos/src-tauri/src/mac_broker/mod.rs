@@ -19,7 +19,7 @@ use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
-use core_graphics::event::CGEvent;
+use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use harper_core::linting::Lint;
 use objc2_app_kit::NSRunningApplication;
@@ -43,8 +43,8 @@ use self::accessibility_activation::{
     is_unsupported_accessibility_activation_error, release_accessibility_activation,
     set_enhanced_user_interface_preserving_previous, verify_accessibility_activation,
 };
-use self::accessibility_text::RectCollector;
-use self::core_foundation_utilities::ax_element_attribute;
+use self::accessibility_text::{RectCollector, is_supported_text_element};
+use self::core_foundation_utilities::{ax_element_attribute, ax_string_attribute};
 use self::focused_target::FocusedTarget;
 use self::window_stability::{
     WINDOW_MOVEMENT_SETTLE_DURATION, WindowMovementState, frontmost_window_frame_for_pid,
@@ -342,6 +342,55 @@ fn needs_accessibility_activation(bundle_id: &str) -> bool {
         .any(|candidate| bundle_id == *candidate || bundle_id.starts_with(&format!("{candidate}.")))
 }
 
+#[link(name = "Carbon", kind = "framework")]
+unsafe extern "C" {
+    fn IsSecureEventInputEnabled() -> bool;
+}
+
+/// Returns the currently focused editable text element, refusing secure input.
+fn focused_text_element() -> Result<AXUIElement, String> {
+    if unsafe { IsSecureEventInputEnabled() } {
+        return Err("Secure input is active; refusing to read the focused field.".into());
+    }
+
+    let pid = focused_window_pid::focused_window_pid().map_err(|error| error.to_string())?;
+    let app = AXUIElement::application(pid);
+    let element = ax_element_attribute(&app, kAXFocusedUIElementAttribute)
+        .map_err(|error| error.to_string())?;
+
+    if !is_supported_text_element(&element) {
+        return Err("The focused element is not an editable text field.".into());
+    }
+
+    if ax_string_attribute(&element, "AXSubrole")
+        .map(|subrole| subrole == "AXSecureTextField")
+        .unwrap_or(false)
+    {
+        return Err("Refusing to read a secure text field.".into());
+    }
+
+    Ok(element)
+}
+
+/// Synthesizes ⌘V into the frontmost app.
+fn paste_command_v() -> Result<(), String> {
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create a keyboard event source.".to_string())?;
+    let key_down = CGEvent::new_keyboard_event(source, 9, true)
+        .map_err(|_| "Could not create the paste key-down event.".to_string())?;
+    key_down.set_flags(CGEventFlags::CGEventFlagCommand);
+    key_down.post(CGEventTapLocation::HID);
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Could not create a keyboard event source.".to_string())?;
+    let key_up = CGEvent::new_keyboard_event(source, 9, false)
+        .map_err(|_| "Could not create the paste key-up event.".to_string())?;
+    key_up.set_flags(CGEventFlags::CGEventFlagCommand);
+    key_up.post(CGEventTapLocation::HID);
+
+    Ok(())
+}
+
 impl Drop for MacBroker {
     fn drop(&mut self) {
         self.reset_accessibility_activation();
@@ -416,6 +465,48 @@ impl OsBroker for MacBroker {
         walker.walk(&focused, &collector);
 
         collector.unwrap_rects()
+    }
+
+    fn selected_text(&mut self) -> Result<Option<String>, String> {
+        let focused = focused_text_element()?;
+        let selected =
+            ax_string_attribute(&focused, "AXSelectedText").map_err(|error| error.to_string())?;
+
+        Ok((!selected.is_empty()).then_some(selected))
+    }
+
+    fn replace_selection_via_paste(&mut self, replacement: &str) -> Result<bool, String> {
+        let focused = focused_text_element()?;
+        let selected =
+            ax_string_attribute(&focused, "AXSelectedText").map_err(|error| error.to_string())?;
+
+        if selected.is_empty() {
+            return Err("Select some text in the target app first.".into());
+        }
+
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|error| format!("Could not open the clipboard: {error}"))?;
+        let original_text = clipboard.get_text().ok();
+        clipboard
+            .set_text(replacement.to_string())
+            .map_err(|error| format!("Could not write the clipboard: {error}"))?;
+
+        paste_command_v()?;
+
+        // Give the target app a moment to process the synthetic paste before
+        // reading the field back and restoring the clipboard.
+        std::thread::sleep(Duration::from_millis(180));
+        let verified = ax_string_attribute(&focused, "AXValue")
+            .map(|value| value.contains(replacement))
+            .unwrap_or(false);
+
+        if let Some(original_text) = original_text {
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                let _ = clipboard.set_text(original_text);
+            }
+        }
+
+        Ok(verified)
     }
 
     fn cursor_position(&self) -> Option<egui::Pos2> {

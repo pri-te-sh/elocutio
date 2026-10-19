@@ -16,6 +16,7 @@ use crate::windows::{open_issue_report, show_editor_window, show_settings_window
 fn tray_menu<R: Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<Menu<R>> {
     MenuBuilder::new(manager)
         .text("toggle-service", "Toggle Service")
+        .text("rewrite-selection", "Rewrite Selection")
         .text("open-editor", "Open Editor")
         .text("settings", "Settings")
         .text("report-issue", "Report Issue")
@@ -42,6 +43,15 @@ pub fn set_up_tray_menu(app: &AppHandle) -> tauri::Result<()> {
                     let _ = service
                         .toggle()
                         .inspect_err(|err| error!("Could not toggle highlighter: {err}"));
+                }
+                "rewrite-selection" => {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        match crate::rewrite::rewrite_selection(&app).await {
+                            Ok(message) => crate::rewrite::notify(&app, "Elocutio", &message),
+                            Err(error) => crate::rewrite::notify(&app, "Rewrite failed", &error),
+                        }
+                    });
                 }
                 "open-editor" => {
                     let _ = show_editor_window(app)

@@ -32,6 +32,9 @@ to follow [Semantic Versioning](https://semver.org/).
 - M0 macOS shell: rebranded Tauri app, vendored Harper subset under
   `vendor/harper/`, generated app/menu-bar icons, and a minimal Svelte setup UI.
 - Keychain-backed OpenRouter key validation and an in-app rewrite path.
+- System-wide **Rewrite Selection** tray action using pasteboard + ⌘V with
+  read-back verification, clipboard restore, and macOS notifications. Verified
+  in TextEdit, Safari, and Chrome.
 - Controlled Accessibility test page (`apps/macos/test/overlay.html`) and
   [`docs/M0-VERIFICATION.md`](docs/M0-VERIFICATION.md).
 - Brand guide v1.1 with **Soft Indigo `#B8BEFF`** for dark-mode accents and
@@ -62,13 +65,15 @@ to follow [Semantic Versioning](https://semver.org/).
 - Documented the key-handling, voice-sample, and local-bridge threat models.
 - OpenRouter keys are stored in the macOS Keychain and never written to config
   or logs.
+- Rewrite Selection refuses secure input (`IsSecureEventInputEnabled`) and
+  secure text fields (`AXSubrole == AXSecureTextField`).
 
 ### Known issues
 
 - Chrome and Mail do not show the overlay yet; Chrome needs the M3 extension
   path and Mail needs a text-bounds fallback.
-- System-wide AI rewrite through pasteboard + ⌘V is not implemented; only the
-  in-app rewrite works.
+- Rewrite Selection has no global shortcut yet; it is in the tray menu only.
+- Clipboard restore handles text only; non-text pasteboard items are replaced.
 - M0 uses an unsigned debug app; no notarized release or updater yet.
 
 ## [0.0.0] - 2026-10-19

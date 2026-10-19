@@ -34,6 +34,40 @@ fn dictionary_value(dictionary: &WindowInfo, key: CFStringRef) -> Option<CFType>
     dictionary.find(&key).map(|value| value.clone())
 }
 
+/// Grabs a string attribute from an accessibility element.
+pub fn ax_string_attribute(element: &AXUIElement, name: &str) -> Result<String, Box<dyn StdError>> {
+    let attr = CFString::new(name);
+    let mut value = ptr::null();
+
+    let err = unsafe {
+        AXUIElementCopyAttributeValue(
+            element.as_concrete_TypeRef(),
+            attr.as_concrete_TypeRef(),
+            &mut value,
+        )
+    };
+
+    if err != kAXErrorSuccess {
+        return Err(format!(
+            "AXUIElementCopyAttributeValue failed for {name}: {}",
+            error_string(err)
+        )
+        .into());
+    }
+
+    if value.is_null() {
+        return Err(format!("AXUIElementCopyAttributeValue returned null for {name}").into());
+    }
+
+    let value = unsafe { CFType::wrap_under_create_rule(value) };
+    if !value.instance_of::<CFString>() {
+        return Err(format!("AX attribute {name} is not a string").into());
+    }
+
+    let value = unsafe { CFString::wrap_under_get_rule(value.as_CFTypeRef() as _) };
+    Ok(value.to_string())
+}
+
 /// Grabs the value of an attribute on an accessibility element.
 pub fn ax_element_attribute(
     element: &AXUIElement,

@@ -70,6 +70,21 @@ pub trait OsBroker {
 
     /// Search for an application in the OS' global list of installed apps.
     fn search_apps(&self, _query: &str) -> Result<Vec<AppSearchResult>, String>;
+
+    /// Read the current selection from the focused text field, if any.
+    ///
+    /// This is used by the explicit "Rewrite Selection" action in the main
+    /// process. The highlighter keeps its own path for overlay geometry.
+    fn selected_text(&mut self) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
+    /// Replace the current selection by putting `replacement` on the pasteboard
+    /// and synthesizing the platform paste shortcut. Returns whether the
+    /// replacement was observed in the field afterwards.
+    fn replace_selection_via_paste(&mut self, _replacement: &str) -> Result<bool, String> {
+        Err("This platform does not support paste replacement yet.".into())
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

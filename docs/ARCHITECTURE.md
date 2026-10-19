@@ -783,6 +783,13 @@ Clipboard safety:
 - If `changeCount` changed unexpectedly, leave the user's clipboard alone.
 - Never paste into a password field; `IsSecureEventInputEnabled()` is the guard.
 
+**M1 implementation status:**
+
+- The explicit **Rewrite Selection** action (tray menu) reads `AXSelectedText`, calls the provider in the main process, writes the replacement to the pasteboard, synthesizes ⌘V, waits 180 ms, verifies the replacement in `AXValue`, and restores the previous clipboard text. Verified in TextEdit, Safari, and Chrome.
+- The local-lint card still uses the AX fast path (`AXUIElementSetAttributeValue`) because it needs span-level replacement, not whole-selection paste.
+- Secure input is refused via `IsSecureEventInputEnabled()` and `AXSubrole == AXSecureTextField`.
+- **Not yet:** transient/concealed pasteboard types, item-level clipboard restore, global shortcut, and read-back diff/undo UI. Those are M1 hardening tasks.
+
 Caret/selection:
 
 - After paste, the target usually places the caret correctly; verify.

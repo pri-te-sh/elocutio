@@ -18,6 +18,7 @@ to follow [Semantic Versioning](https://semver.org/).
 - CI workflow, issue templates, pull request template, and Dependabot.
 - Bootstrap, documentation-check, development-signing, and upstream-fetch
   scripts.
+- Initial repository scaffold and pinned Harper v2.13.0 upstream lock.
 
 ### Changed
 

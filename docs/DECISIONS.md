@@ -322,7 +322,7 @@ Short, dated records of the choices that shape the build. Format: context → de
 
 **Context.** The project needed a distinctive name that fits a private, model-agnostic writing assistant with voice learning; it must be usable as a macOS bundle ID, GitHub organization, npm package, and domain; and it should not collide with existing writing products.
 
-**Decision.** Name the product **Elocutio** (pronounced *el-oh-KOO-tee-oh*), the classical rhetorical canon of style and expression. Primary domain `elocutio.app` (available at decision time), docs at `elocutio.dev`, npm `elocutio`, GitHub organization `elocutio-app`, bundle ID `app.elocutio.desktop`.
+**Decision.** Name the product **Elocutio** (pronounced *el-oh-KOO-tee-oh*), the classical rhetorical canon of style and expression. Planned primary domain `elocutio.app` (available at decision time; registration pending), docs at `elocutio.dev`, npm `elocutio`, GitHub organization `elocutio-app`, bundle ID `app.elocutio.desktop`.
 
 **Evidence at decision time (19 Oct 2026):**
 

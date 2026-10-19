@@ -112,6 +112,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn client_can_request_field_analysis() {
+        let (client_request_writer, server_request_reader) = duplex(16_384);
+        let (server_response_writer, client_response_reader) = duplex(16_384);
+        let config = Arc::new(Mutex::new(Config::new()));
+        let mut client = Client::new(client_response_reader, client_request_writer);
+        let mut server = Server::new(server_request_reader, server_response_writer, config);
+
+        let (analysis, request) = tokio::join!(client.analyze_field(), server.receive_request());
+
+        assert!(analysis.is_ok());
+        assert!(matches!(request.unwrap(), Some(Request::AnalyzeField)));
+    }
+
+    #[tokio::test]
     async fn client_receives_integrations_from_server() {
         let (client_request_writer, server_request_reader) = duplex(16_384);
         let (server_response_writer, client_response_reader) = duplex(16_384);

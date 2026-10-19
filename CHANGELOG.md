@@ -34,9 +34,12 @@ to follow [Semantic Versioning](https://semver.org/).
 - Keychain-backed OpenRouter key validation and an in-app rewrite path.
 - Onboarding checklist for Accessibility, OpenRouter key, and the rewrite
   shortcut; completion is persisted so setup opens only once.
-- Floating Harper-style suggestion widget anchored next to the focused text,
-  showing the live suggestion count and opening the inherited card.
-- LLM-cache bridge: Analyze Field (⌥⌘A or tray) publishes validated suggestions;
+- Floating Harper-style suggestion widget on every supported focused field,
+  anchored next to the text or bottom-right when clean; shows the live count,
+  opens the inherited card, and exposes the AI analysis action.
+- The floating widget has an **AI** action that requests field analysis from the
+  main process, so the shortcut is optional.
+- LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,
   exact/normalized/fuzzy span resolution, validation, dedupe, and

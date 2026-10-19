@@ -301,6 +301,7 @@ pub fn popup_debug() {
         |_| {},
         || {},
         || {},
+        || {},
     )
     .unwrap();
     highlighter.run_window_for_each_monitor().unwrap();
@@ -394,6 +395,8 @@ pub fn run_highlighter(has_parent: bool) {
 
     let settings_client = client.clone();
     let settings_runtime = sync_runtime.clone();
+    let analyze_client = client.clone();
+    let analyze_runtime = sync_runtime.clone();
 
     let refresh_client = client.clone();
     let refresh_runtime = sync_runtime.clone();
@@ -487,6 +490,21 @@ pub fn run_highlighter(has_parent: bool) {
         Err(error) => eprintln!("failed to disable rule {rule_name}: {error}"),
     };
 
+    let analyze_field = move || {
+        if !has_parent {
+            return;
+        }
+
+        if let Err(error) = analyze_runtime.block_on(
+            analyze_client
+                .lock()
+                .expect("IPC client lock poisoned")
+                .analyze_field(),
+        ) {
+            eprintln!("failed to request field analysis: {error}");
+        }
+    };
+
     let open_settings = move || {
         if !has_parent {
             eprintln!("cannot open settings without a parent app");
@@ -536,6 +554,7 @@ pub fn run_highlighter(has_parent: bool) {
         disable_rule,
         refresh_config,
         open_settings,
+        analyze_field,
     )
     .and_then(Highlighter::run_window_for_each_monitor)
     {

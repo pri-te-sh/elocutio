@@ -122,6 +122,13 @@ async fn run_server_until_shutdown<R, W>(
             _ = &mut shutdown_receiver => break,
             request = server.receive_request() => {
                 match request {
+                    Ok(Some(Request::AnalyzeField)) => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let result = crate::llm_analysis::analyze_focused_field(&app).await;
+                            crate::llm_analysis::notify_result(&app, result);
+                        });
+                    }
                     Ok(Some(Request::OpenSettings)) => {
                         let settings_app = app.clone();
                         if let Err(error) = app.run_on_main_thread(move || {

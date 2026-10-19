@@ -15,7 +15,7 @@ use self::{
         sidebar_target,
     },
 };
-use super::{AddToDictionary, DisableRule, IgnoreLint, OpenSettings};
+use super::{AddToDictionary, AnalyzeField, DisableRule, IgnoreLint, OpenSettings};
 use crate::{
     lint_kind_color::lint_kind_color,
     rect::{ActionableLint, Rect},
@@ -27,6 +27,7 @@ pub enum HitTarget {
     Lint(usize),
     Popup,
     Widget,
+    Analyze,
     None,
 }
 
@@ -48,6 +49,12 @@ pub struct RenderState {
     /// Screen-space bounds of the floating suggestion-count widget, if drawn.
     widget_rect: Option<egui::Rect>,
 
+    /// Screen-space bounds of the widget's "AI" action zone.
+    analyze_rect: Option<egui::Rect>,
+
+    /// Whether a supported editable field is currently focused.
+    field_active: bool,
+
     /// The flyout card's drawn offset from the list card's top, in points.
     current_sidebar_position: f32,
 
@@ -68,6 +75,7 @@ pub struct RenderState {
     disable_rule: DisableRule,
 
     open_settings: OpenSettings,
+    analyze_field: AnalyzeField,
 }
 
 impl RenderState {
@@ -79,19 +87,23 @@ impl RenderState {
         add_to_dictionary: AddToDictionary,
         disable_rule: DisableRule,
         open_settings: OpenSettings,
+        analyze_field: AnalyzeField,
     ) -> Self {
         let mut state = Self {
             last_lints: None,
             highlighted_lint: None,
             shown_suggestion: None,
-            widget_rect: None,
             current_sidebar_position: FIRST_ROW_OFFSET,
+            widget_rect: None,
+            analyze_rect: None,
+            field_active: false,
             last_render: None,
             markdown_cache: CommonMarkCache::default(),
             ignore_lint,
             add_to_dictionary,
             disable_rule,
             open_settings,
+            analyze_field,
         };
         state.set_lints(rects);
         state
@@ -120,6 +132,10 @@ impl RenderState {
             .filter(|index| row_count.is_some_and(|row_count| *index < row_count));
     }
 
+    pub fn set_field_active(&mut self, active: bool) {
+        self.field_active = active;
+    }
+
     fn lints(&self) -> &[ActionableLint] {
         self.last_lints.as_deref().unwrap_or_default()
     }
@@ -144,6 +160,10 @@ impl RenderState {
         }
     }
 
+    pub fn request_analyze(&mut self) {
+        (self.analyze_field)();
+    }
+
     pub fn close_popup(&mut self) {
         self.highlighted_lint = None;
         self.shown_suggestion = None;
@@ -152,6 +172,10 @@ impl RenderState {
 
     /// Checks if a given position touches a hit target.
     pub fn hit_target_at_pos(&self, pos: egui::Pos2) -> HitTarget {
+        if self.analyze_rect.is_some_and(|rect| rect.contains(pos)) {
+            return HitTarget::Analyze;
+        }
+
         if self.widget_rect.is_some_and(|rect| rect.contains(pos)) {
             return HitTarget::Widget;
         }
@@ -293,13 +317,20 @@ impl RenderState {
             }
         }
 
-        if let Some(first) = self.lints().first() {
-            let anchor = rect_bounds(&first.rect);
-            let size = egui::vec2(104.0, 36.0);
-            let mut pos = egui::pos2(anchor.right() + 8.0, anchor.top());
+        if self.field_active {
+            let size = egui::vec2(148.0, 36.0);
             let screen = ui.ctx().content_rect();
+            let mut pos = if let Some(first) = self.lints().first() {
+                let anchor = rect_bounds(&first.rect);
+                egui::pos2(anchor.right() + 8.0, anchor.top())
+            } else {
+                egui::pos2(
+                    screen.right() - size.x - 24.0,
+                    screen.bottom() - size.y - 24.0,
+                )
+            };
             if pos.x + size.x > screen.right() - 8.0 {
-                pos.x = anchor.left() - size.x - 8.0;
+                pos.x = screen.right() - size.x - 8.0;
             }
             pos.x = pos.x.max(screen.left() + 8.0);
             pos.y = pos
@@ -307,10 +338,20 @@ impl RenderState {
                 .clamp(screen.top() + 8.0, screen.bottom() - size.y - 8.0);
             let rect = egui::Rect::from_min_size(pos, size);
             self.widget_rect = Some(rect);
+            let analyze_rect = egui::Rect::from_min_max(
+                egui::pos2(rect.right() - 46.0, rect.top()),
+                rect.right_bottom(),
+            );
+            self.analyze_rect = Some(analyze_rect);
 
             let response = ui.interact(
                 rect,
                 ui.id().with("elocutio-suggestion-widget"),
+                egui::Sense::click(),
+            );
+            let analyze_response = ui.interact(
+                analyze_rect,
+                ui.id().with("elocutio-analyze-widget"),
                 egui::Sense::click(),
             );
             let fill = if response.hovered() {
@@ -330,26 +371,45 @@ impl RenderState {
             ui.painter().text(
                 egui::pos2(rect.left() + 14.0, rect.center().y),
                 egui::Align2::LEFT_CENTER,
-                "❞",
-                egui::FontId::proportional(18.0),
+                "\"",
+                egui::FontId::proportional(24.0),
                 egui::Color32::from_rgb(0x19, 0x1f, 0x70),
             );
             ui.painter().text(
-                egui::pos2(rect.right() - 14.0, rect.center().y),
+                egui::pos2(analyze_rect.left() - 12.0, rect.center().y),
                 egui::Align2::RIGHT_CENTER,
                 self.lints().len().to_string(),
                 egui::FontId::proportional(14.0),
                 egui::Color32::from_rgb(0x1f, 0x23, 0x28),
             );
+            if analyze_response.hovered() {
+                ui.painter()
+                    .rect_filled(analyze_rect, egui::CornerRadius::same(8), fill);
+                ui.painter().rect_stroke(
+                    analyze_rect,
+                    egui::CornerRadius::same(8),
+                    egui::Stroke::new(1.0_f32, border),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            ui.painter().text(
+                analyze_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "AI",
+                egui::FontId::proportional(13.0),
+                egui::Color32::from_rgb(0x19, 0x1f, 0x70),
+            );
 
             if response
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
+                && !analyze_response.clicked()
             {
                 self.open_widget();
             }
         } else {
             self.widget_rect = None;
+            self.analyze_rect = None;
         }
     }
 }

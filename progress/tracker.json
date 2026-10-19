@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T21:30:00Z",
+  "updatedAt": "2026-10-19T22:50:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -389,7 +389,7 @@
             "m1-providers"
           ],
           "status": "in_progress",
-          "notes": "LLM suggestions are merged into the existing card and overlapping local spans are suppressed. Confidence/severity ranking and an explicit local-vs-LLM policy remain."
+          "notes": "LLM suggestions merge into the existing card and overlapping local spans are suppressed. The widget AI action requests analysis without a shortcut. Confidence/severity ranking remains."
         },
         {
           "id": "m1-card",
@@ -401,7 +401,7 @@
             "m0-build"
           ],
           "status": "done",
-          "notes": "The inherited card renders local + cached LLM suggestions with accept/dismiss/explain. A compact white widget next to the first underline shows the count and opens the card without stealing focus."
+          "notes": "The inherited card renders local + cached LLM suggestions with accept/dismiss/explain. A compact white widget on every supported focused field shows the count, opens the card, and triggers analysis via an AI action over IPC."
         },
         {
           "id": "m1-onboarding",

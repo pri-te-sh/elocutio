@@ -18,6 +18,7 @@ type AddToDictionary = Box<dyn FnMut(&str)>;
 type DisableRule = Box<dyn FnMut(&str)>;
 type RefreshConfig = Box<dyn FnMut()>;
 type OpenSettings = Box<dyn FnMut()>;
+pub type AnalyzeField = Box<dyn FnMut()>;
 
 /// Public entry point for the screen highlighter system.
 ///
@@ -37,6 +38,7 @@ impl Highlighter {
         disable_rule: impl FnMut(&str) + 'static,
         refresh_config: impl FnMut() + 'static,
         open_settings: impl FnMut() + 'static,
+        analyze_field: impl FnMut() + 'static,
     ) -> Result<Self, Error> {
         let lint_text: LintText = Box::new(lint_text);
         let ignore_lint: IgnoreLint = Box::new(ignore_lint);
@@ -44,6 +46,7 @@ impl Highlighter {
         let disable_rule: DisableRule = Box::new(disable_rule);
         let refresh_config: RefreshConfig = Box::new(refresh_config);
         let open_settings: OpenSettings = Box::new(open_settings);
+        let analyze_field: AnalyzeField = Box::new(analyze_field);
 
         Ok(Self {
             window_manager: WindowManager::new(
@@ -55,6 +58,7 @@ impl Highlighter {
                     disable_rule,
                     refresh_config,
                     open_settings,
+                    analyze_field,
                 },
             )?,
         })

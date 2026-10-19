@@ -125,7 +125,8 @@ apps/macos/
   entries, not a calendar month.
 - **LLM overlay:** validated LLM suggestions merge into the focused field’s
   inherited card via the cache bridge; the floating widget opens that card.
-  Ranking local vs. LLM suggestions and an in-widget Analyze action remain.
+  Ranking local vs. LLM suggestions and showing the widget on fields with zero
+  local lints remain.
 - **Unsigned debug build:** no notarization, updater, or release packaging yet.
 
 ## Tests and checks

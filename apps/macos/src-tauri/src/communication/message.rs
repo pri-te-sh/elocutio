@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
     OpenSettings,
+    AnalyzeField,
     GetLintConfig,
     GetDictionary,
     GetDialect,
@@ -46,6 +47,14 @@ mod tests {
         let decoded: Request = serde_json::from_str(&encoded).unwrap();
 
         assert!(matches!(decoded, Request::GetLintConfig));
+    }
+
+    #[test]
+    fn analyze_field_request_serializes_as_json() {
+        let encoded = serde_json::to_string(&Request::AnalyzeField).unwrap();
+        let decoded: Request = serde_json::from_str(&encoded).unwrap();
+
+        assert!(matches!(decoded, Request::AnalyzeField));
     }
 
     #[test]

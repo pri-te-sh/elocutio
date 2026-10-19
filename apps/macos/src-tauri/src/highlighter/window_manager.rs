@@ -11,10 +11,10 @@ use super::AddToDictionary;
 use super::DisableRule;
 use super::Error;
 use super::IgnoreLint;
-use super::OpenSettings;
 use super::RefreshConfig;
 use super::render_state::{HitTarget, RenderState};
 use super::window::Window;
+use super::{AnalyzeField, OpenSettings};
 use crate::os_broker::{LintText, OsBroker};
 use crate::rect::ActionableLint;
 
@@ -36,6 +36,7 @@ pub struct WindowManager {
     disable_rule: DisableRule,
     refresh_config: RefreshConfig,
     open_settings: OpenSettings,
+    analyze_field: AnalyzeField,
 }
 
 pub struct WindowManagerCallbacks {
@@ -45,6 +46,7 @@ pub struct WindowManagerCallbacks {
     pub disable_rule: DisableRule,
     pub refresh_config: RefreshConfig,
     pub open_settings: OpenSettings,
+    pub analyze_field: AnalyzeField,
 }
 
 impl WindowManager {
@@ -71,6 +73,7 @@ impl WindowManager {
             disable_rule: callbacks.disable_rule,
             refresh_config: callbacks.refresh_config,
             open_settings: callbacks.open_settings,
+            analyze_field: callbacks.analyze_field,
         })
     }
 
@@ -92,6 +95,7 @@ impl WindowManager {
                 disable_rule: self.disable_rule,
                 refresh_config: self.refresh_config,
                 open_settings: self.open_settings,
+                analyze_field: self.analyze_field,
             },
         );
 
@@ -135,6 +139,7 @@ impl WindowManagerApp {
                 callbacks.add_to_dictionary,
                 callbacks.disable_rule,
                 callbacks.open_settings,
+                callbacks.analyze_field,
             ),
             os_broker,
             lint_text: callbacks.lint_text,
@@ -150,8 +155,14 @@ impl WindowManagerApp {
     /// the same thread that owns the overlay windows.
     fn read_rect_updates(&mut self) {
         let lints = self.os_broker.get_boxes(self.lint_text.as_mut());
-        if let Some(lints) = lints {
-            self.render_state.set_lints(lints);
+        match lints {
+            Some(lints) => {
+                self.render_state.set_field_active(true);
+                self.render_state.set_lints(lints);
+            }
+            None => {
+                self.render_state.set_field_active(false);
+            }
         }
 
         for window in &self.windows {
@@ -174,7 +185,7 @@ impl WindowManagerApp {
 
         self.hovered_lint = match hit_target {
             HitTarget::Lint(index) => Some(index),
-            HitTarget::Widget | HitTarget::Popup | HitTarget::None => None,
+            HitTarget::Widget | HitTarget::Analyze | HitTarget::Popup | HitTarget::None => None,
         };
 
         let should_enable_hittest = !matches!(hit_target, HitTarget::None);
@@ -206,6 +217,7 @@ impl WindowManagerApp {
                 self.render_state.set_highlighted_lint(Some(index));
             }
             HitTarget::Widget => self.render_state.open_widget(),
+            HitTarget::Analyze => self.render_state.request_analyze(),
             HitTarget::Popup | HitTarget::None => return,
         }
 

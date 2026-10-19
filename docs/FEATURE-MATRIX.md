@@ -222,5 +222,5 @@ These features determine whether the product is credible. Everything else can sl
 
 ## Deferred deliberately
 
-- Google Docs (canvas), Safari extension, OCR, native messaging, docs editor, web similarity, citations, mobile, Windows, enterprise admin, local LoRA fine-tuning.
+- Google Docs (canvas), Safari extension, OCR, native messaging, docs editor, web similarity, citations, Windows/iOS/Android (post-v1), enterprise admin, local LoRA fine-tuning.
 - Each is valuable; none is on the path to a credible macOS v1.

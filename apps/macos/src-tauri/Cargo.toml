@@ -32,6 +32,7 @@ dirs = "6.0.0"
 elocutio-analysis = { path = "../../../crates/elocutio-analysis" }
 elocutio-core = { path = "../../../crates/elocutio-core" }
 elocutio-llm = { path = "../../../crates/elocutio-llm" }
+elocutio-voice = { path = "../../../crates/elocutio-voice" }
 harper-core = { path = "../../../vendor/harper/harper-core", default-features = false, features = ["concurrent"] }
 harper-dictionary-wordlist = { path = "../../../vendor/harper/harper-dictionary-wordlist" }
 egui_commonmark = "0.23.0"

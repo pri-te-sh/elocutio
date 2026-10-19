@@ -161,7 +161,11 @@ struct ChatUsage {
     cost: Option<f64>,
 }
 
-pub async fn rewrite(text: &str, model: Option<String>) -> Result<RewriteResult, String> {
+pub async fn rewrite(
+    text: &str,
+    model: Option<String>,
+    voice_guidance: Option<String>,
+) -> Result<RewriteResult, String> {
     let text = text.trim();
     if text.is_empty() {
         return Err("Enter some text to rewrite first.".into());
@@ -173,10 +177,15 @@ pub async fn rewrite(text: &str, model: Option<String>) -> Result<RewriteResult,
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
     let model = ModelRef::new(ProviderId::OpenRouter, model);
 
+    let system = match voice_guidance {
+        Some(guidance) => format!("{SYSTEM_PROMPT}\n\n{guidance}"),
+        None => SYSTEM_PROMPT.to_string(),
+    };
+
     let body = serde_json::json!({
         "model": model.model,
         "messages": [
-            { "role": "system", "content": SYSTEM_PROMPT },
+            { "role": "system", "content": system },
             { "role": "user", "content": text }
         ],
         "temperature": 0.0,

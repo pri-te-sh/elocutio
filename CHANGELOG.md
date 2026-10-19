@@ -47,6 +47,8 @@ to follow [Semantic Versioning](https://semver.org/).
   by screen position and validated severity.
 - One-shot undo for accepted suggestions via ⌥⌘Z, the tray, or Settings; it
   restores the prior field text only when the applied result is still present.
+- Voice v0: local sample analyzer, explainable style card, optional rewrite
+  guidance, and a Settings Voice card that stores no raw samples.
 - LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,

@@ -59,6 +59,10 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         request_accessibility_permission,
         get_highlighter_service_status,
         undo_last_edit,
+        get_voice_profile,
+        learn_voice_samples,
+        set_voice_enabled,
+        clear_voice_profile,
         start_highlighter_service,
         stop_highlighter_service,
         launch_app,
@@ -154,7 +158,7 @@ async fn rewrite_text(
         Some(model) => model,
         None => config.lock().await.provider_model.clone(),
     };
-    let result = openrouter::rewrite(&text, Some(model)).await?;
+    let result = openrouter::rewrite(&text, Some(model), crate::voice::guidance()).await?;
     if let Err(error) = usage::record(&result) {
         eprintln!("Could not record usage: {error}");
     }
@@ -569,6 +573,38 @@ fn request_accessibility_permission(
             AccessibilityPermissionStatus::Unsupported
         }
     }
+}
+
+#[tauri::command]
+fn get_voice_profile() -> Result<Option<elocutio_voice::VoiceProfile>, String> {
+    crate::voice::load()
+}
+
+#[tauri::command]
+fn learn_voice_samples(
+    text: String,
+    name: Option<String>,
+) -> Result<elocutio_voice::VoiceProfile, String> {
+    crate::voice::learn(&text, name)
+}
+
+#[tauri::command]
+fn set_voice_enabled(enabled: bool) -> Result<Option<elocutio_voice::VoiceProfile>, String> {
+    let Some(mut profile) = crate::voice::load()? else {
+        return Err("Teach Elocutio your voice first.".into());
+    };
+    profile.strength = if enabled {
+        elocutio_voice::VoiceStrength::Balanced
+    } else {
+        elocutio_voice::VoiceStrength::Off
+    };
+    crate::voice::save(&profile)?;
+    Ok(Some(profile))
+}
+
+#[tauri::command]
+fn clear_voice_profile() -> Result<(), String> {
+    crate::voice::clear()
 }
 
 #[tauri::command]

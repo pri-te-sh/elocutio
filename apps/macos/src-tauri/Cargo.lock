@@ -2672,6 +2672,7 @@ dependencies = [
  "elocutio-analysis",
  "elocutio-core",
  "elocutio-llm",
+ "elocutio-voice",
  "harper-core",
  "harper-dictionary-wordlist",
  "is-macro",
@@ -2708,6 +2709,13 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "elocutio-voice"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

@@ -51,6 +51,21 @@
     bundle_id: string;
     enabled: boolean;
   };
+  type VoiceTrait = {
+    value: number | boolean | string;
+    confidence: number;
+    evidence: string[];
+  };
+  type VoiceProfile = {
+    id: string;
+    name: string;
+    context: string;
+    language: string;
+    strength: string;
+    confidence: number;
+    summary: string;
+    traits: Record<string, VoiceTrait>;
+  };
   type AnalyzeResponse = {
     suggestions: Suggestion[];
     rejected: { paragraph_id: string; original: string; reason: string }[];
@@ -92,6 +107,10 @@
   let budgetMessage = "";
   let undoBusy = false;
   let undoMessage = "";
+  let voiceProfile: VoiceProfile | null = null;
+  let voiceSamples = "";
+  let voiceBusy = false;
+  let voiceMessage = "";
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";
@@ -134,6 +153,57 @@
       model = await invoke<string>("get_provider_model");
     } catch (error) {
       providerMessage = String(error);
+    }
+  }
+
+  async function refreshVoice() {
+    try {
+      voiceProfile = await invoke<VoiceProfile | null>("get_voice_profile");
+    } catch (error) {
+      voiceMessage = String(error);
+    }
+  }
+
+  async function learnVoice() {
+    voiceBusy = true;
+    voiceMessage = "";
+    try {
+      voiceProfile = await invoke<VoiceProfile>("learn_voice_samples", {
+        text: voiceSamples,
+        name: "My voice",
+      });
+      voiceMessage = "Voice learned. Only the style card is stored; the samples were discarded.";
+    } catch (error) {
+      voiceMessage = String(error);
+    } finally {
+      voiceBusy = false;
+    }
+  }
+
+  async function setVoiceEnabled(enabled: boolean) {
+    voiceBusy = true;
+    voiceMessage = "";
+    try {
+      voiceProfile = await invoke<VoiceProfile | null>("set_voice_enabled", { enabled });
+      voiceMessage = enabled ? "Voice guidance is on for rewrites." : "Voice guidance is off.";
+    } catch (error) {
+      voiceMessage = String(error);
+    } finally {
+      voiceBusy = false;
+    }
+  }
+
+  async function clearVoice() {
+    voiceBusy = true;
+    voiceMessage = "";
+    try {
+      await invoke("clear_voice_profile");
+      voiceProfile = null;
+      voiceMessage = "Voice profile deleted.";
+    } catch (error) {
+      voiceMessage = String(error);
+    } finally {
+      voiceBusy = false;
     }
   }
 
@@ -431,6 +501,7 @@
     void refreshAutoAnalyze();
     void refreshBudget();
     void refreshIntegrations();
+    void refreshVoice();
     void refreshUsage();
   });
 </script>
@@ -761,6 +832,57 @@
       {:else}
         <p class="muted">No safe suggestions were produced.</p>
       {/if}
+    {/if}
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <div>
+        <h2>Voice</h2>
+        <p class="muted">
+          Teach Elocutio your rhythm and diction from a sample. Only aggregate traits are stored; the
+          sample itself is discarded.
+        </p>
+      </div>
+      <span class="status" class:on={voiceProfile?.strength !== "off"} class:off={!voiceProfile || voiceProfile.strength === "off"}>
+        {voiceProfile ? (voiceProfile.strength === "off" ? "Off" : "On") : "Not trained"}
+      </span>
+    </div>
+
+    {#if voiceProfile}
+      <p class="voice-summary">{voiceProfile.summary}</p>
+      <p class="muted">
+        Confidence {Math.round(voiceProfile.confidence * 100)}% · {Object.keys(voiceProfile.traits).length} traits
+      </p>
+      <label class="switch-row">
+        <input
+          type="checkbox"
+          checked={voiceProfile.strength !== "off"}
+          onchange={(event) => setVoiceEnabled((event.currentTarget as HTMLInputElement).checked)}
+          disabled={voiceBusy}
+        />
+        <span>
+          <strong>Use my voice in rewrites</strong>
+          <span class="muted">Adds a short style card to the provider prompt; never sends the sample.</span>
+        </span>
+      </label>
+      <div class="actions">
+        <button class="ghost" onclick={clearVoice} disabled={voiceBusy}>Delete profile</button>
+      </div>
+    {:else}
+      <label class="field">
+        <span>Writing sample (300+ words)</span>
+        <textarea bind:value={voiceSamples} rows="5" placeholder="Paste a few paragraphs of your own writing."></textarea>
+      </label>
+      <div class="actions">
+        <button class="primary" onclick={learnVoice} disabled={voiceBusy || !voiceSamples.trim()}>
+          Learn my voice
+        </button>
+      </div>
+    {/if}
+
+    {#if voiceMessage}
+      <p class="message">{voiceMessage}</p>
     {/if}
   </section>
 

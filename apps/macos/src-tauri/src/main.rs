@@ -4,6 +4,7 @@
 mod debug_broker;
 mod tray;
 mod undo;
+mod voice;
 mod windows;
 
 use self::debug_broker::DebugBroker;

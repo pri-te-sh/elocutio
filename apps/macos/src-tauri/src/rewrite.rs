@@ -38,7 +38,7 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
         let config = app.state::<std::sync::Arc<tokio::sync::Mutex<crate::config::Config>>>();
         config.lock().await.provider_model.clone()
     };
-    let result = openrouter::rewrite(&text, Some(model)).await?;
+    let result = openrouter::rewrite(&text, Some(model), crate::voice::guidance()).await?;
     if let Err(error) = usage::record(&result) {
         eprintln!("Could not record usage: {error}");
     }

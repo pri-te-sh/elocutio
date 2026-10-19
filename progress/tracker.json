@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T23:10:00Z",
+  "updatedAt": "2026-10-19T23:25:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -419,7 +419,7 @@
           "priority": "P1",
           "estimateDays": 1,
           "status": "in_progress",
-          "notes": "Provider model, key, usage, onboarding, and the opt-in Analyze as I write toggle are in Settings. Per-app enablement, privacy controls, and budget warnings remain."
+          "notes": "Settings covers provider model, key status, usage, onboarding, auto-analysis, per-app enablement, auto-enable new apps, and the budget warning. Provider choice beyond OpenRouter and deeper privacy controls remain."
         },
         {
           "id": "m1-keychain",
@@ -427,8 +427,8 @@
           "area": "privacy",
           "priority": "P0",
           "estimateDays": 0.5,
-          "status": "in_progress",
-          "notes": "Keychain storage and a metadata-only cost/usage log work. Budget warnings and model pricing validation remain."
+          "status": "done",
+          "notes": "Provider key lives in Keychain; usage log records metadata only; Settings supports an optional USD budget warning from the log."
         },
         {
           "id": "m1-events",

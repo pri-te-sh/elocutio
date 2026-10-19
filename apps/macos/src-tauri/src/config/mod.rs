@@ -33,6 +33,8 @@ pub struct Config {
     pub provider_model: String,
     /// Analyze the focused field after a typing pause, without a shortcut.
     pub auto_analyze: bool,
+    /// Optional spending limit in USD for local usage warnings.
+    pub budget_usd: Option<f64>,
 }
 
 impl Config {
@@ -51,6 +53,7 @@ impl Config {
             highlighter_service_enabled: true,
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
+            budget_usd: None,
         }
     }
 
@@ -222,6 +225,7 @@ impl Config {
             "highlighter_service_enabled": self.highlighter_service_enabled,
             "provider_model": self.provider_model,
             "auto_analyze": self.auto_analyze,
+            "budget_usd": self.budget_usd,
         }))
     }
 
@@ -258,6 +262,7 @@ impl Config {
             provider_model: deserialize_optional_field(object, "provider_model")?
                 .unwrap_or_else(|| crate::openrouter::DEFAULT_MODEL.to_string()),
             auto_analyze: deserialize_optional_field(object, "auto_analyze")?.unwrap_or(false),
+            budget_usd: deserialize_optional_field(object, "budget_usd")?.unwrap_or(None),
         })
     }
 }
@@ -324,6 +329,7 @@ mod tests {
         assert!(serialized.contains("last_update_check"));
         assert!(serialized.contains("highlighter_service_enabled"));
         assert!(serialized.contains("auto_analyze"));
+        assert!(serialized.contains("budget_usd"));
     }
 
     #[test]
@@ -351,6 +357,7 @@ mod tests {
             config.highlighter_service_enabled
         );
         assert_eq!(deserialized.auto_analyze, config.auto_analyze);
+        assert_eq!(deserialized.budget_usd, config.budget_usd);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&deserialized.serialize_main().unwrap())
                 .unwrap(),

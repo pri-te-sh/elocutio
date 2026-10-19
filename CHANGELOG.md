@@ -41,6 +41,8 @@ to follow [Semantic Versioning](https://semver.org/).
   main process, so the shortcut is optional.
 - Opt-in **Analyze as I write** setting: debounced, deduplicated analysis of the
   focused field, off by default.
+- Settings apps list with per-app enablement and auto-enable-new-apps control.
+- Optional USD budget warning computed from the local metadata-only usage log.
 - LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,

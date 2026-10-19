@@ -36,6 +36,8 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_provider_model,
         get_auto_analyze,
         set_auto_analyze,
+        get_budget,
+        set_budget,
         get_usage_summary,
         analyze_text,
         get_onboarding_completed,
@@ -197,6 +199,31 @@ async fn set_auto_analyze(
         .await
         .map_err(|error| error.to_string())?;
     Ok(config.auto_analyze)
+}
+
+#[tauri::command]
+async fn get_budget(config: State<'_, Arc<Mutex<Config>>>) -> Result<Option<f64>, String> {
+    Ok(config.lock().await.budget_usd)
+}
+
+#[tauri::command]
+async fn set_budget(
+    budget_usd: Option<f64>,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<Option<f64>, String> {
+    if let Some(value) = budget_usd
+        && (!value.is_finite() || value < 0.0)
+    {
+        return Err("Enter a non-negative USD budget, or leave it blank.".into());
+    }
+
+    let mut config = config.lock().await;
+    config.budget_usd = budget_usd;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.budget_usd)
 }
 
 #[tauri::command]

@@ -470,6 +470,7 @@ pub fn run_highlighter(has_parent: bool) {
             highlighter_service_enabled: true,
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
+            budget_usd: None,
         };
         *dictionary_linter.borrow_mut() = config.create_linter();
 
@@ -632,6 +633,7 @@ fn fetch_highlighter_config(
             highlighter_service_enabled: true,
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
+            budget_usd: None,
         })
     })
 }

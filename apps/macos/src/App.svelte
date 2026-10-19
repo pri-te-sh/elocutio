@@ -46,6 +46,11 @@
     explanation: string;
     resolution: string;
   };
+  type IntegrationView = {
+    display_name: string;
+    bundle_id: string;
+    enabled: boolean;
+  };
   type AnalyzeResponse = {
     suggestions: Suggestion[];
     rejected: { paragraph_id: string; original: string; reason: string }[];
@@ -77,6 +82,14 @@
   let autoAnalyze = false;
   let autoAnalysisBusy = false;
   let autoAnalysisMessage = "";
+  let integrations: IntegrationView[] = [];
+  let autoEnableNewApps = false;
+  let appsBusy = false;
+  let appsMessage = "";
+  let budgetUsd: number | null = null;
+  let budgetInput = "";
+  let budgetBusy = false;
+  let budgetMessage = "";
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";
@@ -119,6 +132,76 @@
       model = await invoke<string>("get_provider_model");
     } catch (error) {
       providerMessage = String(error);
+    }
+  }
+
+  async function refreshBudget() {
+    try {
+      budgetUsd = await invoke<number | null>("get_budget");
+      budgetInput = budgetUsd === null ? "" : String(budgetUsd);
+    } catch (error) {
+      budgetMessage = String(error);
+    }
+  }
+
+  async function saveBudget() {
+    budgetBusy = true;
+    budgetMessage = "";
+    try {
+      const parsed = budgetInput.trim() === "" ? null : Number(budgetInput);
+      if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) {
+        throw new Error("Enter a non-negative USD budget, or leave it blank.");
+      }
+      budgetUsd = await invoke<number | null>("set_budget", { budgetUsd: parsed });
+      budgetInput = budgetUsd === null ? "" : String(budgetUsd);
+      budgetMessage = budgetUsd === null ? "Budget warning removed." : "Budget warning saved.";
+    } catch (error) {
+      budgetMessage = String(error);
+    } finally {
+      budgetBusy = false;
+    }
+  }
+
+  async function refreshIntegrations() {
+    try {
+      integrations = await invoke<IntegrationView[]>("get_integrations");
+      autoEnableNewApps = await invoke<boolean>("get_auto_enable_new_apps");
+    } catch (error) {
+      appsMessage = String(error);
+    }
+  }
+
+  async function setIntegrationEnabled(integration: IntegrationView, enabled: boolean) {
+    appsBusy = true;
+    appsMessage = "";
+    try {
+      await invoke("set_integration_enabled", {
+        bundleId: integration.bundle_id,
+        enabled,
+      });
+      integration.enabled = enabled;
+      appsMessage = `${integration.display_name} ${enabled ? "enabled" : "paused"}.`;
+    } catch (error) {
+      appsMessage = String(error);
+    } finally {
+      appsBusy = false;
+    }
+  }
+
+  async function saveAutoEnableNewApps() {
+    appsBusy = true;
+    appsMessage = "";
+    try {
+      autoEnableNewApps = await invoke<boolean>("set_auto_enable_new_apps", {
+        enabled: autoEnableNewApps,
+      });
+      appsMessage = autoEnableNewApps
+        ? "New apps will be enabled when first focused."
+        : "New apps stay paused until you enable them.";
+    } catch (error) {
+      appsMessage = String(error);
+    } finally {
+      appsBusy = false;
     }
   }
 
@@ -323,6 +406,8 @@
     void refreshOnboarding();
     void refreshModel();
     void refreshAutoAnalyze();
+    void refreshBudget();
+    void refreshIntegrations();
     void refreshUsage();
   });
 </script>
@@ -448,6 +533,56 @@
 
     {#if message}
       <p class="message">{message}</p>
+    {/if}
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <div>
+        <h2>Apps</h2>
+        <p class="muted">Choose where Elocutio may draw suggestions. Paused apps are left untouched.</p>
+      </div>
+      <span class="status on">{integrations.filter((app) => app.enabled).length} active</span>
+    </div>
+
+    <ul class="app-list">
+      {#each integrations as integration (integration.bundle_id)}
+        <li>
+          <label class="switch-row">
+            <input
+              type="checkbox"
+              checked={integration.enabled}
+              onchange={(event) =>
+                setIntegrationEnabled(
+                  integration,
+                  (event.currentTarget as HTMLInputElement).checked,
+                )}
+              disabled={appsBusy}
+            />
+            <span>
+              <strong>{integration.display_name}</strong>
+              <span class="muted">{integration.bundle_id}</span>
+            </span>
+          </label>
+        </li>
+      {/each}
+    </ul>
+
+    <label class="switch-row">
+      <input
+        type="checkbox"
+        bind:checked={autoEnableNewApps}
+        onchange={saveAutoEnableNewApps}
+        disabled={appsBusy}
+      />
+      <span>
+        <strong>Enable new apps automatically</strong>
+        <span class="muted">Otherwise a newly focused app stays paused until you allow it.</span>
+      </span>
+    </label>
+
+    {#if appsMessage}
+      <p class="message">{appsMessage}</p>
     {/if}
   </section>
 
@@ -630,6 +765,30 @@
         </div>
       </dl>
 
+      {#if budgetUsd !== null && usage.cost_usd > budgetUsd}
+        <p class="message warn">
+          Recorded spend ${usage.cost_usd.toFixed(4)} is above your ${budgetUsd.toFixed(2)} budget.
+        </p>
+      {/if}
+
+      <label class="field">
+        <span>Budget warning (USD, optional)</span>
+        <div class="model-row">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            bind:value={budgetInput}
+            placeholder="e.g. 5.00"
+          />
+          <button onclick={saveBudget} disabled={budgetBusy}>Save</button>
+        </div>
+      </label>
+
+      {#if budgetMessage}
+        <p class="message">{budgetMessage}</p>
+      {/if}
+
       {#if usage.recent.length > 0}
         <ul class="usage-list">
           {#each usage.recent as entry}
@@ -670,6 +829,18 @@
 </main>
 
 <style>
+  .app-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .app-list .switch-row {
+    border-top: none;
+    padding: 0.55rem 0;
+    margin: 0;
+  }
+
   .switch-row {
     display: flex;
     gap: 0.65rem;

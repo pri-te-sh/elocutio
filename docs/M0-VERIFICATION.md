@@ -93,6 +93,19 @@ The AX and pasteboard work runs on the Tauri main thread; calling AppKit from a 
 - [x] User confirmed dark mode “looks right.”
 - [x] No user-facing Harper branding remains; internal crate names (`harper-core`, `harper-core` dependencies) remain for attribution and are documented in `NOTICE`/`UPSTREAM.md`.
 
+## Post-M0 additions (2026-10-20)
+
+These landed after the M0 matrix and are not part of the three-of-five overlay result above:
+
+- [x] 47 workspace tests and 87 desktop tests pass; desktop clippy is clean.
+- [x] Structured LLM analysis: paragraph chunking, prompt p2/schema, validation, exact/normalized/fuzzy span resolution, dedupe, and 20-suggestion cap.
+- [x] LLM-cache bridge into the inherited card and a floating Harper-style widget with live count and an **AI** action over IPC.
+- [x] Analyze Field (**⌥⌘A**), Auto Analyze (opt-in, debounced, deduplicated), and one-shot undo (**⌥⌘Z**).
+- [x] OpenRouter default plus OpenAI-compatible endpoints; per-provider Keychain entries; local-only mode; bounded transient retries.
+- [x] Voice v0: local style card from 300+ word samples, opt-in accepted-edit feedback, and rewrite guidance.
+- [x] Tone presets and word-level rewrite diff preview in Settings.
+- [ ] Manual UI verification after these additions is pending: the machine was locked while automation was attempted. Specifically verify widget AI/click, undo restoration, provider switching, voice learning, and the diff preview before treating them as gate evidence.
+
 ## Known issues and next actions
 
 1. **Mail:** expose usable text-range bounds (or fall back to the static-text collector) before claiming support. Until then, keep Mail out of the supported matrix.

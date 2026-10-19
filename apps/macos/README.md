@@ -92,6 +92,8 @@ apps/macos/
   system-wide **Rewrite Selection** tray action using pasteboard + ⌘V with
   read-back verification and clipboard restore.
 - Added macOS notifications for rewrite success/failure.
+- Added the structured analysis pipeline: paragraph chunking, prompt/schema,
+  JSON validation, exact/normalized/fuzzy span resolution, dedupe, and rejected-edit reporting.
 - Added provider/model persistence and a local metadata-only usage/cost log.
 - Added a real onboarding checklist (Accessibility, provider key, shortcut)
   that persists `onboarding_completed` so setup no longer reopens every launch.
@@ -120,6 +122,8 @@ apps/macos/
   remain M1/M2.
 - **Usage scope:** the log is local and metadata-only; the Usage card sums all
   entries, not a calendar month.
+- **LLM overlay:** structured analysis is preview-only in settings; merging LLM
+  suggestions into the overlay card and applying them system-wide is next.
 - **Unsigned debug build:** no notarization, updater, or release packaging yet.
 
 ## Tests and checks

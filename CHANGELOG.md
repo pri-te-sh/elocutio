@@ -34,6 +34,9 @@ to follow [Semantic Versioning](https://semver.org/).
 - Keychain-backed OpenRouter key validation and an in-app rewrite path.
 - Onboarding checklist for Accessibility, OpenRouter key, and the rewrite
   shortcut; completion is persisted so setup opens only once.
+- Structured LLM analysis pipeline: paragraph chunking, prompt/schema,
+  exact/normalized/fuzzy span resolution, validation, dedupe, and
+  rejected-edit reporting, with 18 tests.
 - Persisted OpenRouter model selection for in-app rewrites and Rewrite
   Selection.
 - Local metadata-only usage log at `usage.jsonl` with token and cost totals;

@@ -41,6 +41,20 @@ fn log_path() -> Result<PathBuf, String> {
 }
 
 pub fn record(result: &RewriteResult) -> Result<(), String> {
+    record_parts(
+        &result.model,
+        result.input_tokens,
+        result.output_tokens,
+        result.cost_usd,
+    )
+}
+
+pub fn record_parts(
+    model: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_usd: Option<f64>,
+) -> Result<(), String> {
     let path = log_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -52,10 +66,10 @@ pub fn record(result: &RewriteResult) -> Result<(), String> {
             .duration_since(UNIX_EPOCH)
             .map_err(|error| format!("Clock error: {error}"))?
             .as_secs(),
-        model: result.model.clone(),
-        input_tokens: result.input_tokens,
-        output_tokens: result.output_tokens,
-        cost_usd: result.cost_usd,
+        model: model.to_string(),
+        input_tokens,
+        output_tokens,
+        cost_usd,
     };
 
     let mut file = OpenOptions::new()

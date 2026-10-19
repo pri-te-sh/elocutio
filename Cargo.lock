@@ -108,6 +108,7 @@ dependencies = [
  "elocutio-core",
  "proptest",
  "serde",
+ "serde_json",
  "thiserror",
  "unicode-segmentation",
 ]

@@ -271,3 +271,89 @@ mod tests {
         assert!(message.contains("upstream failed"));
     }
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AnalyzeCompletion {
+    pub content: String,
+    pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cost_usd: Option<f64>,
+}
+
+/// Ask the model for structured proofreading edits for one paragraph.
+pub async fn analyze(
+    paragraph_id: &str,
+    paragraph: &str,
+    model: Option<String>,
+    dialect: &str,
+) -> Result<AnalyzeCompletion, String> {
+    let key = load_key()?;
+    let model = model
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let model = ModelRef::new(ProviderId::OpenRouter, model);
+
+    let body = serde_json::json!({
+        "model": model.model,
+        "messages": [
+            { "role": "system", "content": elocutio_analysis::system_prompt() },
+            { "role": "user", "content": elocutio_analysis::build_user_prompt(paragraph_id, paragraph, dialect) }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 1500,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "suggestions",
+                "strict": true,
+                "schema": elocutio_analysis::json_schema()
+            }
+        },
+        "usage": { "include": true }
+    });
+
+    let response = client()?
+        .post(CHAT_URL)
+        .bearer_auth(&key)
+        .header("HTTP-Referer", APP_URL)
+        .header("X-Title", APP_TITLE)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach OpenRouter: {error}"))?;
+
+    let status = response.status();
+    let raw = response
+        .text()
+        .await
+        .map_err(|error| format!("Could not read the OpenRouter response: {error}"))?;
+    if !status.is_success() {
+        return Err(openrouter_error(status, &raw));
+    }
+
+    let parsed: ChatResponse = serde_json::from_str(&raw)
+        .map_err(|error| format!("OpenRouter returned an unexpected response: {error}"))?;
+    let content = parsed
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|choice| choice.message.content)
+        .ok_or_else(|| "OpenRouter returned no analysis text.".to_string())?;
+
+    Ok(AnalyzeCompletion {
+        content,
+        model: parsed.model,
+        input_tokens: parsed
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.prompt_tokens)
+            .unwrap_or(0),
+        output_tokens: parsed
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.completion_tokens)
+            .unwrap_or(0),
+        cost_usd: parsed.usage.as_ref().and_then(|usage| usage.cost),
+    })
+}

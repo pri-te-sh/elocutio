@@ -31,6 +31,30 @@
     cost_usd: number;
     recent: UsageEntry[];
   };
+  type Suggestion = {
+    id: string;
+    span: {
+      utf16_start: number;
+      utf16_end: number;
+      grapheme_start: number;
+      grapheme_end: number;
+    };
+    original: string;
+    replacement: string;
+    category: string;
+    severity: string;
+    explanation: string;
+    resolution: string;
+  };
+  type AnalyzeResponse = {
+    suggestions: Suggestion[];
+    rejected: { paragraph_id: string; original: string; reason: string }[];
+    paragraphs: { id: string; text: string; byte_start: number; byte_end: number }[];
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number | null;
+  };
 
   let version = "0.1.0";
   let permission: Permission = "Unknown";
@@ -55,6 +79,12 @@
     "Tehre are alot of ways to say this, but I think this one is more better.";
   let rewriteOutput = "";
   let rewriteMeta = "";
+
+  let analysisText =
+    "Their going to the conference next week , and they has a presentation.\n\nThis is definitely fine.";
+  let analysisBusy = false;
+  let analysisMessage = "";
+  let analysisResult: AnalyzeResponse | null = null;
 
   const permissionLabel: Record<Permission, string> = {
     Granted: "Granted",
@@ -194,6 +224,23 @@
       providerMessage = String(error);
     } finally {
       providerBusy = false;
+    }
+  }
+
+  async function analyze() {
+    analysisBusy = true;
+    analysisMessage = "";
+    analysisResult = null;
+    try {
+      analysisResult = await invoke<AnalyzeResponse>("analyze_text", {
+        text: analysisText,
+      });
+      analysisMessage = `Analyzed ${analysisResult.paragraphs.length} paragraph(s) with ${analysisResult.model}.`;
+      void refreshUsage();
+    } catch (error) {
+      analysisMessage = String(error);
+    } finally {
+      analysisBusy = false;
     }
   }
 
@@ -456,6 +503,62 @@
   </section>
 
   <section class="card">
+    <h2>Analyze a document</h2>
+    <p class="muted">
+      Structured proofreading: the model returns verbatim quotes, and Elocutio resolves them to
+      validated UTF-16/grapheme spans locally. Ambiguous edits are dropped.
+    </p>
+
+    <label class="field">
+      <span>Text</span>
+      <textarea bind:value={analysisText} rows="5"></textarea>
+    </label>
+
+    <div class="actions">
+      <button class="primary" onclick={analyze} disabled={analysisBusy || !keyPresent}>
+        Analyze with OpenRouter
+      </button>
+    </div>
+
+    {#if analysisMessage}
+      <p class="message">{analysisMessage}</p>
+    {/if}
+
+    {#if analysisResult}
+      <p class="muted">
+        {analysisResult.suggestions.length} suggestion(s), {analysisResult.rejected.length}
+        rejected · {analysisResult.input_tokens} in / {analysisResult.output_tokens} out
+        {#if analysisResult.cost_usd !== null}
+          · ${analysisResult.cost_usd.toFixed(4)}
+        {/if}
+      </p>
+
+      {#if analysisResult.suggestions.length > 0}
+        <ul class="suggestion-list">
+          {#each analysisResult.suggestions as suggestion}
+            <li>
+              <div class="suggestion-head">
+                <strong>{suggestion.category}</strong>
+                <span class="badge">{suggestion.severity}</span>
+                <span class="badge">{suggestion.resolution}</span>
+                <span class="muted">{suggestion.id}</span>
+              </div>
+              <p class="suggestion-diff">
+                <span class="remove">{suggestion.original}</span>
+                →
+                <span class="add">{suggestion.replacement}</span>
+              </p>
+              <p class="muted">{suggestion.explanation}</p>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="muted">No safe suggestions were produced.</p>
+      {/if}
+    {/if}
+  </section>
+
+  <section class="card">
     <div class="row">
       <div>
         <h2>Usage</h2>
@@ -702,6 +805,51 @@
 
   .model-row input {
     flex: 1;
+  }
+
+  .suggestion-list {
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 12px;
+  }
+
+  .suggestion-list li {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+
+  .suggestion-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+
+  .suggestion-diff {
+    margin: 6px 0 4px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .suggestion-diff .remove {
+    text-decoration: line-through;
+    color: var(--muted);
+  }
+
+  .suggestion-diff .add {
+    color: var(--success);
+    font-weight: 600;
+  }
+
+  .badge {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 1px 7px;
+    color: var(--muted);
+    font-size: 11px;
   }
 
   .usage-list {

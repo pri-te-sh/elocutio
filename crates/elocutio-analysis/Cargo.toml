@@ -9,6 +9,7 @@ description = "Chunking and offset resolution for Elocutio suggestions"
 [dependencies]
 elocutio-core = { path = "../elocutio-core" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 unicode-segmentation = { workspace = true }
 

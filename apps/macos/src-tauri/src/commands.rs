@@ -35,6 +35,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_provider_model,
         set_provider_model,
         get_usage_summary,
+        analyze_text,
         get_onboarding_completed,
         set_onboarding_completed,
         set_dialect,
@@ -180,6 +181,86 @@ async fn set_provider_model(
 #[tauri::command]
 fn get_usage_summary(limit: Option<usize>) -> Result<UsageSummary, String> {
     usage::summary(limit.unwrap_or(10).min(100))
+}
+
+#[derive(serde::Serialize)]
+struct AnalyzeResponse {
+    suggestions: Vec<elocutio_core::Suggestion>,
+    rejected: Vec<elocutio_analysis::RejectedEdit>,
+    paragraphs: Vec<elocutio_analysis::Paragraph>,
+    model: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_usd: Option<f64>,
+}
+
+#[tauri::command]
+async fn analyze_text(
+    text: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<AnalyzeResponse, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Enter some text to analyze first.".into());
+    }
+
+    let model = config.lock().await.provider_model.clone();
+    let paragraphs = elocutio_analysis::chunk_paragraphs(text);
+    if paragraphs.is_empty() {
+        return Err("No paragraphs found.".into());
+    }
+
+    let mut suggestions = Vec::new();
+    let mut rejected = Vec::new();
+    let mut input_tokens = 0;
+    let mut output_tokens = 0;
+    let mut cost_usd = 0.0;
+    let mut response_model = model.clone();
+
+    for paragraph in paragraphs.iter().take(3) {
+        let completion =
+            openrouter::analyze(&paragraph.id, &paragraph.text, Some(model.clone()), "en-US")
+                .await?;
+        input_tokens += completion.input_tokens;
+        output_tokens += completion.output_tokens;
+        if let Some(cost) = completion.cost_usd {
+            cost_usd += cost;
+        }
+        response_model = completion.model.clone();
+
+        match elocutio_analysis::parse_response(&completion.content, &paragraphs) {
+            Ok(result) => {
+                suggestions.extend(result.suggestions);
+                rejected.extend(result.rejected);
+            }
+            Err(error) => {
+                rejected.push(elocutio_analysis::RejectedEdit {
+                    paragraph_id: paragraph.id.clone(),
+                    original: String::new(),
+                    reason: error,
+                });
+            }
+        }
+
+        if let Err(error) = usage::record_parts(
+            &completion.model,
+            completion.input_tokens,
+            completion.output_tokens,
+            completion.cost_usd,
+        ) {
+            eprintln!("Could not record usage: {error}");
+        }
+    }
+
+    Ok(AnalyzeResponse {
+        suggestions,
+        rejected,
+        paragraphs: paragraphs.into_iter().take(3).collect(),
+        model: response_model,
+        input_tokens,
+        output_tokens,
+        cost_usd: (cost_usd > 0.0).then_some(cost_usd),
+    })
 }
 
 #[tauri::command]

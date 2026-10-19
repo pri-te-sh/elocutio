@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T19:25:00Z",
+  "updatedAt": "2026-10-19T19:38:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -375,7 +375,8 @@
           "area": "analysis",
           "priority": "P0",
           "estimateDays": 2,
-          "notes": "Offset resolution is the quality core; implement and test it before polishing UI."
+          "notes": "Paragraph chunking, prompt p1, JSON schema s1, payload validation, exact/normalized/fuzzy span resolution, dedupe, and rejected-edit reporting are implemented in elocutio-analysis with 18 tests and wired to an in-app Analyze card.",
+          "status": "done"
         },
         {
           "id": "m1-merge",
@@ -386,7 +387,8 @@
           "dependsOn": [
             "m1-pipeline",
             "m1-providers"
-          ]
+          ],
+          "status": "planned"
         },
         {
           "id": "m1-card",
@@ -396,7 +398,9 @@
           "estimateDays": 1.5,
           "dependsOn": [
             "m0-build"
-          ]
+          ],
+          "status": "in_progress",
+          "notes": "The settings Analyze card renders LLM suggestions with category/severity/resolution and explanations. Merging them into the overlay card, accept/dismiss, and system-wide apply remain."
         },
         {
           "id": "m1-onboarding",

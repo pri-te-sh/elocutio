@@ -277,13 +277,21 @@ impl<'a> RectCollector<'a> {
     }
 
     pub fn unwrap_rects(self) -> Option<Vec<ActionableLint>> {
-        let rects = self.rects.into_inner();
+        let mut rects = self.rects.into_inner();
 
         if rects.is_empty() && (self.expected_rect_count.get() > 0 || self.read_failed.get()) {
-            None
-        } else {
-            Some(rects)
+            return None;
         }
+
+        rects.sort_by_key(|actionable| {
+            (
+                actionable.rect.y as i32,
+                actionable.rect.x as i32,
+                actionable.lint.span.start,
+                actionable.lint.priority,
+            )
+        });
+        Some(rects)
     }
 }
 
@@ -313,7 +321,15 @@ fn cached_lint(suggestion: &CachedSuggestion) -> Lint {
         lint_kind,
         suggestions: vec![replacement],
         message: suggestion.explanation.clone(),
-        priority: 10,
+        priority: severity_priority(&suggestion.severity),
+    }
+}
+
+fn severity_priority(severity: &elocutio_core::Severity) -> u8 {
+    match severity {
+        elocutio_core::Severity::High => 5,
+        elocutio_core::Severity::Medium => 20,
+        elocutio_core::Severity::Low => 40,
     }
 }
 
@@ -507,6 +523,18 @@ mod tests {
         assert_eq!(find_char_subslice(&haystack, &needle, 9), None);
         assert_eq!(find_char_subslice(&haystack, &[], 0), None);
         assert_eq!(find_char_subslice(&[], &needle, 0), None);
+    }
+
+    #[test]
+    fn severity_priority_orders_high_before_low() {
+        assert!(
+            severity_priority(&elocutio_core::Severity::High)
+                < severity_priority(&elocutio_core::Severity::Medium)
+        );
+        assert!(
+            severity_priority(&elocutio_core::Severity::Medium)
+                < severity_priority(&elocutio_core::Severity::Low)
+        );
     }
 
     #[test]

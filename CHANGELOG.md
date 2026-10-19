@@ -43,6 +43,8 @@ to follow [Semantic Versioning](https://semver.org/).
   focused field, off by default.
 - Settings apps list with per-app enablement and auto-enable-new-apps control.
 - Optional USD budget warning computed from the local metadata-only usage log.
+- Merge policy: local lints win on overlapping spans; LLM suggestions are ordered
+  by screen position and validated severity.
 - LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,

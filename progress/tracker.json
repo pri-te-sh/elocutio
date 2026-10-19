@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T23:25:00Z",
+  "updatedAt": "2026-10-19T23:30:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -388,8 +388,8 @@
             "m1-pipeline",
             "m1-providers"
           ],
-          "status": "in_progress",
-          "notes": "LLM suggestions merge into the existing card and overlapping local spans are suppressed. The widget AI action requests analysis without a shortcut. Confidence/severity ranking remains."
+          "status": "done",
+          "notes": "Local lints take precedence on overlapping spans; LLM suggestions fill gaps. The merged list is sorted by screen position and severity (high before medium before low)."
         },
         {
           "id": "m1-card",

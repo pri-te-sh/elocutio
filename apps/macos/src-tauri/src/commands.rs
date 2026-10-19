@@ -73,6 +73,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         learn_voice_samples,
         set_voice_enabled,
         clear_voice_profile,
+        get_voice_guidance,
         get_learn_from_edits,
         set_learn_from_edits,
         get_voice_feedback_count,
@@ -829,6 +830,11 @@ async fn clear_voice_profile(config: State<'_, Arc<Mutex<Config>>>) -> Result<()
         .save_to_system()
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_voice_guidance() -> Result<Option<String>, String> {
+    Ok(crate::voice::guidance())
 }
 
 #[tauri::command]

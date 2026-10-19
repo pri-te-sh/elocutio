@@ -135,6 +135,7 @@
   let voiceMessage = "";
   let learnFromEdits = false;
   let voiceFeedbackCount = 0;
+  let voiceGuidance: string | null = null;
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";
@@ -268,6 +269,7 @@
       voiceProfile = await invoke<VoiceProfile | null>("get_voice_profile");
       learnFromEdits = await invoke<boolean>("get_learn_from_edits");
       voiceFeedbackCount = await invoke<number>("get_voice_feedback_count");
+      voiceGuidance = await invoke<string | null>("get_voice_guidance");
     } catch (error) {
       voiceMessage = String(error);
     }
@@ -298,6 +300,7 @@
         name: "My voice",
       });
       voiceFeedbackCount = await invoke<number>("get_voice_feedback_count");
+      voiceGuidance = await invoke<string | null>("get_voice_guidance");
       voiceMessage = "Voice learned. Only the style card is stored; the samples were discarded.";
     } catch (error) {
       voiceMessage = String(error);
@@ -311,6 +314,7 @@
     voiceMessage = "";
     try {
       voiceProfile = await invoke<VoiceProfile | null>("set_voice_enabled", { enabled });
+      voiceGuidance = await invoke<string | null>("get_voice_guidance");
       voiceMessage = enabled ? "Voice guidance is on for rewrites." : "Voice guidance is off.";
     } catch (error) {
       voiceMessage = String(error);
@@ -327,6 +331,7 @@
       voiceProfile = null;
       learnFromEdits = false;
       voiceFeedbackCount = 0;
+      voiceGuidance = null;
       voiceMessage = "Voice profile and local feedback deleted.";
     } catch (error) {
       voiceMessage = String(error);
@@ -1071,6 +1076,13 @@
       <p class="muted">
         Confidence {Math.round(voiceProfile.confidence * 100)}% · {Object.keys(voiceProfile.traits).length} traits
       </p>
+      {#if voiceGuidance}
+        <details>
+          <summary>What will be sent</summary>
+          <pre class="voice-guidance">{voiceGuidance}</pre>
+        </details>
+      {/if}
+
       <label class="switch-row">
         <input
           type="checkbox"
@@ -1532,6 +1544,15 @@
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+  }
+
+  .voice-guidance {
+    white-space: pre-wrap;
+    background: var(--surface-2, rgba(127, 127, 127, 0.08));
+    border-radius: 8px;
+    padding: 0.7rem;
+    font: inherit;
+    font-size: 0.82rem;
   }
 
   .diff-insert {

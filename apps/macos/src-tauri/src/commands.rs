@@ -737,8 +737,14 @@ fn set_voice_enabled(enabled: bool) -> Result<Option<elocutio_voice::VoiceProfil
 }
 
 #[tauri::command]
-fn clear_voice_profile() -> Result<(), String> {
-    crate::voice::clear()
+async fn clear_voice_profile(config: State<'_, Arc<Mutex<Config>>>) -> Result<(), String> {
+    crate::voice::clear()?;
+    let mut config = config.lock().await;
+    config.learn_from_edits = false;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

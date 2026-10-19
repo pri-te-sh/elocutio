@@ -215,12 +215,17 @@ pub fn save(profile: &VoiceProfile) -> Result<(), String> {
 }
 
 pub fn clear() -> Result<(), String> {
-    let path = path()?;
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("Could not clear the voice profile: {error}")),
+    let profile = path()?;
+    match std::fs::remove_file(&profile) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("Could not clear the voice profile: {error}")),
     }
+    if let Ok(feedback) = feedback_path() {
+        let _ = std::fs::remove_file(feedback);
+    }
+    let _ = set_learning_enabled(false);
+    Ok(())
 }
 
 pub fn learn(text: &str, name: Option<String>) -> Result<VoiceProfile, String> {

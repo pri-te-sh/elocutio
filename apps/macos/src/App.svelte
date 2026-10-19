@@ -293,7 +293,9 @@
     try {
       await invoke("clear_voice_profile");
       voiceProfile = null;
-      voiceMessage = "Voice profile deleted.";
+      learnFromEdits = false;
+      voiceFeedbackCount = 0;
+      voiceMessage = "Voice profile and local feedback deleted.";
     } catch (error) {
       voiceMessage = String(error);
     } finally {

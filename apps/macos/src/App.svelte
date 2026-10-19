@@ -247,6 +247,7 @@
     voiceMessage = "";
     try {
       learnFromEdits = await invoke<boolean>("set_learn_from_edits", { enabled });
+      await refreshVoice();
       voiceMessage = enabled
         ? "Elocutio will learn from accepted edits on this Mac."
         : "Edit learning is off.";

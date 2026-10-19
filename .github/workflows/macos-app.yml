@@ -1,0 +1,66 @@
+name: macOS app
+
+# The full Tauri check compiles a large Rust dependency graph on a macOS
+# runner, which GitHub Free bills at 10x the Linux rate. It is deliberately not
+# part of routine CI.
+#
+# Run it by:
+#   - adding the `macos-app` label to a pull request, or
+#   - Actions → macOS app → Run workflow, or
+#   - pushing a `v*` release tag.
+#
+# Before opening a macOS PR, run `just macos-check` locally.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  macos-app:
+    name: macOS app (check, frontend, tests)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      github.event.label.name == 'macos-app'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/macos/src-tauri -> target
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Frontend check
+        run: pnpm --filter @elocutio/macos check
+      - name: Frontend build
+        run: pnpm --filter @elocutio/macos build
+      - name: Rust format
+        run: cargo fmt --manifest-path apps/macos/src-tauri/Cargo.toml -- --check
+      - name: Rust check
+        run: cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
+      - name: Rust tests
+        run: cargo test --manifest-path apps/macos/src-tauri/Cargo.toml

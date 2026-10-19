@@ -27,14 +27,32 @@ architecture live in [`PLAN.md`](PLAN.md) and [`ARCHITECTURE.md`](ARCHITECTURE.m
 
 - Enable GitHub Actions for the repository. The CI workflow is
   `.github/workflows/ci.yml`.
-- Require the `Rust (fmt, clippy, test)`, `Docs`, and `Format (web/config)` jobs
-  before merging to `main`.
+- Require the `Rust (fmt, clippy, test)`, `Docs`, and `Web (Prettier,
+  Svelte check/build)` jobs before merging to `main`. Do **not** require the
+  macOS app workflow — it is manual by design.
 - Protect `main`: require a pull request, at least one review, passing checks,
   and conversation resolution. Allow administrators to bypass only in an
   emergency.
 - Prefer squash merges; keep the PR title as the commit subject.
 - Require signed commits only if every contributor can sign; DCO sign-off is the
   baseline.
+
+## CI minutes (GitHub Free)
+
+GitHub Free includes 2,000 Actions minutes/month, and **macOS runners count at
+10×**. Keep routine CI cheap:
+
+- `ci.yml` runs only on Ubuntu: root Rust checks, docs, Prettier, and the
+  Svelte frontend check/build.
+- `macos-app.yml` is manual, label-triggered (`macos-app`), or tag-triggered.
+  Never make it a required check or run it on every push.
+- Run `just macos-check` locally before opening a macOS PR.
+- Keep `timeout-minutes` on every job; cancel superseded runs with the existing
+  concurrency groups.
+- Do not add macOS matrix builds or a macOS job to routine CI without a budget
+  review.
+- Dependabot PRs use the cheap routine CI; label `macos-app` only when the
+  dependency needs a full Tauri check.
 
 ## Discussions
 

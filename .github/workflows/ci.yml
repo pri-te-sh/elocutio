@@ -1,5 +1,10 @@
 name: CI
 
+# Routine CI intentionally runs on Linux only. GitHub Free charges macOS
+# runners at 10x the Linux minute rate, so the full Tauri app check lives in
+# `.github/workflows/macos-app.yml` and runs only on demand, on a PR label, or
+# on a release tag. Run `just macos-check` locally before opening a macOS PR.
+
 on:
   push:
     branches: [main]
@@ -20,7 +25,8 @@ env:
 jobs:
   rust:
     name: Rust (fmt, clippy, test)
-    runs-on: macos-15
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -34,39 +40,10 @@ jobs:
       - name: Test
         run: cargo test --all
 
-  macos-app:
-    name: macOS app (check, frontend)
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            apps/macos/src-tauri -> target
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - name: Install
-        run: pnpm install --frozen-lockfile
-      - name: Frontend check
-        run: pnpm --filter @elocutio/macos check
-      - name: Frontend build
-        run: pnpm --filter @elocutio/macos build
-      - name: Rust format
-        run: cargo fmt --manifest-path apps/macos/src-tauri/Cargo.toml -- --check
-      - name: Rust check
-        run: cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
-      - name: Rust tests
-        run: cargo test --manifest-path apps/macos/src-tauri/Cargo.toml
-
   docs:
     name: Docs
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -79,9 +56,10 @@ jobs:
       - name: Test progress tracker
         run: python3 -m unittest discover -s scripts -p "test_*.py" -v
 
-  format:
-    name: Format (web/config)
+  web:
+    name: Web (Prettier, Svelte check/build)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -93,3 +71,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Prettier
         run: pnpm format:check
+      - name: Frontend check
+        run: pnpm --filter @elocutio/macos check
+      - name: Frontend build
+        run: pnpm --filter @elocutio/macos build

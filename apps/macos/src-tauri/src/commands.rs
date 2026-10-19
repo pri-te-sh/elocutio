@@ -57,6 +57,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_application_icon_data_url,
         get_accessibility_permission_status,
         request_accessibility_permission,
+        get_highlighter_service_status,
         start_highlighter_service,
         stop_highlighter_service,
         launch_app,
@@ -567,6 +568,13 @@ fn request_accessibility_permission(
             AccessibilityPermissionStatus::Unsupported
         }
     }
+}
+
+#[tauri::command]
+pub(crate) fn get_highlighter_service_status(
+    highlighter_service: State<'_, HighlighterService>,
+) -> Result<bool, String> {
+    Ok(highlighter_service.is_running())
 }
 
 #[tauri::command]

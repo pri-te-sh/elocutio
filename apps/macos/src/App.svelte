@@ -267,6 +267,14 @@
     }
   }
 
+  async function refreshServiceStatus() {
+    try {
+      running = await invoke<boolean>("get_highlighter_service_status");
+    } catch (error) {
+      message = String(error);
+    }
+  }
+
   async function start() {
     busy = true;
     message = "";
@@ -402,6 +410,7 @@
 
   onMount(() => {
     void refresh();
+    void refreshServiceStatus();
     void refreshKey();
     void refreshOnboarding();
     void refreshModel();
@@ -511,7 +520,9 @@
       {:else}
         <button onclick={stop} disabled={busy}>Stop suggestions</button>
       {/if}
-      <button class="ghost" onclick={refresh} disabled={busy}>Refresh</button>
+      <button class="ghost" onclick={() => { void refresh(); void refreshServiceStatus(); }} disabled={busy}>
+        Refresh
+      </button>
     </div>
 
     <label class="switch-row">
@@ -648,8 +659,7 @@
   <section class="card">
     <h2>Test a rewrite</h2>
     <p class="muted">
-      This proves the provider path in-app; system-wide model suggestions and span replacement follow
-      in M1.
+      This proves the provider path in-app; the system-wide overlay uses the same provider and model.
     </p>
 
     <label class="field">
@@ -810,9 +820,9 @@
   <section class="card">
     <h2>Try the overlay</h2>
     <ol>
-      <li>Open TextEdit, Notes, Mail, or a browser text field.</li>
+      <li>Open TextEdit, Notes, or Safari and focus a text field.</li>
       <li>Type a sentence with a deliberate typo, such as “this is tehre test”.</li>
-      <li>Elocutio should underline the issue and show a small suggestion card.</li>
+      <li>Elocutio should underline the issue and show the floating suggestion card; use its AI side for a model-backed pass.</li>
     </ol>
     <p class="muted">
       If nothing appears, confirm Accessibility is granted, then stop and start suggestions.

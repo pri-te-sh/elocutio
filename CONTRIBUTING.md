@@ -103,6 +103,10 @@ Prompts are code:
 - UI changes need a screenshot or short recording.
 - Never include API keys, private text, or voice samples in a PR or issue.
 
+## Maintainer docs
+
+Repository settings, labels, triage, and release steps are in [docs/MAINTAINING.md](docs/MAINTAINING.md).
+
 ## Upstream (Harper) changes
 
 Elocutio is a fork of Harper. Keep patches small and documented in [`UPSTREAM.md`](UPSTREAM.md). If a fix is generic (Accessibility, overlay geometry, highlighter), consider sending it upstream first — it reduces our merge burden and supports the project we depend on.

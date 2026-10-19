@@ -176,6 +176,7 @@ pnpm format:check
 - **[Prompt library](docs/PROMPTS.md)** — system prompts, JSON schemas, token budgets, and evaluation rules.
 - **[Privacy](docs/PRIVACY.md)** — data flows, permissions, retention, and verifiable claims.
 - **[Testing](docs/TESTING.md)** — unit, integration, manual matrix, and quality gates.
+- **[Maintaining](docs/MAINTAINING.md)** — GitHub settings, labels, triage, CI, security, and release checklist.
 - **[Research notes](research/)** — sources, citations, and the raw OpenRouter model analysis.
 
 ## Contributing

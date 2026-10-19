@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-20T00:20:00Z",
+  "updatedAt": "2026-10-20T00:45:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -513,7 +513,9 @@
               "type": "glob",
               "pattern": "apps/macos/src/**/widget*"
             }
-          ]
+          ],
+          "status": "in_progress",
+          "notes": "The floating Harper-style widget shows the live count, opens the inherited card, triggers AI analysis, and anchors to the first underline or screen corner. Per-app positioning, tone badge, and drag behavior remain."
         },
         {
           "id": "m2-live",
@@ -530,7 +532,9 @@
           "title": "Tone detection, tone rewrite presets, and custom instructions",
           "area": "ux",
           "priority": "P1",
-          "estimateDays": 2
+          "estimateDays": 2,
+          "status": "in_progress",
+          "notes": "Tone rewrite presets (neutral/confident/friendly/concise/formal) are wired into the provider prompt and Settings. Local tone detection and custom instructions remain."
         },
         {
           "id": "m2-paragraph",
@@ -571,7 +575,9 @@
           "estimateDays": 1.5,
           "dependsOn": [
             "m1-events"
-          ]
+          ],
+          "status": "in_progress",
+          "notes": "Uploaded samples build a local style card with confidence; accepted edits feed concise/contraction traits when opted in. Dismissed/edited-after-accept feedback and trait overrides remain."
         },
         {
           "id": "m2-voice-apply",
@@ -581,7 +587,9 @@
           "estimateDays": 1,
           "dependsOn": [
             "m2-voice-profile"
-          ]
+          ],
+          "status": "in_progress",
+          "notes": "A usable style card is injected into rewrites and can be toggled in Settings. \"Sounds like me\" ratings and manual trait overrides remain."
         }
       ],
       "acceptance": [

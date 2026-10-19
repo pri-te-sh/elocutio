@@ -18,6 +18,29 @@ const APP_TITLE: &str = "Elocutio";
 pub const DEFAULT_MODEL: &str = "anthropic/claude-haiku-5.5";
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RewriteTone {
+    #[default]
+    Neutral,
+    Confident,
+    Friendly,
+    Concise,
+    Formal,
+}
+
+impl RewriteTone {
+    pub fn guidance(self) -> Option<&'static str> {
+        match self {
+            RewriteTone::Neutral => None,
+            RewriteTone::Confident => Some("Use a confident, direct tone without hedging."),
+            RewriteTone::Friendly => Some("Use a warm, friendly tone while staying professional."),
+            RewriteTone::Concise => Some("Be concise; cut filler and unnecessary qualifiers."),
+            RewriteTone::Formal => Some("Use a formal, precise register."),
+        }
+    }
+}
+
 /// Provider wire dialect. OpenRouter adds its own headers and key validation;
 /// OpenAI-compatible endpoints use the same Chat Completions shape.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,6 +266,7 @@ pub async fn rewrite_with(
     text: &str,
     model: Option<String>,
     voice_guidance: Option<String>,
+    tone: RewriteTone,
 ) -> Result<RewriteResult, String> {
     let text = text.trim();
     if text.is_empty() {
@@ -253,10 +277,15 @@ pub async fn rewrite_with(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
     let model_ref = ModelRef::new(provider.kind.into(), model);
-    let system = match voice_guidance {
-        Some(guidance) => format!("{SYSTEM_PROMPT}\n\n{guidance}"),
-        None => SYSTEM_PROMPT.to_string(),
-    };
+    let mut system = SYSTEM_PROMPT.to_string();
+    if let Some(guidance) = voice_guidance {
+        system.push_str("\n\n");
+        system.push_str(&guidance);
+    }
+    if let Some(guidance) = tone.guidance() {
+        system.push_str("\n\n");
+        system.push_str(guidance);
+    }
 
     let body = serde_json::json!({
         "model": model_ref.model,
@@ -439,6 +468,18 @@ mod tests {
     fn default_model_is_set() {
         assert!(!DEFAULT_MODEL.is_empty());
         assert!(DEFAULT_MODEL.contains('/'));
+    }
+
+    #[test]
+    fn tone_guidance_is_optional_and_specific() {
+        assert!(RewriteTone::Neutral.guidance().is_none());
+        assert!(
+            RewriteTone::Confident
+                .guidance()
+                .unwrap()
+                .contains("confident")
+        );
+        assert!(RewriteTone::Concise.guidance().unwrap().contains("concise"));
     }
 
     #[test]

@@ -41,6 +41,8 @@ pub struct Config {
     pub budget_usd: Option<f64>,
     /// Whether accepted suggestions may update the local voice profile.
     pub learn_from_edits: bool,
+    /// Requested rewrite tone.
+    pub rewrite_tone: crate::openrouter::RewriteTone,
 }
 
 impl Config {
@@ -63,6 +65,7 @@ impl Config {
             auto_analyze: false,
             budget_usd: None,
             learn_from_edits: false,
+            rewrite_tone: crate::openrouter::RewriteTone::Neutral,
         }
     }
 
@@ -238,6 +241,7 @@ impl Config {
             "auto_analyze": self.auto_analyze,
             "budget_usd": self.budget_usd,
             "learn_from_edits": self.learn_from_edits,
+            "rewrite_tone": self.rewrite_tone,
         }))
     }
 
@@ -280,6 +284,7 @@ impl Config {
             budget_usd: deserialize_optional_field(object, "budget_usd")?.unwrap_or(None),
             learn_from_edits: deserialize_optional_field(object, "learn_from_edits")?
                 .unwrap_or(false),
+            rewrite_tone: deserialize_optional_field(object, "rewrite_tone")?.unwrap_or_default(),
         })
     }
 }
@@ -350,6 +355,7 @@ mod tests {
         assert!(serialized.contains("provider_kind"));
         assert!(serialized.contains("provider_base_url"));
         assert!(serialized.contains("learn_from_edits"));
+        assert!(serialized.contains("rewrite_tone"));
     }
 
     #[test]
@@ -381,6 +387,7 @@ mod tests {
         assert_eq!(deserialized.provider_kind, config.provider_kind);
         assert_eq!(deserialized.provider_base_url, config.provider_base_url);
         assert_eq!(deserialized.learn_from_edits, config.learn_from_edits);
+        assert_eq!(deserialized.rewrite_tone, config.rewrite_tone);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&deserialized.serialize_main().unwrap())
                 .unwrap(),

@@ -46,6 +46,7 @@
     explanation: string;
     resolution: string;
   };
+  type RewriteTone = "neutral" | "confident" | "friendly" | "concise" | "formal";
   type ProviderSettings = {
     kind: "open_router" | "open_ai_compatible";
     base_url: string;
@@ -105,6 +106,9 @@
   let providerBaseInput = "";
   let providerSettingsBusy = false;
   let providerSettingsMessage = "";
+  let rewriteTone: RewriteTone = "neutral";
+  let toneBusy = false;
+  let toneMessage = "";
   let autoAnalyze = false;
   let autoAnalysisBusy = false;
   let autoAnalysisMessage = "";
@@ -149,6 +153,27 @@
       permission = await invoke<Permission>("get_accessibility_permission_status");
     } catch (error) {
       message = String(error);
+    }
+  }
+
+  async function refreshTone() {
+    try {
+      rewriteTone = await invoke<RewriteTone>("get_rewrite_tone");
+    } catch (error) {
+      toneMessage = String(error);
+    }
+  }
+
+  async function saveTone() {
+    toneBusy = true;
+    toneMessage = "";
+    try {
+      rewriteTone = await invoke<RewriteTone>("set_rewrite_tone", { tone: rewriteTone });
+      toneMessage = `Rewrite tone set to ${rewriteTone}.`;
+    } catch (error) {
+      toneMessage = String(error);
+    } finally {
+      toneBusy = false;
     }
   }
 
@@ -568,6 +593,7 @@
     void refresh();
     void refreshServiceStatus();
     void refreshProvider();
+    void refreshTone();
     void refreshOnboarding();
     void refreshModel();
     void refreshAutoAnalyze();
@@ -862,6 +888,21 @@
         <button onclick={saveModel} disabled={modelBusy || !model.trim()}>Save</button>
       </div>
     </label>
+
+    <label class="field">
+      <span>Rewrite tone</span>
+      <select bind:value={rewriteTone} onchange={saveTone} disabled={toneBusy}>
+        <option value="neutral">Neutral</option>
+        <option value="confident">Confident</option>
+        <option value="friendly">Friendly</option>
+        <option value="concise">Concise</option>
+        <option value="formal">Formal</option>
+      </select>
+    </label>
+
+    {#if toneMessage}
+      <p class="message">{toneMessage}</p>
+    {/if}
 
     {#if modelMessage}
       <p class="message">{modelMessage}</p>

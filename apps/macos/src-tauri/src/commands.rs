@@ -41,6 +41,8 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_provider_model,
         get_auto_analyze,
         set_auto_analyze,
+        get_rewrite_tone,
+        set_rewrite_tone,
         get_budget,
         set_budget,
         get_usage_summary,
@@ -234,7 +236,7 @@ async fn rewrite_text(
     model: Option<String>,
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<RewriteResult, String> {
-    let (provider, model) = {
+    let (provider, model, tone) = {
         let config = config.lock().await;
         (
             ProviderConfig {
@@ -245,10 +247,17 @@ async fn rewrite_text(
                 Some(model) => model,
                 None => config.provider_model.clone(),
             },
+            config.rewrite_tone,
         )
     };
-    let result =
-        openrouter::rewrite_with(&provider, &text, Some(model), crate::voice::guidance()).await?;
+    let result = openrouter::rewrite_with(
+        &provider,
+        &text,
+        Some(model),
+        crate::voice::guidance(),
+        tone,
+    )
+    .await?;
     if let Err(error) = usage::record(&result) {
         eprintln!("Could not record usage: {error}");
     }
@@ -295,6 +304,27 @@ async fn set_auto_analyze(
         .await
         .map_err(|error| error.to_string())?;
     Ok(config.auto_analyze)
+}
+
+#[tauri::command]
+async fn get_rewrite_tone(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<openrouter::RewriteTone, String> {
+    Ok(config.lock().await.rewrite_tone)
+}
+
+#[tauri::command]
+async fn set_rewrite_tone(
+    tone: openrouter::RewriteTone,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<openrouter::RewriteTone, String> {
+    let mut config = config.lock().await;
+    config.rewrite_tone = tone;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.rewrite_tone)
 }
 
 #[tauri::command]

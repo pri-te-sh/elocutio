@@ -53,6 +53,8 @@ to follow [Semantic Versioning](https://semver.org/).
   same structured analysis and rewrite paths.
 - Opt-in voice learning from accepted edits: local accepted-replacement log,
   concise/contraction traits, and style-card refresh.
+- Rewrite tone presets (neutral, confident, friendly, concise, formal) applied to
+  the provider prompt.
 - LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,

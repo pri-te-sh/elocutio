@@ -34,6 +34,8 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         rewrite_text,
         get_provider_model,
         set_provider_model,
+        get_auto_analyze,
+        set_auto_analyze,
         get_usage_summary,
         analyze_text,
         get_onboarding_completed,
@@ -176,6 +178,25 @@ async fn set_provider_model(
         .await
         .map_err(|error| error.to_string())?;
     Ok(config.provider_model.clone())
+}
+
+#[tauri::command]
+async fn get_auto_analyze(config: State<'_, Arc<Mutex<Config>>>) -> Result<bool, String> {
+    Ok(config.lock().await.auto_analyze)
+}
+
+#[tauri::command]
+async fn set_auto_analyze(
+    enabled: bool,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<bool, String> {
+    let mut config = config.lock().await;
+    config.auto_analyze = enabled;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.auto_analyze)
 }
 
 #[tauri::command]

@@ -31,6 +31,8 @@ pub struct Config {
     pub highlighter_service_enabled: bool,
     /// OpenRouter model used by Rewrite Selection and the assistant.
     pub provider_model: String,
+    /// Analyze the focused field after a typing pause, without a shortcut.
+    pub auto_analyze: bool,
 }
 
 impl Config {
@@ -48,6 +50,7 @@ impl Config {
             last_update_check: None,
             highlighter_service_enabled: true,
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
+            auto_analyze: false,
         }
     }
 
@@ -218,6 +221,7 @@ impl Config {
             "last_update_check": self.last_update_check,
             "highlighter_service_enabled": self.highlighter_service_enabled,
             "provider_model": self.provider_model,
+            "auto_analyze": self.auto_analyze,
         }))
     }
 
@@ -253,6 +257,7 @@ impl Config {
             .unwrap_or(true),
             provider_model: deserialize_optional_field(object, "provider_model")?
                 .unwrap_or_else(|| crate::openrouter::DEFAULT_MODEL.to_string()),
+            auto_analyze: deserialize_optional_field(object, "auto_analyze")?.unwrap_or(false),
         })
     }
 }
@@ -318,6 +323,7 @@ mod tests {
         assert!(serialized.contains("auto_update"));
         assert!(serialized.contains("last_update_check"));
         assert!(serialized.contains("highlighter_service_enabled"));
+        assert!(serialized.contains("auto_analyze"));
     }
 
     #[test]
@@ -344,6 +350,7 @@ mod tests {
             deserialized.highlighter_service_enabled,
             config.highlighter_service_enabled
         );
+        assert_eq!(deserialized.auto_analyze, config.auto_analyze);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&deserialized.serialize_main().unwrap())
                 .unwrap(),

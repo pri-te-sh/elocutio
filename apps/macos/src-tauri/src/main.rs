@@ -40,6 +40,7 @@ use tokio::{
 };
 
 mod args;
+mod auto_analyze;
 pub mod color;
 mod commands;
 pub mod communication;
@@ -257,6 +258,7 @@ pub fn run_tauri() {
 
             set_up_tray_menu(app.handle())?;
             register_shortcuts(app.handle());
+            auto_analyze::start(app.handle().clone());
             warm_app_search_cache(app.handle().clone());
 
             if is_first_launch || !onboarding_completed {
@@ -467,6 +469,7 @@ pub fn run_highlighter(has_parent: bool) {
             last_update_check: None,
             highlighter_service_enabled: true,
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
+            auto_analyze: false,
         };
         *dictionary_linter.borrow_mut() = config.create_linter();
 
@@ -628,6 +631,7 @@ fn fetch_highlighter_config(
             last_update_check: None,
             highlighter_service_enabled: true,
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
+            auto_analyze: false,
         })
     })
 }

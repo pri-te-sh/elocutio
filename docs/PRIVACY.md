@@ -10,7 +10,7 @@ Elocutio is a desktop app, not a service. There is no Elocutio account, no Elocu
 
 | Data | Where it goes | When | User control |
 | --- | --- | --- | --- |
-| Text being checked | Your chosen provider (or nowhere in local-only mode) | When you trigger analysis or enable live mode | Per-app mode, block list, local-only toggle, request preview |
+| Text being checked | Your chosen provider (or nowhere in local-only mode) | When you trigger analysis, enable live mode, or opt into Analyze as I write | Per-app mode, block list, local-only toggle, request preview |
 | Selected text / context | Your chosen provider | When you use rewrite, compose, reply, summarize, chat | Context chips; remove before sending |
 | API keys | macOS Data Protection Keychain | On entry | Delete/replace; optional biometric gate |
 | Usage (tokens, cost, model) | Local SQLite | After each request | View/export/clear |
@@ -91,6 +91,8 @@ When you use a cloud provider, your text is processed under that provider's term
 - Direct providers: link to the provider's privacy policy in Settings.
 - Local: Ollama, LM Studio, or Apple's on-device model; no network request leaves the Mac.
 - Local-only mode: disables all cloud providers; local rules and a local model only.
+
+**Analyze as I write** is off by default. When enabled, it waits for a typing pause and analyzes each distinct focused-field text once; turn it off to return to explicitly triggered analysis only.
 
 The app shows a **preview of the exact request** (redacted key) before sending, and a **network log** of every host contacted.
 

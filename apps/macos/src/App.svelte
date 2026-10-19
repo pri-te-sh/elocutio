@@ -74,6 +74,9 @@
   let providerBusy = false;
   let providerMessage = "";
   let providerStatus: OpenRouterStatus | null = null;
+  let autoAnalyze = false;
+  let autoAnalysisBusy = false;
+  let autoAnalysisMessage = "";
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";
@@ -116,6 +119,31 @@
       model = await invoke<string>("get_provider_model");
     } catch (error) {
       providerMessage = String(error);
+    }
+  }
+
+  async function refreshAutoAnalyze() {
+    try {
+      autoAnalyze = await invoke<boolean>("get_auto_analyze");
+    } catch (error) {
+      autoAnalysisMessage = String(error);
+    }
+  }
+
+  async function saveAutoAnalyze() {
+    autoAnalysisBusy = true;
+    autoAnalysisMessage = "";
+    try {
+      autoAnalyze = await invoke<boolean>("set_auto_analyze", {
+        enabled: autoAnalyze,
+      });
+      autoAnalysisMessage = autoAnalyze
+        ? "Elocutio will analyze the focused field after you pause typing."
+        : "Automatic analysis is off.";
+    } catch (error) {
+      autoAnalysisMessage = String(error);
+    } finally {
+      autoAnalysisBusy = false;
     }
   }
 
@@ -294,6 +322,7 @@
     void refreshKey();
     void refreshOnboarding();
     void refreshModel();
+    void refreshAutoAnalyze();
     void refreshUsage();
   });
 </script>
@@ -365,7 +394,8 @@
       <div>
         <h2>Suggestions</h2>
         <p class="muted">
-          Local correctness checks run on your Mac. Model-backed suggestions arrive in M1.
+          Local correctness checks run on your Mac. Model-backed suggestions are available from the
+          floating AI action, or automatically after a pause if you opt in below.
         </p>
       </div>
       <span class:on={running} class:off={!running} class="status">
@@ -398,6 +428,23 @@
       {/if}
       <button class="ghost" onclick={refresh} disabled={busy}>Refresh</button>
     </div>
+
+    <label class="switch-row">
+      <input
+        type="checkbox"
+        bind:checked={autoAnalyze}
+        onchange={saveAutoAnalyze}
+        disabled={autoAnalysisBusy}
+      />
+      <span>
+        <strong>Analyze as I write</strong>
+        <span class="muted">Sends the focused field to OpenRouter after a pause. Off by default.</span>
+      </span>
+    </label>
+
+    {#if autoAnalysisMessage}
+      <p class="message">{autoAnalysisMessage}</p>
+    {/if}
 
     {#if message}
       <p class="message">{message}</p>
@@ -623,6 +670,24 @@
 </main>
 
 <style>
+  .switch-row {
+    display: flex;
+    gap: 0.65rem;
+    align-items: flex-start;
+    margin-top: 1rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.9rem;
+  }
+
+  .switch-row input {
+    margin-top: 0.2rem;
+  }
+
+  .switch-row strong,
+  .switch-row .muted {
+    display: block;
+  }
   main {
     max-width: 720px;
     margin: 0 auto;

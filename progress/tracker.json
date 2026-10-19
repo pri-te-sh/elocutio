@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T22:50:00Z",
+  "updatedAt": "2026-10-19T23:10:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -419,7 +419,7 @@
           "priority": "P1",
           "estimateDays": 1,
           "status": "in_progress",
-          "notes": "Provider/model selection and local usage summary are implemented. Per-app enablement, privacy controls, and the full settings IA remain."
+          "notes": "Provider model, key, usage, onboarding, and the opt-in Analyze as I write toggle are in Settings. Per-app enablement, privacy controls, and budget warnings remain."
         },
         {
           "id": "m1-keychain",

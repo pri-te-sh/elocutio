@@ -39,6 +39,8 @@ to follow [Semantic Versioning](https://semver.org/).
   opens the inherited card, and exposes the AI analysis action.
 - The floating widget has an **AI** action that requests field analysis from the
   main process, so the shortcut is optional.
+- Opt-in **Analyze as I write** setting: debounced, deduplicated analysis of the
+  focused field, off by default.
 - LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,

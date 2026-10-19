@@ -39,6 +39,8 @@ pub struct Config {
     pub auto_analyze: bool,
     /// Optional spending limit in USD for local usage warnings.
     pub budget_usd: Option<f64>,
+    /// Whether accepted suggestions may update the local voice profile.
+    pub learn_from_edits: bool,
 }
 
 impl Config {
@@ -60,6 +62,7 @@ impl Config {
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
             budget_usd: None,
+            learn_from_edits: false,
         }
     }
 
@@ -234,6 +237,7 @@ impl Config {
             "provider_model": self.provider_model,
             "auto_analyze": self.auto_analyze,
             "budget_usd": self.budget_usd,
+            "learn_from_edits": self.learn_from_edits,
         }))
     }
 
@@ -274,6 +278,8 @@ impl Config {
                 .unwrap_or_else(|| crate::openrouter::DEFAULT_MODEL.to_string()),
             auto_analyze: deserialize_optional_field(object, "auto_analyze")?.unwrap_or(false),
             budget_usd: deserialize_optional_field(object, "budget_usd")?.unwrap_or(None),
+            learn_from_edits: deserialize_optional_field(object, "learn_from_edits")?
+                .unwrap_or(false),
         })
     }
 }
@@ -343,6 +349,7 @@ mod tests {
         assert!(serialized.contains("budget_usd"));
         assert!(serialized.contains("provider_kind"));
         assert!(serialized.contains("provider_base_url"));
+        assert!(serialized.contains("learn_from_edits"));
     }
 
     #[test]
@@ -373,6 +380,7 @@ mod tests {
         assert_eq!(deserialized.budget_usd, config.budget_usd);
         assert_eq!(deserialized.provider_kind, config.provider_kind);
         assert_eq!(deserialized.provider_base_url, config.provider_base_url);
+        assert_eq!(deserialized.learn_from_edits, config.learn_from_edits);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&deserialized.serialize_main().unwrap())
                 .unwrap(),

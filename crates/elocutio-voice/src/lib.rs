@@ -302,6 +302,18 @@ pub fn voice_prompt_guidance(profile: &VoiceProfile) -> Option<String> {
     {
         lines.push("Prefer short, plain words.".to_string());
     }
+    if let Some(TraitValue::Bool(value)) = profile.trait_value("prefers_concise")
+        && *value
+    {
+        lines.push("Prefer concise phrasing; trim filler.".to_string());
+    }
+    if let Some(TraitValue::Bool(value)) = profile.trait_value("prefers_contractions") {
+        if *value {
+            lines.push("Use contractions where natural.".to_string());
+        } else {
+            lines.push("Avoid contractions unless already present.".to_string());
+        }
+    }
 
     if lines.is_empty() {
         return None;

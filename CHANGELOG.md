@@ -51,6 +51,8 @@ to follow [Semantic Versioning](https://semver.org/).
   guidance, and a Settings Voice card that stores no raw samples.
 - Provider choice: OpenRouter or an OpenAI-compatible base URL/key, with the
   same structured analysis and rewrite paths.
+- Opt-in voice learning from accepted edits: local accepted-replacement log,
+  concise/contraction traits, and style-card refresh.
 - LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,

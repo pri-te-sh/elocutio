@@ -2,7 +2,7 @@
 
 **Goal:** Elocutio learns how *you* write — tone, rhythm, diction, punctuation habits, greetings, sign-offs, and the phrases you avoid — and applies that voice to rewrites, drafts, replies, and tone adjustments. It improves from your feedback over time and can learn from writing you upload.
 
-**Status:** v0 implemented for uploaded samples: local analyzer, style card, rewrite guidance, and Settings Voice card. Feedback-driven learning and exemplar retrieval remain design-only.
+**Status:** v0 implemented: uploaded-sample analyzer, local style card, rewrite guidance, Settings Voice card, and opt-in accepted-edit feedback. Exemplar retrieval, trait overrides, and "sounds like me" ratings remain design-only.
 **Owner:** product + analysis engine
 **Related:** [PLAN](PLAN.md) · [ARCHITECTURE](ARCHITECTURE.md) · [PROMPTS](PROMPTS.md) · [PRIVACY](PRIVACY.md) · [DECISIONS](DECISIONS.md)
 

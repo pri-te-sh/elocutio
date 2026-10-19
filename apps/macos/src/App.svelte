@@ -122,6 +122,8 @@
   let voiceSamples = "";
   let voiceBusy = false;
   let voiceMessage = "";
+  let learnFromEdits = false;
+  let voiceFeedbackCount = 0;
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";
@@ -208,8 +210,25 @@
   async function refreshVoice() {
     try {
       voiceProfile = await invoke<VoiceProfile | null>("get_voice_profile");
+      learnFromEdits = await invoke<boolean>("get_learn_from_edits");
+      voiceFeedbackCount = await invoke<number>("get_voice_feedback_count");
     } catch (error) {
       voiceMessage = String(error);
+    }
+  }
+
+  async function setLearnFromEdits(enabled: boolean) {
+    voiceBusy = true;
+    voiceMessage = "";
+    try {
+      learnFromEdits = await invoke<boolean>("set_learn_from_edits", { enabled });
+      voiceMessage = enabled
+        ? "Elocutio will learn from accepted edits on this Mac."
+        : "Edit learning is off.";
+    } catch (error) {
+      voiceMessage = String(error);
+    } finally {
+      voiceBusy = false;
     }
   }
 
@@ -221,6 +240,7 @@
         text: voiceSamples,
         name: "My voice",
       });
+      voiceFeedbackCount = await invoke<number>("get_voice_feedback_count");
       voiceMessage = "Voice learned. Only the style card is stored; the samples were discarded.";
     } catch (error) {
       voiceMessage = String(error);
@@ -968,6 +988,22 @@
         </button>
       </div>
     {/if}
+
+    <label class="switch-row">
+      <input
+        type="checkbox"
+        checked={learnFromEdits}
+        onchange={(event) => setLearnFromEdits((event.currentTarget as HTMLInputElement).checked)}
+        disabled={voiceBusy}
+      />
+      <span>
+        <strong>Learn from my accepted edits</strong>
+        <span class="muted">
+          Off by default. Accepted edits stay local and update the style card; {voiceFeedbackCount}
+          recorded.
+        </span>
+      </span>
+    </label>
 
     {#if voiceMessage}
       <p class="message">{voiceMessage}</p>

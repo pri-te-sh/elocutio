@@ -496,6 +496,7 @@ pub fn run_highlighter(has_parent: bool) {
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
             budget_usd: None,
+            learn_from_edits: false,
         };
         *dictionary_linter.borrow_mut() = config.create_linter();
 
@@ -661,6 +662,7 @@ fn fetch_highlighter_config(
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
             budget_usd: None,
+            learn_from_edits: false,
         })
     })
 }

@@ -68,6 +68,9 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         learn_voice_samples,
         set_voice_enabled,
         clear_voice_profile,
+        get_learn_from_edits,
+        set_learn_from_edits,
+        get_voice_feedback_count,
         start_highlighter_service,
         stop_highlighter_service,
         launch_app,
@@ -678,7 +681,7 @@ fn request_accessibility_permission(
 
 #[tauri::command]
 fn get_voice_profile() -> Result<Option<elocutio_voice::VoiceProfile>, String> {
-    crate::voice::load()
+    crate::voice::refresh_feedback()
 }
 
 #[tauri::command]
@@ -706,6 +709,34 @@ fn set_voice_enabled(enabled: bool) -> Result<Option<elocutio_voice::VoiceProfil
 #[tauri::command]
 fn clear_voice_profile() -> Result<(), String> {
     crate::voice::clear()
+}
+
+#[tauri::command]
+async fn get_learn_from_edits(config: State<'_, Arc<Mutex<Config>>>) -> Result<bool, String> {
+    Ok(config.lock().await.learn_from_edits)
+}
+
+#[tauri::command]
+async fn set_learn_from_edits(
+    enabled: bool,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<bool, String> {
+    let mut config = config.lock().await;
+    config.learn_from_edits = enabled;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    crate::voice::set_learning_enabled(enabled)?;
+    if enabled {
+        let _ = crate::voice::refresh_feedback();
+    }
+    Ok(enabled)
+}
+
+#[tauri::command]
+fn get_voice_feedback_count() -> usize {
+    crate::voice::feedback_count()
 }
 
 #[tauri::command]

@@ -355,7 +355,16 @@ fn apply_suggestion_to_element(
     lint: Lint,
     suggestion: Suggestion,
 ) {
-    let mut chars = source_text.chars().collect::<Vec<_>>();
+    let source_chars = source_text.chars().collect::<Vec<_>>();
+    let original = lint.get_str(&source_chars);
+    let replacement = match &suggestion {
+        Suggestion::ReplaceWith(chars) => Some(chars.iter().collect::<String>()),
+        Suggestion::Remove => Some(String::new()),
+        Suggestion::InsertAfter(_) => None,
+    };
+    let category = format!("{:?}", lint.lint_kind);
+
+    let mut chars = source_chars;
     suggestion.apply(lint.span, &mut chars);
     let updated = chars.into_iter().collect::<String>();
     let value = CFString::new(&updated);
@@ -379,6 +388,12 @@ fn apply_suggestion_to_element(
                     .unwrap_or(updated);
                 if let Err(error) = crate::undo::record(pid, &source_text, &after) {
                     eprintln!("Could not record undo: {error}");
+                }
+                if let Some(replacement) = replacement
+                    && let Err(error) =
+                        crate::voice::record_accepted(&original, &replacement, &category)
+                {
+                    eprintln!("Could not record accepted edit: {error}");
                 }
             }
         }

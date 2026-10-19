@@ -48,6 +48,9 @@ mod debounce;
 pub mod highlighter;
 pub mod highlighter_service;
 pub mod lint_kind_color;
+mod llm_analysis;
+mod llm_cache;
+mod main_thread;
 mod openrouter;
 mod os_broker;
 pub mod rect;
@@ -98,7 +101,7 @@ fn platform_broker(
 }
 
 /// Registers the system-wide Rewrite Selection shortcut.
-fn register_rewrite_shortcut(app: &tauri::AppHandle) {
+fn register_shortcuts(app: &tauri::AppHandle) {
     let shortcut = Shortcut::new(Some(Modifiers::ALT | Modifiers::SUPER), Code::KeyE);
     let result = app
         .global_shortcut()
@@ -118,6 +121,25 @@ fn register_rewrite_shortcut(app: &tauri::AppHandle) {
 
     if let Err(error) = result {
         eprintln!("Could not register the Rewrite Selection shortcut: {error}");
+    }
+
+    let analyze_shortcut = Shortcut::new(Some(Modifiers::ALT | Modifiers::SUPER), Code::KeyA);
+    let analyze_result =
+        app.global_shortcut()
+            .on_shortcut(analyze_shortcut, |app, _shortcut, event| {
+                if event.state() != ShortcutState::Pressed {
+                    return;
+                }
+
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let result = crate::llm_analysis::analyze_focused_field(&app).await;
+                    crate::llm_analysis::notify_result(&app, result);
+                });
+            });
+
+    if let Err(error) = analyze_result {
+        eprintln!("Could not register the Analyze Field shortcut: {error}");
     }
 }
 
@@ -234,7 +256,7 @@ pub fn run_tauri() {
             app.manage(highlighter_service);
 
             set_up_tray_menu(app.handle())?;
-            register_rewrite_shortcut(app.handle());
+            register_shortcuts(app.handle());
             warm_app_search_cache(app.handle().clone());
 
             if is_first_launch || !onboarding_completed {

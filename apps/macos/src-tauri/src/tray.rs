@@ -17,6 +17,7 @@ fn tray_menu<R: Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<Menu<R>> {
     MenuBuilder::new(manager)
         .text("toggle-service", "Toggle Service")
         .text("rewrite-selection", "Rewrite Selection")
+        .text("analyze-field", "Analyze Field")
         .text("open-editor", "Open Editor")
         .text("settings", "Settings")
         .text("report-issue", "Report Issue")
@@ -51,6 +52,13 @@ pub fn set_up_tray_menu(app: &AppHandle) -> tauri::Result<()> {
                             Ok(message) => crate::rewrite::notify(&app, "Elocutio", &message),
                             Err(error) => crate::rewrite::notify(&app, "Rewrite failed", &error),
                         }
+                    });
+                }
+                "analyze-field" => {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let result = crate::llm_analysis::analyze_focused_field(&app).await;
+                        crate::llm_analysis::notify_result(&app, result);
                     });
                 }
                 "open-editor" => {

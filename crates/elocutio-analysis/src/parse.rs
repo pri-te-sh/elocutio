@@ -37,12 +37,17 @@ pub fn parse_response(content: &str, paragraphs: &[Paragraph]) -> Result<Analysi
     let mut rejected = Vec::new();
 
     for (index, edit) in envelope.suggestions.into_iter().enumerate() {
+        let paragraph_id = if edit.paragraph_id.trim().is_empty() && paragraphs.len() == 1 {
+            paragraphs[0].id.clone()
+        } else {
+            edit.paragraph_id.clone()
+        };
         let Some(paragraph) = paragraphs
             .iter()
-            .find(|paragraph| paragraph.id == edit.paragraph_id)
+            .find(|paragraph| paragraph.id == paragraph_id)
         else {
             rejected.push(RejectedEdit {
-                paragraph_id: edit.paragraph_id.clone(),
+                paragraph_id,
                 original: edit.original.clone(),
                 reason: "unknown paragraph id".to_string(),
             });
@@ -156,6 +161,16 @@ mod tests {
         let result = parse_response(&json, &paragraphs()).unwrap();
         assert!(result.suggestions.is_empty());
         assert_eq!(result.rejected.len(), 2);
+    }
+
+    #[test]
+    fn defaults_a_missing_id_for_a_single_paragraph() {
+        let json = payload(
+            r#"{"original":"Their going","replacement":"They're going","category":"grammar","severity":"high","explanation":"Agreement."}"#,
+        );
+        let result = parse_response(&json, &paragraphs()[..1]).unwrap();
+        assert_eq!(result.suggestions.len(), 1);
+        assert_eq!(result.suggestions[0].id, "p1:e1");
     }
 
     #[test]

@@ -26,6 +26,7 @@ use crate::{
 pub enum HitTarget {
     Lint(usize),
     Popup,
+    Widget,
     None,
 }
 
@@ -43,6 +44,9 @@ pub struct RenderState {
 
     /// Index of the suggestion row that the user hovered last in the visible popup.
     shown_suggestion: Option<usize>,
+
+    /// Screen-space bounds of the floating suggestion-count widget, if drawn.
+    widget_rect: Option<egui::Rect>,
 
     /// The flyout card's drawn offset from the list card's top, in points.
     current_sidebar_position: f32,
@@ -80,6 +84,7 @@ impl RenderState {
             last_lints: None,
             highlighted_lint: None,
             shown_suggestion: None,
+            widget_rect: None,
             current_sidebar_position: FIRST_ROW_OFFSET,
             last_render: None,
             markdown_cache: CommonMarkCache::default(),
@@ -133,6 +138,12 @@ impl RenderState {
     }
 
     /// Centralizes the close behavior so the popup close button only has to clear the selected lint.
+    pub fn open_widget(&mut self) {
+        if !self.lints().is_empty() {
+            self.set_highlighted_lint(Some(0));
+        }
+    }
+
     pub fn close_popup(&mut self) {
         self.highlighted_lint = None;
         self.shown_suggestion = None;
@@ -141,6 +152,10 @@ impl RenderState {
 
     /// Checks if a given position touches a hit target.
     pub fn hit_target_at_pos(&self, pos: egui::Pos2) -> HitTarget {
+        if self.widget_rect.is_some_and(|rect| rect.contains(pos)) {
+            return HitTarget::Widget;
+        }
+
         if self
             .popup_layout()
             .is_some_and(|layout| layout.contains(pos))
@@ -276,6 +291,65 @@ impl RenderState {
                 }
                 None => {}
             }
+        }
+
+        if let Some(first) = self.lints().first() {
+            let anchor = rect_bounds(&first.rect);
+            let size = egui::vec2(104.0, 36.0);
+            let mut pos = egui::pos2(anchor.right() + 8.0, anchor.top());
+            let screen = ui.ctx().content_rect();
+            if pos.x + size.x > screen.right() - 8.0 {
+                pos.x = anchor.left() - size.x - 8.0;
+            }
+            pos.x = pos.x.max(screen.left() + 8.0);
+            pos.y = pos
+                .y
+                .clamp(screen.top() + 8.0, screen.bottom() - size.y - 8.0);
+            let rect = egui::Rect::from_min_size(pos, size);
+            self.widget_rect = Some(rect);
+
+            let response = ui.interact(
+                rect,
+                ui.id().with("elocutio-suggestion-widget"),
+                egui::Sense::click(),
+            );
+            let fill = if response.hovered() {
+                egui::Color32::from_rgb(0xf2, 0xf3, 0xff)
+            } else {
+                egui::Color32::WHITE
+            };
+            let border = egui::Color32::from_rgb(0xd0, 0xd7, 0xde);
+            ui.painter()
+                .rect_filled(rect, egui::CornerRadius::same(8), fill);
+            ui.painter().rect_stroke(
+                rect,
+                egui::CornerRadius::same(8),
+                egui::Stroke::new(1.0_f32, border),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(
+                egui::pos2(rect.left() + 14.0, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                "❞",
+                egui::FontId::proportional(18.0),
+                egui::Color32::from_rgb(0x19, 0x1f, 0x70),
+            );
+            ui.painter().text(
+                egui::pos2(rect.right() - 14.0, rect.center().y),
+                egui::Align2::RIGHT_CENTER,
+                self.lints().len().to_string(),
+                egui::FontId::proportional(14.0),
+                egui::Color32::from_rgb(0x1f, 0x23, 0x28),
+            );
+
+            if response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                self.open_widget();
+            }
+        } else {
+            self.widget_rect = None;
         }
     }
 }

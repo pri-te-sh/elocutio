@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T19:38:00Z",
+  "updatedAt": "2026-10-19T21:30:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -388,7 +388,8 @@
             "m1-pipeline",
             "m1-providers"
           ],
-          "status": "planned"
+          "status": "in_progress",
+          "notes": "LLM suggestions are merged into the existing card and overlapping local spans are suppressed. Confidence/severity ranking and an explicit local-vs-LLM policy remain."
         },
         {
           "id": "m1-card",
@@ -399,8 +400,8 @@
           "dependsOn": [
             "m0-build"
           ],
-          "status": "in_progress",
-          "notes": "The settings Analyze card renders LLM suggestions with category/severity/resolution and explanations. Merging them into the overlay card, accept/dismiss, and system-wide apply remain."
+          "status": "done",
+          "notes": "The inherited card renders local + cached LLM suggestions with accept/dismiss/explain. A compact white widget next to the first underline shows the count and opens the card without stealing focus."
         },
         {
           "id": "m1-onboarding",

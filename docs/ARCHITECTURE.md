@@ -790,7 +790,8 @@ Clipboard safety:
 - AX and `NSPasteboard` work is marshalled to the Tauri main thread; running it on a tokio worker raised a foreign exception and aborted the app in testing.
 - The overlay whitelist is TextEdit, Notes, and Safari for M0. Chrome/Electron and Mail are excluded from AX tree probing until the M3 extension or Mail text-bounds fallback, because probing them can abort the highlighter.
 - Secure input is refused via `IsSecureEventInputEnabled()` and `AXSubrole == AXSecureTextField`.
-- **Not yet:** rich/non-text clipboard restore, configurable shortcut, read-back diff/undo UI, and an automated AX harness.
+- **LLM overlay bridge (M1):** the main process reads the focused field and publishes validated suggestions to `llm-cache.json` keyed by pid + text hash. The highlighter reads that cache, resolves each suggestion to a char span, asks AX for geometry, and merges a synthetic Harper `Lint` into the inherited card. A compact white widget next to the first underline shows the count and opens the card.
+- **Not yet:** automatic analysis, local-vs-LLM ranking, configurable shortcut, rich clipboard restore, read-back diff/undo UI, and an automated AX harness.
 
 Caret/selection:
 

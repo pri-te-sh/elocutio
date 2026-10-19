@@ -33,7 +33,7 @@ use std::{
     time::Instant,
 };
 
-use crate::os_broker::{AccessibilityPermissionStatus, AppSearchResult, OsBroker};
+use crate::os_broker::{AccessibilityPermissionStatus, AppSearchResult, FocusedText, OsBroker};
 use crate::rect::ActionableLint;
 
 use self::accessibility_activation::{
@@ -478,7 +478,14 @@ impl OsBroker for MacBroker {
         };
 
         let walker = TreeWalker::new();
-        let collector = RectCollector::new(lint_text);
+        let cached = match crate::llm_cache::read() {
+            Ok(cached) => cached,
+            Err(error) => {
+                eprintln!("LLM cache read failed: {error}");
+                None
+            }
+        };
+        let collector = RectCollector::new(lint_text, cached, pid);
 
         walker.walk(&focused, &collector);
 
@@ -491,6 +498,41 @@ impl OsBroker for MacBroker {
             ax_string_attribute(&focused, "AXSelectedText").map_err(|error| error.to_string())?;
 
         Ok((!selected.is_empty()).then_some(selected))
+    }
+
+    fn focused_text(&mut self) -> Result<Option<FocusedText>, String> {
+        if unsafe { IsSecureEventInputEnabled() } {
+            return Err("Secure input is active; refusing to read the focused field.".into());
+        }
+
+        let pid = focused_window_pid::focused_window_pid().map_err(|error| error.to_string())?;
+        let bundle_id = bundle_identifier_for_pid(pid)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Could not identify the focused app bundle.".to_string())?;
+        let app = AXUIElement::application(pid);
+        let element = ax_element_attribute(&app, kAXFocusedUIElementAttribute)
+            .map_err(|error| error.to_string())?;
+
+        if !is_supported_text_element(&element) {
+            return Ok(None);
+        }
+        if ax_string_attribute(&element, "AXSubrole")
+            .map(|subrole| subrole == "AXSecureTextField")
+            .unwrap_or(false)
+        {
+            return Err("Refusing to read a secure text field.".into());
+        }
+
+        let text = ax_string_attribute(&element, "AXValue").map_err(|error| error.to_string())?;
+        if text.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(FocusedText {
+            pid,
+            bundle_id,
+            text,
+        }))
     }
 
     fn replace_selection_via_paste(&mut self, replacement: &str) -> Result<bool, String> {

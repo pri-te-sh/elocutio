@@ -92,6 +92,7 @@ apps/macos/
   system-wide **Rewrite Selection** tray action using pasteboard + ⌘V with
   read-back verification and clipboard restore.
 - Added macOS notifications for rewrite success/failure.
+- Added the floating Harper-style suggestion widget and the LLM-cache bridge into the overlay card.
 - Added the structured analysis pipeline: paragraph chunking, prompt/schema,
   JSON validation, exact/normalized/fuzzy span resolution, dedupe, and rejected-edit reporting.
 - Added provider/model persistence and a local metadata-only usage/cost log.
@@ -122,8 +123,9 @@ apps/macos/
   remain M1/M2.
 - **Usage scope:** the log is local and metadata-only; the Usage card sums all
   entries, not a calendar month.
-- **LLM overlay:** structured analysis is preview-only in settings; merging LLM
-  suggestions into the overlay card and applying them system-wide is next.
+- **LLM overlay:** validated LLM suggestions merge into the focused field’s
+  inherited card via the cache bridge; the floating widget opens that card.
+  Ranking local vs. LLM suggestions and an in-widget Analyze action remain.
 - **Unsigned debug build:** no notarization, updater, or release packaging yet.
 
 ## Tests and checks

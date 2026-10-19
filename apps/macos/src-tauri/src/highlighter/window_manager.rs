@@ -19,6 +19,7 @@ use crate::os_broker::{LintText, OsBroker};
 use crate::rect::ActionableLint;
 
 const CONFIG_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const RECT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Owns the winit event loop and the overlay windows created for each monitor.
 ///
@@ -173,7 +174,7 @@ impl WindowManagerApp {
 
         self.hovered_lint = match hit_target {
             HitTarget::Lint(index) => Some(index),
-            HitTarget::Popup | HitTarget::None => None,
+            HitTarget::Widget | HitTarget::Popup | HitTarget::None => None,
         };
 
         let should_enable_hittest = !matches!(hit_target, HitTarget::None);
@@ -200,11 +201,13 @@ impl WindowManagerApp {
             return;
         };
 
-        let HitTarget::Lint(index) = self.render_state.hit_target_at_pos(cursor_pos) else {
-            return;
-        };
-
-        self.render_state.set_highlighted_lint(Some(index));
+        match self.render_state.hit_target_at_pos(cursor_pos) {
+            HitTarget::Lint(index) => {
+                self.render_state.set_highlighted_lint(Some(index));
+            }
+            HitTarget::Widget => self.render_state.open_widget(),
+            HitTarget::Popup | HitTarget::None => return,
+        }
 
         for window in &self.windows {
             window.request_redraw();
@@ -224,6 +227,10 @@ impl ApplicationHandler for WindowManagerApp {
         }
 
         self.update_cursor_hittest(event_loop);
+
+        // Wake even when the user is not typing so a cache update from the
+        // main process (Analyze Field) becomes visible without an extra event.
+        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + RECT_POLL_INTERVAL));
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {

@@ -6,6 +6,13 @@ use crate::rect::ActionableLint;
 
 pub type LintText = Box<dyn FnMut(&str) -> BTreeMap<String, Vec<Lint>>>;
 
+#[derive(Debug, Clone, Serialize)]
+pub struct FocusedText {
+    pub pid: i32,
+    pub bundle_id: String,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AccessibilityPermissionStatus {
     Granted,
@@ -84,6 +91,11 @@ pub trait OsBroker {
     /// replacement was observed in the field afterwards.
     fn replace_selection_via_paste(&mut self, _replacement: &str) -> Result<bool, String> {
         Err("This platform does not support paste replacement yet.".into())
+    }
+
+    /// Read the full value of the focused editable field for explicit analysis.
+    fn focused_text(&mut self) -> Result<Option<FocusedText>, String> {
+        Ok(None)
     }
 }
 

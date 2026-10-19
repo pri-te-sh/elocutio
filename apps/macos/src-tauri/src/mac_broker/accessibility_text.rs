@@ -10,7 +10,10 @@ use accessibility_sys::{
 use core::{ffi::c_void, mem::MaybeUninit};
 use core_foundation::base::{CFRange, CFType, TCFType};
 use core_foundation::string::CFString;
-use harper_core::linting::{Lint, Suggestion};
+use harper_core::{
+    Span,
+    linting::{Lint, LintKind, Suggestion},
+};
 use objc2_foundation::NSRect;
 use std::{
     cell::{Cell, RefCell},
@@ -18,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::llm_cache::{self, CachedAnalysis, CachedSuggestion};
 use crate::rect::{ActionableLint, Rect};
 
 use super::LintCallback;
@@ -145,6 +149,8 @@ pub struct RectCollector<'a> {
     read_failed: Cell<bool>,
     visited: Cell<usize>,
     started: Instant,
+    pid: i32,
+    cached: Option<CachedAnalysis>,
     lint_text: RefCell<&'a mut LintCallback<'a>>,
 }
 
@@ -204,19 +210,68 @@ impl TreeVisitor for RectCollector<'_> {
             }
         }
 
+        if let Some(cached) = &self.cached
+            && cached.pid == self.pid
+            && cached.text_hash == llm_cache::text_hash(&string)
+        {
+            for suggestion in &cached.suggestions {
+                if suggestion.char_end > string.chars().count()
+                    || suggestion.char_start >= suggestion.char_end
+                    || rects.iter().any(|existing| {
+                        existing.lint.span.start < suggestion.char_end
+                            && suggestion.char_start < existing.lint.span.end
+                    })
+                {
+                    continue;
+                }
+
+                let Some(rect) = element_rect_for_text_range_with_fallback(
+                    element,
+                    &string,
+                    suggestion.char_start,
+                    suggestion.char_end.saturating_sub(suggestion.char_start),
+                ) else {
+                    continue;
+                };
+
+                let lint = cached_lint(suggestion);
+                let element = element.clone();
+                let source_text = string.clone();
+                let suggestion_source_text = string.clone();
+                let suggestion_lint = lint.clone();
+
+                rects.push(ActionableLint::new(
+                    rect,
+                    format!("llm:{}", category_name(suggestion)),
+                    lint,
+                    source_text,
+                    move |suggestion| {
+                        apply_suggestion_to_element(
+                            element,
+                            suggestion_source_text,
+                            suggestion_lint,
+                            suggestion,
+                        );
+                    },
+                ));
+            }
+        }
+
         TreeWalkerFlow::Continue
     }
     fn exit_element(&self, _element: &AXUIElement) {}
 }
 
 impl<'a> RectCollector<'a> {
-    pub fn new(lint_text: &'a mut LintCallback) -> Self {
+    pub fn new(lint_text: &'a mut LintCallback, cached: Option<CachedAnalysis>, pid: i32) -> Self {
         Self {
             rects: RefCell::new(Vec::new()),
             expected_rect_count: Cell::new(0),
             read_failed: Cell::new(false),
             visited: Cell::new(0),
             started: Instant::now(),
+            pid,
+            cached,
             lint_text: RefCell::new(lint_text),
         }
     }
@@ -229,6 +284,52 @@ impl<'a> RectCollector<'a> {
         } else {
             Some(rects)
         }
+    }
+}
+
+fn cached_lint(suggestion: &CachedSuggestion) -> Lint {
+    let lint_kind = match suggestion.category {
+        elocutio_core::Category::Grammar => LintKind::Grammar,
+        elocutio_core::Category::Spelling => LintKind::Spelling,
+        elocutio_core::Category::Punctuation => LintKind::Punctuation,
+        elocutio_core::Category::Capitalization => LintKind::Capitalization,
+        elocutio_core::Category::Clarity => LintKind::Enhancement,
+        elocutio_core::Category::Conciseness => LintKind::Redundancy,
+        elocutio_core::Category::WordChoice => LintKind::WordChoice,
+        elocutio_core::Category::Consistency => LintKind::Style,
+        elocutio_core::Category::Tone => LintKind::Style,
+        elocutio_core::Category::Style => LintKind::Style,
+        elocutio_core::Category::Formatting => LintKind::Formatting,
+    };
+
+    let replacement = if suggestion.replacement.is_empty() {
+        Suggestion::Remove
+    } else {
+        Suggestion::ReplaceWith(suggestion.replacement.chars().collect())
+    };
+
+    Lint {
+        span: Span::new(suggestion.char_start, suggestion.char_end),
+        lint_kind,
+        suggestions: vec![replacement],
+        message: suggestion.explanation.clone(),
+        priority: 10,
+    }
+}
+
+fn category_name(suggestion: &CachedSuggestion) -> &'static str {
+    match suggestion.category {
+        elocutio_core::Category::Grammar => "grammar",
+        elocutio_core::Category::Spelling => "spelling",
+        elocutio_core::Category::Punctuation => "punctuation",
+        elocutio_core::Category::Capitalization => "capitalization",
+        elocutio_core::Category::Clarity => "clarity",
+        elocutio_core::Category::Conciseness => "conciseness",
+        elocutio_core::Category::WordChoice => "word_choice",
+        elocutio_core::Category::Consistency => "consistency",
+        elocutio_core::Category::Tone => "tone",
+        elocutio_core::Category::Style => "style",
+        elocutio_core::Category::Formatting => "formatting",
     }
 }
 

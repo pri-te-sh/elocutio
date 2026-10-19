@@ -11,6 +11,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawEdit {
+    #[serde(default)]
     pub paragraph_id: String,
     /// Verbatim substring of the paragraph.
     pub original: String,

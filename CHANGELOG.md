@@ -34,6 +34,10 @@ to follow [Semantic Versioning](https://semver.org/).
 - Keychain-backed OpenRouter key validation and an in-app rewrite path.
 - Onboarding checklist for Accessibility, OpenRouter key, and the rewrite
   shortcut; completion is persisted so setup opens only once.
+- Floating Harper-style suggestion widget anchored next to the focused text,
+  showing the live suggestion count and opening the inherited card.
+- LLM-cache bridge: Analyze Field (⌥⌘A or tray) publishes validated suggestions;
+  the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,
   exact/normalized/fuzzy span resolution, validation, dedupe, and
   rejected-edit reporting, with 18 tests.
@@ -86,6 +90,7 @@ to follow [Semantic Versioning](https://semver.org/).
 - Chrome and Mail do not show the overlay yet; Chrome needs the M3 extension
   path and Mail needs a text-bounds fallback.
 - The Rewrite Selection shortcut is fixed at ⌥⌘E; it is not configurable yet.
+- LLM suggestions require Analyze Field; there is no automatic analysis yet.
 - Clipboard restore handles text only; non-text pasteboard items are replaced.
 - M0 uses an unsigned debug app; no notarized release or updater yet.
 

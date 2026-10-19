@@ -32,9 +32,13 @@ to follow [Semantic Versioning](https://semver.org/).
 - M0 macOS shell: rebranded Tauri app, vendored Harper subset under
   `vendor/harper/`, generated app/menu-bar icons, and a minimal Svelte setup UI.
 - Keychain-backed OpenRouter key validation and an in-app rewrite path.
-- System-wide **Rewrite Selection** tray action using pasteboard + ⌘V with
-  read-back verification, clipboard restore, and macOS notifications. Verified
-  in TextEdit, Safari, and Chrome.
+- System-wide **Rewrite Selection** action via **⌥⌘E** or the tray menu, using
+  a transient/concealed pasteboard string, ⌘V, read-back verification, text
+  clipboard restore, and macOS notifications. Verified in TextEdit, Safari, and
+  Chrome.
+- AX and `NSPasteboard` work is marshalled to the main thread; the M0 overlay is
+  whitelisted to TextEdit, Notes, and Safari to avoid foreign-exception aborts
+  from Chrome/Mail AX trees.
 - Controlled Accessibility test page (`apps/macos/test/overlay.html`) and
   [`docs/M0-VERIFICATION.md`](docs/M0-VERIFICATION.md).
 - Brand guide v1.1 with **Soft Indigo `#B8BEFF`** for dark-mode accents and
@@ -72,7 +76,7 @@ to follow [Semantic Versioning](https://semver.org/).
 
 - Chrome and Mail do not show the overlay yet; Chrome needs the M3 extension
   path and Mail needs a text-bounds fallback.
-- Rewrite Selection has no global shortcut yet; it is in the tray menu only.
+- The Rewrite Selection shortcut is fixed at ⌥⌘E; it is not configurable yet.
 - Clipboard restore handles text only; non-text pasteboard items are replaced.
 - M0 uses an unsigned debug app; no notarized release or updater yet.
 

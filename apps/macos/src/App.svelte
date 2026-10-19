@@ -398,6 +398,17 @@
     font-size: 13px;
   }
 
+  kbd {
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    padding: 1px 5px;
+    font: inherit;
+    font-size: 12px;
+    background: var(--warm-paper);
+    color: var(--near-black);
+  }
+
   .status {
     flex: none;
     border-radius: 999px;

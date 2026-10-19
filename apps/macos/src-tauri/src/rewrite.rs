@@ -6,7 +6,7 @@
 
 use std::sync::RwLock;
 
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::os_broker::OsBroker;
@@ -14,16 +14,36 @@ use crate::{PlatformBroker, openrouter};
 
 const MAX_SELECTION_CHARS: usize = 12_000;
 
+/// Runs an AppKit/Accessibility closure on the main thread.
+///
+/// `NSPasteboard` and Accessibility must not be touched from a tokio worker;
+/// doing so can raise a foreign exception and abort the process.
+fn on_main<T, F>(app: &AppHandle, f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&AppHandle) -> T + Send + 'static,
+{
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let app_for_thread = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = sender.send(f(&app_for_thread));
+    })
+    .map_err(|error| format!("Could not schedule main-thread work: {error}"))?;
+
+    receiver
+        .recv()
+        .map_err(|error| format!("Main-thread work did not return: {error}"))
+}
+
 pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String> {
-    let text = {
+    let text = on_main(app, |app| {
         let state = app.state::<RwLock<PlatformBroker>>();
         let mut broker = state
             .write()
             .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
-        broker
-            .selected_text()?
-            .ok_or_else(|| "Select text in another app first.".to_string())?
-    };
+        broker.selected_text()
+    })??;
+    let text = text.ok_or_else(|| "Select text in another app first.".to_string())?;
 
     if text.chars().count() > MAX_SELECTION_CHARS {
         return Err(format!(
@@ -35,13 +55,15 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
 
     let result = openrouter::rewrite(&text, None).await?;
 
-    let verified = {
+    let replacement = result.text;
+    let replacement_for_paste = replacement.clone();
+    let verified = on_main(app, move |app| {
         let state = app.state::<RwLock<PlatformBroker>>();
         let mut broker = state
             .write()
             .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
-        broker.replace_selection_via_paste(&result.text)?
-    };
+        broker.replace_selection_via_paste(&replacement_for_paste)
+    })??;
 
     if !verified {
         return Err(
@@ -51,7 +73,7 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
 
     Ok(format!(
         "Replaced the selection with {} characters using {}.",
-        result.text.chars().count(),
+        replacement.chars().count(),
         result.model
     ))
 }

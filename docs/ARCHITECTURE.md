@@ -785,10 +785,12 @@ Clipboard safety:
 
 **M1 implementation status:**
 
-- The explicit **Rewrite Selection** action (tray menu) reads `AXSelectedText`, calls the provider in the main process, writes the replacement to the pasteboard, synthesizes ⌘V, waits 180 ms, verifies the replacement in `AXValue`, and restores the previous clipboard text. Verified in TextEdit, Safari, and Chrome.
+- The explicit **Rewrite Selection** action (⌥⌘E or tray menu) reads `AXSelectedText`, calls the provider in the main process, writes the replacement to a transient/concealed pasteboard string, synthesizes ⌘V, waits 180 ms, verifies the replacement in `AXValue`, and restores the previous clipboard text. Verified in TextEdit, Safari, and Chrome.
 - The local-lint card still uses the AX fast path (`AXUIElementSetAttributeValue`) because it needs span-level replacement, not whole-selection paste.
+- AX and `NSPasteboard` work is marshalled to the Tauri main thread; running it on a tokio worker raised a foreign exception and aborted the app in testing.
+- The overlay whitelist is TextEdit, Notes, and Safari for M0. Chrome/Electron and Mail are excluded from AX tree probing until the M3 extension or Mail text-bounds fallback, because probing them can abort the highlighter.
 - Secure input is refused via `IsSecureEventInputEnabled()` and `AXSubrole == AXSecureTextField`.
-- **Not yet:** transient/concealed pasteboard types, item-level clipboard restore, global shortcut, and read-back diff/undo UI. Those are M1 hardening tasks.
+- **Not yet:** rich/non-text clipboard restore, configurable shortcut, read-back diff/undo UI, and an automated AX harness.
 
 Caret/selection:
 

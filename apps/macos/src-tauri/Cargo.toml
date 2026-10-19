@@ -44,12 +44,12 @@ tokio = { version = "1.52.1", default-features = false, features = [
 ] }
 tauri-plugin-os = "2.3.2"
 tauri-plugin-notification = "2"
+tauri-plugin-global-shortcut = "2"
 cached = "2.0.2"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 is-macro = "0.3.7"
 keyring = { version = "3.6", features = ["apple-native"] }
-arboard = "3.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 accessibility = "0.2.0"
@@ -63,11 +63,14 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSImage",
     "NSRunningApplication",
     "NSWorkspace",
+    "NSPasteboard",
 ] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "std",
+    "NSArray",
     "NSData",
     "NSGeometry",
+    "NSString",
     "objc2-core-foundation",
 ] }
 accessibility-sys = "0.2.0"

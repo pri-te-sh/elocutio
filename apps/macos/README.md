@@ -92,6 +92,10 @@ apps/macos/
   system-wide **Rewrite Selection** tray action using pasteboard + ⌘V with
   read-back verification and clipboard restore.
 - Added macOS notifications for rewrite success/failure.
+- Added the global **⌥⌘E** shortcut, transient/concealed pasteboard writes, and
+  clipboard text restore.
+- Marshalled Accessibility and pasteboard work to the macOS main thread and
+  whitelisted overlay apps for M0 stability.
 - Removed the inherited updater for M0; it returns in M5 with our own minisign
   keypair.
 - Added AX tree-walk bounds and activation scoping so large Mail/Chrome trees
@@ -105,10 +109,9 @@ apps/macos/
   (M3) as the real browser path.
 - **Mail:** exposes a supported text element but no usable text-range bounds.
   Keep it out of the supported matrix until the fallback lands.
-- **Global shortcut:** Rewrite Selection is in the tray menu only; add a
-  configurable shortcut in M1.
+- **Shortcut configuration:** ⌥⌘E is fixed; make it configurable in settings.
 - **Clipboard fidelity:** only text is restored after the paste; non-text
-  pasteboard items are replaced. Use a transient pasteboard type in M1.
+  pasteboard items are replaced. Use a safe item reconstruction path in M1.
 - **Settings/onboarding:** the developer shell opens setup on every launch
   because onboarding is not completed; wire the real onboarding in M1.
 - **Unsigned debug build:** no notarization, updater, or release packaging yet.

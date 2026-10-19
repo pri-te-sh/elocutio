@@ -321,6 +321,14 @@ impl MacBroker {
     }
 }
 
+/// M0 overlay support. Expand only after the app passes the manual matrix.
+fn overlay_supported(bundle_id: &str) -> bool {
+    matches!(
+        bundle_id,
+        "com.apple.TextEdit" | "com.apple.Notes" | "com.apple.Safari"
+    )
+}
+
 /// Whether an app needs an accessibility activation nudge to expose text geometry.
 fn needs_accessibility_activation(bundle_id: &str) -> bool {
     const ACTIVATION_BUNDLES: &[&str] = &[
@@ -444,6 +452,16 @@ impl OsBroker for MacBroker {
             return Some(Vec::new());
         }
 
+        // M0 overlay whitelist. Chrome/Electron and Mail need a separate
+        // extension or text-bounds fallback; probing their AX trees can raise a
+        // foreign exception and abort the highlighter. Keep them out until the
+        // M3 extension / Mail fallback lands.
+        if !overlay_supported(&bundle_identifier) {
+            self.window_movement = None;
+            self.reset_accessibility_activation();
+            return Some(Vec::new());
+        }
+
         // Hide highlights while window is moving to avoid "sliding" behavior.
         if self.window_is_moving(pid) {
             return Some(Vec::new());
@@ -484,12 +502,7 @@ impl OsBroker for MacBroker {
             return Err("Select some text in the target app first.".into());
         }
 
-        let mut clipboard = arboard::Clipboard::new()
-            .map_err(|error| format!("Could not open the clipboard: {error}"))?;
-        let original_text = clipboard.get_text().ok();
-        clipboard
-            .set_text(replacement.to_string())
-            .map_err(|error| format!("Could not write the clipboard: {error}"))?;
+        let clipboard_snapshot = crate::pasteboard::write_transient(replacement)?;
 
         paste_command_v()?;
 
@@ -500,11 +513,7 @@ impl OsBroker for MacBroker {
             .map(|value| value.contains(replacement))
             .unwrap_or(false);
 
-        if let Some(original_text) = original_text {
-            if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                let _ = clipboard.set_text(original_text);
-            }
-        }
+        crate::pasteboard::restore(clipboard_snapshot);
 
         Ok(verified)
     }

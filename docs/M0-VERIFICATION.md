@@ -4,7 +4,7 @@
 **Machine:** macOS 26.6.2 (25G83), arm64
 **Build:** debug `.app` (unsigned), `apps/macos/src-tauri/target/debug/bundle/macos/Elocutio.app`
 **Upstream:** Harper v2.13.0, commit `f4ebc61d77df1fc00b6aa8bc604e91af3534dad1`
-**Result:** **Partial.** The rebranded app builds and runs, the local overlay and click-to-replace work in native AppKit apps, OpenRouter key validation works, and the system-wide **Rewrite Selection** write ladder (pasteboard + ⌘V, read-back verification) works in TextEdit, Safari, and Chrome. Chrome and Mail do not yet produce an overlay, and there is no global shortcut yet.
+**Result:** **Partial.** The rebranded app builds and runs, the local overlay and click-to-replace work in native AppKit apps, OpenRouter key validation works, and the system-wide **Rewrite Selection** write ladder (pasteboard + ⌘V, read-back verification) works in TextEdit, Safari, and Chrome via **⌥⌘E** and the tray menu. Chrome and Mail do not yet produce an overlay.
 
 ## Build and launch
 
@@ -52,13 +52,15 @@ Test method: type a deliberate typo (`tehre`) into a focused text field and look
 - [x] **System-wide AI rewrite** replaces a selection through the pasteboard + ⌘V write ladder with read-back verification.
 - [x] The prior clipboard text is restored after the paste.
 - [x] A macOS notification reports success or failure.
-- [ ] A global keyboard shortcut is not wired yet; the action is in the tray menu.
+- [x] **⌥⌘E** is registered as the global Rewrite Selection shortcut; the tray action remains available.
+- [x] The previous clipboard text is restored (verified with a sentinel).
+- [ ] Rich/non-text pasteboard items are not restored yet.
 
 The click path uses the AX fast path (`element.set_value`) for local lints. The explicit rewrite uses the pasteboard + ⌘V ladder, which is the required path for Chromium/Electron.
 
 ## Write-ladder matrix
 
-Method: select text, choose **Elocutio → Rewrite Selection** from the menu-bar menu, and check that the selected text is replaced.
+Method: select text, press **⌥⌘E** or choose **Elocutio → Rewrite Selection** from the menu-bar menu, and check that the selected text is replaced.
 
 | App | Result | Notes |
 | --- | --- | --- |
@@ -67,7 +69,9 @@ Method: select text, choose **Elocutio → Rewrite Selection** from the menu-bar
 | **Chrome** | **Pass** | Local test page textarea replaced even though the overlay does not render in Chrome. |
 | **Mail** | Not tested | Overlay is already unsupported; paste replacement may work, but do not claim it until tested. |
 
-The write ladder is independent of the overlay: it reads `AXSelectedText`, writes the replacement to the pasteboard, synthesizes ⌘V, waits 180 ms, verifies the replacement in `AXValue`, and restores the prior clipboard text. Selection length is capped at 12,000 characters. Secure input is refused via `IsSecureEventInputEnabled()` and `AXSubrole == AXSecureTextField`.
+The write ladder is independent of the overlay: it reads `AXSelectedText`, writes the replacement to a transient/concealed pasteboard string, synthesizes ⌘V, waits 180 ms, verifies the replacement in `AXValue`, and restores the prior clipboard text. Selection length is capped at 12,000 characters. Secure input is refused via `IsSecureEventInputEnabled()` and `AXSubrole == AXSecureTextField`.
+
+The AX and pasteboard work runs on the Tauri main thread; calling AppKit from a tokio worker caused a foreign-exception abort in testing. The highlighter overlay is also whitelisted to TextEdit, Notes, and Safari while Chrome/Electron and Mail are excluded, because probing their AX trees can abort the highlighter. These are deliberate M0 stability guards, not final coverage.
 
 ## OpenRouter
 
@@ -92,8 +96,8 @@ The write ladder is independent of the overlay: it reads `AXSelectedText`, write
 
 1. **Mail:** expose usable text-range bounds (or fall back to the static-text collector) before claiming support. Until then, keep Mail out of the supported matrix.
 2. **Chrome:** test with Grammarly disabled; build the MV3 extension + local bridge (M3) as the reliable browser path. Do not claim Chrome support from the AX path.
-3. **Global shortcut:** add a configurable shortcut for Rewrite Selection; the tray action is the current entry point.
-4. **Clipboard fidelity:** the current implementation restores text only. Preserve non-text pasteboard items or use a transient pasteboard type for the rewrite.
+3. **Configurable shortcut:** make the ⌥⌘E binding configurable and expose it in settings.
+4. **Clipboard fidelity:** the current implementation restores text only. Preserve non-text pasteboard items with a safe reconstruction path.
 5. **Undo/focus regression tests:** add a manual script and, if possible, an automated AX harness.
 6. **Signed build:** M0 uses an unsigned debug `.app`. Full Xcode and Developer ID signing are required for TCC-stable distribution.
 7. **Updater:** removed for M0. Re-add in M5 with a real minisign keypair, never Harper's.
@@ -101,7 +105,7 @@ The write ladder is independent of the overlay: it reads `AXSelectedText`, write
 
 ## Notes on M0 completion
 
-The M0 acceptance gate has two parts still open: the five-app overlay matrix (3/5) and the inherited security audit. The write-ladder and key-validation gates now pass. Keep M0 as **in progress** in the tracker until Chrome/Mail and the audit are resolved.
+The M0 acceptance gate has two parts still open: the five-app overlay matrix (3/5) and the inherited security audit. The write-ladder, shortcut, clipboard-restore, and key-validation gates now pass. Keep M0 as **in progress** in the tracker until Chrome/Mail and the audit are resolved.
 
 ## Commands used
 

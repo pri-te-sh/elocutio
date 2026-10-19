@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T18:35:00Z",
+  "updatedAt": "2026-10-19T18:55:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -231,7 +231,7 @@
           "priority": "P0",
           "estimateDays": 1.5,
           "status": "in_progress",
-          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay; Chrome and Mail do not produce overlays yet (Chrome needs the M3 extension, Mail needs a text-bounds fallback). The write ladder passes in TextEdit, Safari, and Chrome.",
+          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay; Chrome and Mail are excluded from AX probing for M0 stability (Chrome needs the M3 extension, Mail needs a text-bounds fallback). Rewrite Selection works in TextEdit, Safari, and Chrome.",
           "dependsOn": [
             "m0-fork"
           ],
@@ -274,7 +274,7 @@
           "area": "build",
           "priority": "P0",
           "estimateDays": 1,
-          "notes": "System-wide Rewrite Selection works through the pasteboard + \u2318V ladder with read-back verification and clipboard restore in TextEdit, Safari, and Chrome. The overlay still uses the AX fast path for local lints. A global shortcut is next.",
+          "notes": "System-wide Rewrite Selection works via \u2325\u2318E or the tray menu using a transient/concealed pasteboard string, \u2318V, read-back verification, and text clipboard restore in TextEdit, Safari, and Chrome. The overlay uses the AX fast path for local lints.",
           "dependsOn": [
             "m0-build",
             "m0-llm"

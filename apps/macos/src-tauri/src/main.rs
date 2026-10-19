@@ -28,6 +28,7 @@ use std::{
     sync::{Arc, Mutex as StdMutex, RwLock},
 };
 use tauri::Manager as _;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tracing::{Level, error};
 use tracing_subscriber::FmtSubscriber;
 
@@ -54,6 +55,8 @@ mod rewrite;
 
 #[cfg(target_os = "macos")]
 mod mac_broker;
+#[cfg(target_os = "macos")]
+mod pasteboard;
 
 #[cfg(target_os = "windows")]
 mod windows_broker;
@@ -90,6 +93,30 @@ fn platform_broker(
     {
         let _ = is_integration_enabled;
         PlatformBroker::default()
+    }
+}
+
+/// Registers the system-wide Rewrite Selection shortcut.
+fn register_rewrite_shortcut(app: &tauri::AppHandle) {
+    let shortcut = Shortcut::new(Some(Modifiers::ALT | Modifiers::SUPER), Code::KeyE);
+    let result = app
+        .global_shortcut()
+        .on_shortcut(shortcut, |app, _shortcut, event| {
+            if event.state() != ShortcutState::Pressed {
+                return;
+            }
+
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                match crate::rewrite::rewrite_selection(&app).await {
+                    Ok(message) => crate::rewrite::notify(&app, "Elocutio", &message),
+                    Err(error) => crate::rewrite::notify(&app, "Rewrite failed", &error),
+                }
+            });
+        });
+
+    if let Err(error) = result {
+        eprintln!("Could not register the Rewrite Selection shortcut: {error}");
     }
 }
 
@@ -193,6 +220,7 @@ pub fn run_tauri() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(commands::application_message_handler())
         .setup(move |app| {
             let highlighter_service = HighlighterService::new(config, app.handle().clone());
@@ -205,6 +233,7 @@ pub fn run_tauri() {
             app.manage(highlighter_service);
 
             set_up_tray_menu(app.handle())?;
+            register_rewrite_shortcut(app.handle());
             warm_app_search_cache(app.handle().clone());
 
             if is_first_launch || !onboarding_completed {

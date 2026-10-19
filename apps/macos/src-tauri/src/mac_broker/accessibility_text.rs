@@ -380,12 +380,16 @@ fn apply_suggestion_to_element(
         Ok(()) => {
             let mut pid: pid_t = 0;
             let pid_error = unsafe { AXUIElementGetPid(element.as_concrete_TypeRef(), &mut pid) };
+            let after = element
+                .value()
+                .ok()
+                .and_then(|value| cf_type_to_string(&value))
+                .unwrap_or_else(|| updated.clone());
+            if after != updated {
+                eprintln!("AX write verification mismatch; not recording undo");
+                return;
+            }
             if pid_error == kAXErrorSuccess {
-                let after = element
-                    .value()
-                    .ok()
-                    .and_then(|value| cf_type_to_string(&value))
-                    .unwrap_or(updated);
                 if let Err(error) = crate::undo::record(pid, &source_text, &after) {
                     eprintln!("Could not record undo: {error}");
                 }

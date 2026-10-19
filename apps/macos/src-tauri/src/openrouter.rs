@@ -185,31 +185,50 @@ async fn send_chat(
         return Err("No OpenRouter key is saved. Add one first.".into());
     }
 
-    let mut request = client()?.post(provider.chat_endpoint()).json(&body);
-    if let Some(key) = key {
-        request = request.bearer_auth(key);
-    }
-    if provider.kind == ProviderKind::OpenRouter {
-        request = request
-            .header("HTTP-Referer", APP_URL)
-            .header("X-Title", APP_TITLE);
+    for attempt in 0..3 {
+        let mut request = client()?.post(provider.chat_endpoint()).json(&body);
+        if let Some(key) = &key {
+            request = request.bearer_auth(key);
+        }
+        if provider.kind == ProviderKind::OpenRouter {
+            request = request
+                .header("HTTP-Referer", APP_URL)
+                .header("X-Title", APP_TITLE);
+        }
+
+        match request.send().await {
+            Ok(response) => {
+                let status = response.status();
+                let raw = response
+                    .text()
+                    .await
+                    .map_err(|error| format!("Could not read the provider response: {error}"))?;
+                if status.is_success() {
+                    return serde_json::from_str(&raw).map_err(|error| {
+                        format!("The provider returned an unexpected response: {error}")
+                    });
+                }
+                if retryable_status(status) && attempt < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(250 * (1 << attempt)))
+                        .await;
+                    continue;
+                }
+                return Err(openrouter_error(status, &raw));
+            }
+            Err(_error) if attempt < 2 => {
+                tokio::time::sleep(std::time::Duration::from_millis(250 * (1 << attempt))).await;
+            }
+            Err(error) => {
+                return Err(format!("Could not reach the provider: {error}"));
+            }
+        }
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|error| format!("Could not reach the provider: {error}"))?;
-    let status = response.status();
-    let raw = response
-        .text()
-        .await
-        .map_err(|error| format!("Could not read the provider response: {error}"))?;
-    if !status.is_success() {
-        return Err(openrouter_error(status, &raw));
-    }
+    Err("The provider request failed after retries.".to_string())
+}
 
-    serde_json::from_str(&raw)
-        .map_err(|error| format!("The provider returned an unexpected response: {error}"))
+fn retryable_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
 pub async fn test_key_for(provider: &ProviderConfig) -> Result<OpenRouterStatus, String> {
@@ -468,6 +487,14 @@ mod tests {
     fn default_model_is_set() {
         assert!(!DEFAULT_MODEL.is_empty());
         assert!(DEFAULT_MODEL.contains('/'));
+    }
+
+    #[test]
+    fn only_transient_statuses_are_retried() {
+        assert!(retryable_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
+        assert!(retryable_status(reqwest::StatusCode::BAD_GATEWAY));
+        assert!(!retryable_status(reqwest::StatusCode::UNAUTHORIZED));
+        assert!(!retryable_status(reqwest::StatusCode::BAD_REQUEST));
     }
 
     #[test]

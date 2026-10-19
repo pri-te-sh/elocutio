@@ -51,6 +51,7 @@ to follow [Semantic Versioning](https://semver.org/).
   guidance, and a Settings Voice card that stores no raw samples.
 - Provider choice: OpenRouter or an OpenAI-compatible base URL/key, with the
   same structured analysis and rewrite paths.
+- Bounded retries for transient provider failures (429/5xx/network).
 - Opt-in voice learning from accepted edits: local accepted-replacement log,
   concise/contraction traits, and style-card refresh.
 - Rewrite tone presets (neutral, confident, friendly, concise, formal) applied to

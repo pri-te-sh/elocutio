@@ -25,6 +25,7 @@ Verified:
 - [x] `pnpm --filter @elocutio/macos build` passes.
 - [x] `pnpm exec tauri build --debug --bundles app` produces `Elocutio.app`.
 - [x] App launches as a menu-bar agent; first-run setup window opens.
+- [x] Onboarding completes and persists; the setup window does not reopen after **Finish setup**.
 - [x] Accessibility permission is granted; highlighter subprocess starts.
 - [x] Config is written to `~/Library/Application Support/elocutio/`, not the Harper path.
 - [x] A clean `git archive HEAD` export passes `pnpm install --frozen-lockfile`, `svelte-check`, and `cargo check` against the committed vendored tree.
@@ -101,7 +102,7 @@ The AX and pasteboard work runs on the Tauri main thread; calling AppKit from a 
 5. **Undo/focus regression tests:** add a manual script and, if possible, an automated AX harness.
 6. **Signed build:** M0 uses an unsigned debug `.app`. Full Xcode and Developer ID signing are required for TCC-stable distribution.
 7. **Updater:** removed for M0. Re-add in M5 with a real minisign keypair, never Harper's.
-8. **Onboarding:** the developer shell opens setup on every launch until onboarding is completed; wire that in M1.
+8. **Settings depth:** onboarding is done; the full settings surface (rules, voice, usage) remains M1.
 
 ## Notes on M0 completion
 

@@ -32,6 +32,8 @@ to follow [Semantic Versioning](https://semver.org/).
 - M0 macOS shell: rebranded Tauri app, vendored Harper subset under
   `vendor/harper/`, generated app/menu-bar icons, and a minimal Svelte setup UI.
 - Keychain-backed OpenRouter key validation and an in-app rewrite path.
+- Onboarding checklist for Accessibility, OpenRouter key, and the rewrite
+  shortcut; completion is persisted so setup opens only once.
 - System-wide **Rewrite Selection** action via **⌥⌘E** or the tray menu, using
   a transient/concealed pasteboard string, ⌘V, read-back verification, text
   clipboard restore, and macOS notifications. Verified in TextEdit, Safari, and

@@ -19,6 +19,9 @@
 
   let version = "0.1.0";
   let permission: Permission = "Unknown";
+  let onboardingCompleted: boolean | null = null;
+  let onboardingBusy = false;
+  let onboardingMessage = "";
   let running = false;
   let busy = false;
   let message = "";
@@ -166,9 +169,33 @@
     }
   }
 
+  async function refreshOnboarding() {
+    try {
+      onboardingCompleted = await invoke<boolean>("get_onboarding_completed");
+    } catch (error) {
+      onboardingMessage = String(error);
+    }
+  }
+
+  async function finishSetup() {
+    onboardingBusy = true;
+    onboardingMessage = "";
+    try {
+      await invoke("set_onboarding_completed", { onboardingCompleted: true });
+      onboardingCompleted = true;
+      onboardingMessage =
+        "Setup complete. Elocutio stays in the menu bar; this window will not reopen automatically.";
+    } catch (error) {
+      onboardingMessage = String(error);
+    } finally {
+      onboardingBusy = false;
+    }
+  }
+
   onMount(() => {
     void refresh();
     void refreshKey();
+    void refreshOnboarding();
   });
 </script>
 
@@ -180,6 +207,59 @@
     </picture>
     <p class="tagline">Your voice. Clearly expressed.</p>
   </header>
+
+  {#if onboardingCompleted === false}
+    <section class="card onboarding">
+      <h2>Welcome to Elocutio</h2>
+      <p class="muted">A private writing companion. Two quick checks and you are ready.</p>
+
+      <ul class="checklist">
+        <li class:done={permission === "Granted"}>
+          <span class="check">{permission === "Granted" ? "✓" : "○"}</span>
+          <div>
+            <strong>Accessibility</strong>
+            <p class="muted">
+              {permission === "Granted"
+                ? "Elocutio can read the focused text field."
+                : "Required for suggestions and system-wide rewrite."}
+            </p>
+          </div>
+          {#if permission !== "Granted"}
+            <button class="small" onclick={requestAccess} disabled={busy}>Grant</button>
+          {/if}
+        </li>
+
+        <li class:done={keyPresent}>
+          <span class="check">{keyPresent ? "✓" : "○"}</span>
+          <div>
+            <strong>OpenRouter key</strong>
+            <p class="muted">
+              {keyPresent
+                ? "Saved in the macOS Keychain."
+                : "Optional. Add one below for model-backed rewrites; local checks work without it."}
+            </p>
+          </div>
+        </li>
+
+        <li class="done">
+          <span class="check">✓</span>
+          <div>
+            <strong>Rewrite shortcut</strong>
+            <p class="muted">Select text in another app and press <kbd>⌥⌘E</kbd>.</p>
+          </div>
+        </li>
+      </ul>
+
+      <div class="actions">
+        <button class="primary" onclick={finishSetup} disabled={onboardingBusy}>
+          Finish setup
+        </button>
+      </div>
+      {#if onboardingMessage}
+        <p class="message">{onboardingMessage}</p>
+      {/if}
+    </section>
+  {/if}
 
   <section class="card">
     <div class="row">
@@ -562,6 +642,59 @@
   ol {
     margin: 10px 0;
     padding-left: 22px;
+  }
+
+  .onboarding {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+
+  .checklist {
+    list-style: none;
+    margin: 16px 0;
+    padding: 0;
+    display: grid;
+    gap: 12px;
+  }
+
+  .checklist li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+
+  .checklist li:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .checklist .check {
+    flex: none;
+    width: 20px;
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  .checklist li.done .check {
+    color: var(--success);
+  }
+
+  .checklist strong {
+    display: block;
+    color: var(--near-black);
+    font-size: 14px;
+  }
+
+  .checklist p {
+    margin: 2px 0 0;
+  }
+
+  button.small {
+    margin-left: auto;
+    flex: none;
+    padding: 5px 10px;
+    font-size: 12px;
   }
 
   footer {

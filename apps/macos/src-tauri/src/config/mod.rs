@@ -43,6 +43,8 @@ pub struct Config {
     pub learn_from_edits: bool,
     /// Requested rewrite tone.
     pub rewrite_tone: crate::openrouter::RewriteTone,
+    /// When true, no text may leave the Mac for a provider.
+    pub local_only: bool,
 }
 
 impl Config {
@@ -66,6 +68,7 @@ impl Config {
             budget_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
+            local_only: false,
         }
     }
 
@@ -242,6 +245,7 @@ impl Config {
             "budget_usd": self.budget_usd,
             "learn_from_edits": self.learn_from_edits,
             "rewrite_tone": self.rewrite_tone,
+            "local_only": self.local_only,
         }))
     }
 
@@ -285,6 +289,7 @@ impl Config {
             learn_from_edits: deserialize_optional_field(object, "learn_from_edits")?
                 .unwrap_or(false),
             rewrite_tone: deserialize_optional_field(object, "rewrite_tone")?.unwrap_or_default(),
+            local_only: deserialize_optional_field(object, "local_only")?.unwrap_or(false),
         })
     }
 }
@@ -356,6 +361,7 @@ mod tests {
         assert!(serialized.contains("provider_base_url"));
         assert!(serialized.contains("learn_from_edits"));
         assert!(serialized.contains("rewrite_tone"));
+        assert!(serialized.contains("local_only"));
     }
 
     #[test]
@@ -388,6 +394,7 @@ mod tests {
         assert_eq!(deserialized.provider_base_url, config.provider_base_url);
         assert_eq!(deserialized.learn_from_edits, config.learn_from_edits);
         assert_eq!(deserialized.rewrite_tone, config.rewrite_tone);
+        assert_eq!(deserialized.local_only, config.local_only);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&deserialized.serialize_main().unwrap())
                 .unwrap(),

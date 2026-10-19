@@ -37,6 +37,9 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
     let (provider, model, tone) = {
         let state = app.state::<std::sync::Arc<tokio::sync::Mutex<crate::config::Config>>>();
         let config = state.lock().await;
+        if config.local_only {
+            return Err("Local-only mode is on. Turn it off to rewrite with a provider.".into());
+        }
         (
             openrouter::ProviderConfig {
                 kind: config.provider_kind,

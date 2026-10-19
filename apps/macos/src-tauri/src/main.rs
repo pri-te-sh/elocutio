@@ -498,6 +498,7 @@ pub fn run_highlighter(has_parent: bool) {
             budget_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
+            local_only: false,
         };
         *dictionary_linter.borrow_mut() = config.create_linter();
 
@@ -665,6 +666,7 @@ fn fetch_highlighter_config(
             budget_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
+            local_only: false,
         })
     })
 }

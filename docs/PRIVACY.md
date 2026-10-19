@@ -92,6 +92,8 @@ When you use a cloud provider, your text is processed under that provider's term
 - Local: Ollama, LM Studio, or Apple's on-device model; no network request leaves the Mac.
 - Local-only mode: disables all cloud providers; local rules and a local model only.
 
+**Local-only mode** blocks every provider request (including manual analysis, widget AI, and rewrites) and keeps Harper checks on-device.
+
 **Learn from my accepted edits** is off by default too. When enabled, accepted replacements are stored only in a local `voice-feedback.jsonl` file and folded into the style card; disabling it stops new records, and deleting the voice profile removes the learned card. Raw uploaded samples are never stored.
 
 **Analyze as I write** is off by default. When enabled, it waits for a typing pause and analyzes each distinct focused-field text once; turn it off to return to explicitly triggered analysis only.

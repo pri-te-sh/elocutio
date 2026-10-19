@@ -109,6 +109,9 @@
   let rewriteTone: RewriteTone = "neutral";
   let toneBusy = false;
   let toneMessage = "";
+  let localOnly = false;
+  let localOnlyBusy = false;
+  let localOnlyMessage = "";
   let autoAnalyze = false;
   let autoAnalysisBusy = false;
   let autoAnalysisMessage = "";
@@ -153,6 +156,29 @@
       permission = await invoke<Permission>("get_accessibility_permission_status");
     } catch (error) {
       message = String(error);
+    }
+  }
+
+  async function refreshLocalOnly() {
+    try {
+      localOnly = await invoke<boolean>("get_local_only");
+    } catch (error) {
+      localOnlyMessage = String(error);
+    }
+  }
+
+  async function saveLocalOnly() {
+    localOnlyBusy = true;
+    localOnlyMessage = "";
+    try {
+      localOnly = await invoke<boolean>("set_local_only", { enabled: localOnly });
+      localOnlyMessage = localOnly
+        ? "Local-only mode is on. Provider requests are blocked."
+        : "Providers are allowed again.";
+    } catch (error) {
+      localOnlyMessage = String(error);
+    } finally {
+      localOnlyBusy = false;
     }
   }
 
@@ -597,6 +623,7 @@
     void refreshServiceStatus();
     void refreshProvider();
     void refreshTone();
+    void refreshLocalOnly();
     void refreshOnboarding();
     void refreshModel();
     void refreshAutoAnalyze();
@@ -723,6 +750,25 @@
         <span class="muted">Sends the focused field to OpenRouter after a pause. Off by default.</span>
       </span>
     </label>
+
+    <label class="switch-row">
+      <input
+        type="checkbox"
+        bind:checked={localOnly}
+        onchange={saveLocalOnly}
+        disabled={localOnlyBusy}
+      />
+      <span>
+        <strong>Local-only mode</strong>
+        <span class="muted">
+          Blocks all provider requests; Harper and the local card continue to work.
+        </span>
+      </span>
+    </label>
+
+    {#if localOnlyMessage}
+      <p class="message">{localOnlyMessage}</p>
+    {/if}
 
     {#if autoAnalysisMessage}
       <p class="message">{autoAnalysisMessage}</p>

@@ -30,6 +30,12 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
     let (provider, model) = {
         let config = app.state::<Arc<Mutex<Config>>>();
         let config = config.lock().await;
+        if config.local_only {
+            return Err(
+                "Local-only mode is on. Turn it off to analyze the field with a provider."
+                    .to_string(),
+            );
+        }
         (
             openrouter::ProviderConfig {
                 kind: config.provider_kind,

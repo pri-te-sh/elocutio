@@ -43,6 +43,8 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_auto_analyze,
         get_rewrite_tone,
         set_rewrite_tone,
+        get_local_only,
+        set_local_only,
         get_budget,
         set_budget,
         get_usage_summary,
@@ -238,6 +240,9 @@ async fn rewrite_text(
 ) -> Result<RewriteResult, String> {
     let (provider, model, tone) = {
         let config = config.lock().await;
+        if config.local_only {
+            return Err("Local-only mode is on. Turn it off to use a provider.".into());
+        }
         (
             ProviderConfig {
                 kind: config.provider_kind,
@@ -328,6 +333,25 @@ async fn set_rewrite_tone(
 }
 
 #[tauri::command]
+async fn get_local_only(config: State<'_, Arc<Mutex<Config>>>) -> Result<bool, String> {
+    Ok(config.lock().await.local_only)
+}
+
+#[tauri::command]
+async fn set_local_only(
+    enabled: bool,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<bool, String> {
+    let mut config = config.lock().await;
+    config.local_only = enabled;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.local_only)
+}
+
+#[tauri::command]
 async fn get_budget(config: State<'_, Arc<Mutex<Config>>>) -> Result<Option<f64>, String> {
     Ok(config.lock().await.budget_usd)
 }
@@ -380,6 +404,9 @@ async fn analyze_text(
 
     let (provider, model) = {
         let config = config.lock().await;
+        if config.local_only {
+            return Err("Local-only mode is on. Turn it off to use a provider.".into());
+        }
         (
             ProviderConfig {
                 kind: config.provider_kind,

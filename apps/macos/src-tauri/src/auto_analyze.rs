@@ -29,7 +29,10 @@ pub fn start(app: AppHandle) {
             let (enabled, provider_kind) = {
                 let config = app.state::<Arc<Mutex<Config>>>();
                 let config = config.lock().await;
-                (config.auto_analyze, config.provider_kind)
+                (
+                    config.auto_analyze && !config.local_only,
+                    config.provider_kind,
+                )
             };
             if !enabled {
                 last_seen_hash = 0;

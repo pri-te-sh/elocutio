@@ -38,6 +38,14 @@ macos-build:
 	pnpm --filter @elocutio/macos build
 	cd apps/macos && pnpm exec tauri build --debug --bundles app
 
+# Build an optimized unsigned app and DMG.
+macos-release:
+	pnpm --filter @elocutio/macos build
+	cd apps/macos && pnpm exec tauri build --bundles app
+	cd apps/macos/src-tauri/target/release/bundle/macos && \
+		codesign --force --deep --sign - Elocutio.app && \
+		hdiutil create -volname Elocutio -srcfolder Elocutio.app -ov -format UDZO Elocutio.dmg
+
 # Run the macOS shell in development mode.
 macos-dev:
 	cd apps/macos && pnpm tauri dev

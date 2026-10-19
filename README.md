@@ -135,7 +135,7 @@ The shared crates (`elocutio-core`, `elocutio-analysis`, `elocutio-llm`, `elocut
 
 ## Development
 
-The macOS app builds from this repository and runs as a menu-bar agent. The shared Rust crates, docs, and open-source tooling are included. The app is unsigned; macOS Gatekeeper may require a local build or an explicit open.
+The macOS app builds from this repository and runs as a menu-bar agent. `just macos-release` produces `Elocutio.app` and a DMG under `apps/macos/src-tauri/target/release/bundle/macos/`. The app is ad-hoc signed but not notarized; Gatekeeper will require right-click → Open or a local build until the M5 Developer ID release. The shared Rust crates, docs, and open-source tooling are included.
 
 ```bash
 git clone git@github.com:pri-te-sh/elocutio.git
@@ -147,6 +147,7 @@ just fetch-upstream      # shallow-clone Harper v2.13.0 into .upstream/
 just assets              # regenerate app/platform icons from brand sources
 just macos-check         # type-check the macOS frontend + Tauri backend
 just macos-build         # build an unsigned debug Elocutio.app
+just macos-release       # build an optimized unsigned app + DMG
 just macos-dev           # run the macOS shell in development mode
 just dev-cert            # create a stable self-signed cert for TCC
 just progress            # build the static progress dashboard

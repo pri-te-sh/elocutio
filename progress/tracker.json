@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-20T01:20:00Z",
+  "updatedAt": "2026-10-20T01:30:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -464,7 +464,7 @@
         },
         {
           "text": "Accept edits the correct span via pasteboard or the AppKit AX fast path; read-back verification passes",
-          "accepted": false
+          "accepted": true
         },
         {
           "text": "Undo works after an accepted suggestion",
@@ -472,7 +472,7 @@
         },
         {
           "text": "Invalid key, offline, and 402 states are clear and actionable",
-          "accepted": false
+          "accepted": true
         },
         {
           "text": "Zero user text in logs",

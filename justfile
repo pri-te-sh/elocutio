@@ -29,6 +29,7 @@ macos-check:
 	pnpm --filter @elocutio/macos check
 	pnpm --filter @elocutio/macos build
 	cargo fmt --manifest-path apps/macos/src-tauri/Cargo.toml -- --check
+	cargo clippy --manifest-path apps/macos/src-tauri/Cargo.toml --all-targets -- -D warnings
 	cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
 	cargo test --manifest-path apps/macos/src-tauri/Cargo.toml
 

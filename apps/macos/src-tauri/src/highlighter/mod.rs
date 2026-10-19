@@ -30,6 +30,7 @@ pub struct Highlighter {
 }
 
 impl Highlighter {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         os_broker: impl OsBroker + 'static,
         lint_text: impl FnMut(&str) -> BTreeMap<String, Vec<Lint>> + 'static,

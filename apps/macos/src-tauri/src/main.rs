@@ -237,10 +237,10 @@ pub fn run_tauri() {
         }
     };
 
-    if config.merge_curated_integrations() {
-        if let Err(error) = async_runtime.block_on(config.save_to_system()) {
-            eprintln!("failed to save merged integrations: {error}");
-        }
+    if config.merge_curated_integrations()
+        && let Err(error) = async_runtime.block_on(config.save_to_system())
+    {
+        eprintln!("failed to save merged integrations: {error}");
     }
 
     let broker = platform_broker(|_| false);

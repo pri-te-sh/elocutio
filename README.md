@@ -18,7 +18,7 @@
 
 **Elocutio** (el-oh-KOO-tee-oh) is a private writing companion that refines clarity, correctness, and tone while preserving your voice. It starts on macOS, where it lives in your menu bar and improves the text you are already writing — in Mail, Slack, Notes, Word, or your browser. Local rules catch the obvious mistakes instantly; your chosen model handles judgment: clarity, tone, rewrites, compose, translate, and humanize. Over time it learns **your voice** from the writing you upload and the edits you accept, so rewrites sound like *you*. You bring the API key; your text goes only to the provider you configured.
 
-> **Status: pre-alpha / M0 partial.** The macOS developer shell builds and runs on a rebranded [Harper](https://github.com/Automattic/harper) fork (Apache-2.0). TextEdit, Notes, and Safari pass the overlay matrix; an OpenRouter key validates; and Rewrite Selection works system-wide via **⌥⌘E** (pasteboard + ⌘V, clipboard restore) in TextEdit, Safari, and Chrome. Chrome/Mail overlay geometry is still open. See [M0 verification](docs/M0-VERIFICATION.md), the [roadmap](ROADMAP.md), and [build plan](docs/PLAN.md). Execution is tracked in the [progress dashboard](docs/PROGRESS.md). Expect breaking changes; there is no installable release yet.
+> **Status: pre-alpha / M1 in progress.** The macOS app builds and runs on a rebranded [Harper](https://github.com/Automattic/harper) fork (Apache-2.0). Local checks and a floating Harper-style suggestion card work in TextEdit, Notes, and Safari. OpenRouter is the default provider; OpenAI-compatible endpoints (OpenAI, Ollama, LM Studio) are supported. Structured LLM suggestions merge into the inherited card; **⌥⌘E** rewrites a selection, **⌥⌘A** analyzes the focused field, and **⌥⌘Z** undoes the last Elocutio edit. A local voice style card learns from 300+ word samples and, when opted in, accepted edits. Chrome/Mail overlay geometry and a signed/notarized release remain open. See the [roadmap](ROADMAP.md), [build plan](docs/PLAN.md), and [progress dashboard](docs/PROGRESS.md). Expect breaking changes; there is no signed release yet.
 
 ## Why Elocutio
 
@@ -65,17 +65,17 @@ Grammarly has no documented offline mode: its clients send text to the cloud for
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-- The app is non-sandboxed, Developer ID-signed, and notarized. The Mac App Store is not an option because App Sandbox cannot read other apps' text via Accessibility.
+- The release target is non-sandboxed, Developer ID-signed, and notarized. The Mac App Store is not an option because App Sandbox cannot read other apps' text via Accessibility. Current builds are unsigned developer builds.
 - Reads use the Accessibility API. Writes use a ladder: AX fast path in AppKit, **pasteboard + ⌘V** in Chromium/Electron, with read-back verification.
 - The card never takes keyboard focus. Focus stealing breaks the paste and the product.
 - Google Docs is explicitly unsupported (canvas rendering); Gmail, Notion, Slack, and Linear are covered by the extension.
-- Voice samples stay local and encrypted; only the style card and selected excerpts are sent, with a preview.
+- Voice samples are analyzed locally and discarded; only the aggregate style card is stored. Accepted-edit feedback is local and opt-in. The style card is sent to your provider only when you enable voice-aware rewrites.
 
 The core is shared Rust; platform shells are thin. More detail: [architecture](docs/ARCHITECTURE.md) · [voice design](docs/VOICE-LEARNING.md) · [brand](docs/BRAND.md) · [privacy](docs/PRIVACY.md).
 
 ## Providers
 
-OpenRouter is the default because one key reaches many models. Direct providers, OpenAI-compatible endpoints, local Ollama, and Apple's on-device model are planned.
+OpenRouter is the default because one key reaches many models. Settings → Provider can switch to any OpenAI-compatible Chat Completions endpoint (OpenAI, Ollama, LM Studio) with a custom base URL and optional key. Direct Anthropic/Google adapters and Apple's on-device model are planned; Claude and Gemini models are available through OpenRouter.
 
 | Task | Default | Escalation |
 | --- | --- | --- |
@@ -91,22 +91,22 @@ No markup, no credits, no middleman. You pay your provider directly. At October 
 
 Elocutio does not fine-tune a model on your writing. It builds a local, explainable **Voice Profile**:
 
-- **Uploads** — `.txt`, `.md`, `.docx`, or paste in v1; PDF/RTF/email later.
-- **Behavior** — accepted, dismissed, and edited suggestions, weighted by category.
-- **Explicit feedback** — "sounds like me" ratings, trait overrides, preferred/avoided terms.
-- **Applied through retrieval** — a style card plus 2–4 representative excerpts, injected into rewrites and drafts.
+- **Uploads** — paste 300+ words in Settings → Voice; the sample is analyzed locally and discarded.
+- **Behavior** — accepted edits are recorded locally only when **Learn from my accepted edits** is enabled.
+- **Applied** — a compact style card is added to rewrite prompts when **Use my voice** is enabled.
+- **Future** — dismissed/edited-after-accept weighting, "sounds like me" ratings, trait overrides, and exemplar retrieval.
 
-Two independent switches, both **off by default**: *Learn from my edits* and *Use my voice*. Samples are encrypted at rest; only the card and excerpts leave the Mac, and a "style card only" mode sends no excerpts. An 8-gram copy guard prevents the model from copying sample text. See [VOICE-LEARNING.md](docs/VOICE-LEARNING.md).
+Two independent switches, both **off by default**: *Learn from my edits* and *Use my voice*. Only the aggregate style card is stored; raw samples are never written. See [VOICE-LEARNING.md](docs/VOICE-LEARNING.md).
 
 ## Roadmap
 
 | Phase | Status | Outcome |
 | --- | --- | --- |
 | Planning | ✅ Done | Audit, plan, architecture, feature matrix, ADRs, prompt library, voice design |
-| **M0 — Fork & spike** | 🚧 Next | Fork/rebrand Harper v2.13.0, verify the overlay in 5 apps, validate OpenRouter, prove a selection rewrite |
-| M1 — LLM MVP | Planned | Local + LLM suggestions, card, accept/dismiss, tone detection, onboarding, Keychain, usage log |
-| M2 — Inline + voice v0 | Planned | Widget, underlines, rewrites, cache, blocklist; voice profile from feedback |
-| M3 — Everywhere + uploads | Planned | Chrome/Edge extension, assistant panel, compose/reply/summarize, multi-provider; voice uploads |
+| **M0 — Fork & spike** | 🚧 Partial | Fork/rebrand Harper v2.13.0; TextEdit, Notes, and Safari overlay; OpenRouter validation; system-wide rewrite. Chrome/Mail overlay still open. |
+| **M1 — LLM MVP** | 🚧 In progress | Local + LLM suggestions, inherited card, accept/dismiss, floating widget, Keychain, usage log, budget warning, undo, provider choice, onboarding |
+| **M2 — Inline + voice v0** | 🚧 Started | Widget count/AI action, tone presets, style card, accepted-edit learning; live mode, diff rewrite, 10-app matrix remain |
+| M3 — Everywhere + uploads | Planned | Chrome/Edge extension, assistant panel, compose/reply/summarize, voice uploads |
 | M4 — Personal + voice v2 | Planned | Style guide, brand voice, glossary, snippets, provenance, history; per-context voices |
 | M5 — v1.0 | Planned | Notarized DMG, signed updates, Homebrew, docs, security review |
 
@@ -135,7 +135,7 @@ The shared crates (`elocutio-core`, `elocutio-analysis`, `elocutio-llm`, `elocut
 
 ## Development
 
-The desktop app is not buildable yet; M0 adds the Harper fork. The current repository contains the planning docs, shared Rust crates, and open-source tooling.
+The macOS app builds from this repository and runs as a menu-bar agent. The shared Rust crates, docs, and open-source tooling are included. The app is unsigned; macOS Gatekeeper may require a local build or an explicit open.
 
 ```bash
 git clone git@github.com:pri-te-sh/elocutio.git

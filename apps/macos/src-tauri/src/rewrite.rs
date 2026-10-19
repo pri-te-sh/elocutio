@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::os_broker::OsBroker;
-use crate::{PlatformBroker, openrouter};
+use crate::{PlatformBroker, openrouter, usage};
 
 const MAX_SELECTION_CHARS: usize = 12_000;
 
@@ -53,7 +53,14 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
         ));
     }
 
-    let result = openrouter::rewrite(&text, None).await?;
+    let model = {
+        let config = app.state::<std::sync::Arc<tokio::sync::Mutex<crate::config::Config>>>();
+        config.lock().await.provider_model.clone()
+    };
+    let result = openrouter::rewrite(&text, Some(model)).await?;
+    if let Err(error) = usage::record(&result) {
+        eprintln!("Could not record usage: {error}");
+    }
 
     let replacement = result.text;
     let replacement_for_paste = replacement.clone();

@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::highlighter_service::HighlighterService;
 use crate::openrouter::{self, KeyStatus, OpenRouterStatus, RewriteResult};
 use crate::os_broker::{AccessibilityPermissionStatus, AppSearchResult, OsBroker};
+use crate::usage::{self, UsageSummary};
 use crate::{IntegrationView, PlatformBroker};
 use base64::{Engine as _, engine::general_purpose};
 use harper_core::{
@@ -31,6 +32,9 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         clear_openrouter_key,
         test_openrouter_key,
         rewrite_text,
+        get_provider_model,
+        set_provider_model,
+        get_usage_summary,
         get_onboarding_completed,
         set_onboarding_completed,
         set_dialect,
@@ -134,8 +138,48 @@ async fn test_openrouter_key() -> Result<OpenRouterStatus, String> {
 }
 
 #[tauri::command]
-async fn rewrite_text(text: String, model: Option<String>) -> Result<RewriteResult, String> {
-    openrouter::rewrite(&text, model).await
+async fn rewrite_text(
+    text: String,
+    model: Option<String>,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<RewriteResult, String> {
+    let model = match model.filter(|value| !value.trim().is_empty()) {
+        Some(model) => model,
+        None => config.lock().await.provider_model.clone(),
+    };
+    let result = openrouter::rewrite(&text, Some(model)).await?;
+    if let Err(error) = usage::record(&result) {
+        eprintln!("Could not record usage: {error}");
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+async fn get_provider_model(config: State<'_, Arc<Mutex<Config>>>) -> Result<String, String> {
+    Ok(config.lock().await.provider_model.clone())
+}
+
+#[tauri::command]
+async fn set_provider_model(
+    model: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<String, String> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Err("Enter a model id, for example anthropic/claude-haiku-5.5.".into());
+    }
+    let mut config = config.lock().await;
+    config.provider_model = model.to_string();
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.provider_model.clone())
+}
+
+#[tauri::command]
+fn get_usage_summary(limit: Option<usize>) -> Result<UsageSummary, String> {
+    usage::summary(limit.unwrap_or(10).min(100))
 }
 
 #[tauri::command]

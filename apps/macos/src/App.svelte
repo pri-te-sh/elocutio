@@ -15,6 +15,21 @@
     model: string;
     input_tokens: number;
     output_tokens: number;
+    cost_usd: number | null;
+  };
+  type UsageEntry = {
+    timestamp: number;
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number | null;
+  };
+  type UsageSummary = {
+    requests: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number;
+    recent: UsageEntry[];
   };
 
   let version = "0.1.0";
@@ -29,6 +44,9 @@
   let keyPresent = false;
   let keyInput = "";
   let model = "anthropic/claude-haiku-5.5";
+  let modelBusy = false;
+  let modelMessage = "";
+  let usage: UsageSummary | null = null;
   let providerBusy = false;
   let providerMessage = "";
   let providerStatus: OpenRouterStatus | null = null;
@@ -60,6 +78,35 @@
       keyPresent = status.present;
     } catch (error) {
       providerMessage = String(error);
+    }
+  }
+
+  async function refreshModel() {
+    try {
+      model = await invoke<string>("get_provider_model");
+    } catch (error) {
+      providerMessage = String(error);
+    }
+  }
+
+  async function refreshUsage() {
+    try {
+      usage = await invoke<UsageSummary>("get_usage_summary", { limit: 5 });
+    } catch (error) {
+      providerMessage = String(error);
+    }
+  }
+
+  async function saveModel() {
+    modelBusy = true;
+    modelMessage = "";
+    try {
+      model = await invoke<string>("set_provider_model", { model });
+      modelMessage = "Model saved for Rewrite Selection and assistant requests.";
+    } catch (error) {
+      modelMessage = String(error);
+    } finally {
+      modelBusy = false;
     }
   }
 
@@ -161,7 +208,10 @@
         model,
       });
       rewriteOutput = result.text;
-      rewriteMeta = `${result.model} · ${result.input_tokens} in / ${result.output_tokens} out`;
+      const cost =
+        result.cost_usd === null ? "cost unavailable" : `$${result.cost_usd.toFixed(4)}`;
+      rewriteMeta = `${result.model} · ${result.input_tokens} in / ${result.output_tokens} out · ${cost}`;
+      void refreshUsage();
     } catch (error) {
       providerMessage = String(error);
     } finally {
@@ -196,6 +246,8 @@
     void refresh();
     void refreshKey();
     void refreshOnboarding();
+    void refreshModel();
+    void refreshUsage();
   });
 </script>
 
@@ -373,8 +425,15 @@
 
     <label class="field">
       <span>Model</span>
-      <input bind:value={model} spellcheck="false" />
+      <div class="model-row">
+        <input bind:value={model} spellcheck="false" />
+        <button onclick={saveModel} disabled={modelBusy || !model.trim()}>Save</button>
+      </div>
     </label>
+
+    {#if modelMessage}
+      <p class="message">{modelMessage}</p>
+    {/if}
 
     <label class="field">
       <span>Text</span>
@@ -393,6 +452,49 @@
         <p class="rewrite-text">{rewriteOutput}</p>
         <p class="muted">{rewriteMeta}</p>
       </div>
+    {/if}
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <div>
+        <h2>Usage</h2>
+        <p class="muted">Local metadata only. Text is never written to this log.</p>
+      </div>
+      <button class="ghost small" onclick={refreshUsage}>Refresh</button>
+    </div>
+
+    {#if usage}
+      <dl class="provider-details">
+        <div>
+          <dt>Requests</dt>
+          <dd>{usage.requests}</dd>
+        </div>
+        <div>
+          <dt>Tokens</dt>
+          <dd>{usage.input_tokens + usage.output_tokens}</dd>
+        </div>
+        <div>
+          <dt>Cost</dt>
+          <dd>${usage.cost_usd.toFixed(4)}</dd>
+        </div>
+      </dl>
+
+      {#if usage.recent.length > 0}
+        <ul class="usage-list">
+          {#each usage.recent as entry}
+            <li>
+              <span>{new Date(entry.timestamp * 1000).toLocaleString()}</span>
+              <span>{entry.model}</span>
+              <span>${entry.cost_usd === null ? "—" : entry.cost_usd.toFixed(4)}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="muted">No model requests recorded yet.</p>
+      {/if}
+    {:else}
+      <p class="muted">Loading usage…</p>
     {/if}
   </section>
 
@@ -590,6 +692,34 @@
   .field {
     display: block;
     margin: 14px 0;
+  }
+
+  .model-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .model-row input {
+    flex: 1;
+  }
+
+  .usage-list {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+
+  .usage-list li {
+    display: grid;
+    grid-template-columns: 1.2fr 1.4fr auto;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    padding-top: 6px;
+    color: var(--muted);
+    font-size: 12px;
   }
 
   .field span {

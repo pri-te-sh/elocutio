@@ -52,6 +52,7 @@ mod openrouter;
 mod os_broker;
 pub mod rect;
 mod rewrite;
+mod usage;
 
 #[cfg(target_os = "macos")]
 mod mac_broker;
@@ -440,6 +441,7 @@ pub fn run_highlighter(has_parent: bool) {
             auto_update: true,
             last_update_check: None,
             highlighter_service_enabled: true,
+            provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
         };
         *dictionary_linter.borrow_mut() = config.create_linter();
 
@@ -584,6 +586,7 @@ fn fetch_highlighter_config(
             auto_update: true,
             last_update_check: None,
             highlighter_service_enabled: true,
+            provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
         })
     })
 }

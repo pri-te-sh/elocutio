@@ -29,6 +29,8 @@ pub struct Config {
     /// Failed attempts also count toward the automatic 24-hour interval.
     pub last_update_check: Option<u64>,
     pub highlighter_service_enabled: bool,
+    /// OpenRouter model used by Rewrite Selection and the assistant.
+    pub provider_model: String,
 }
 
 impl Config {
@@ -45,6 +47,7 @@ impl Config {
             auto_update: true,
             last_update_check: None,
             highlighter_service_enabled: true,
+            provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
         }
     }
 
@@ -187,7 +190,7 @@ impl Config {
     }
 
     #[allow(dead_code)]
-    fn folder_path() -> Option<PathBuf> {
+    pub(crate) fn folder_path() -> Option<PathBuf> {
         dirs::config_dir().map(|path| path.join("elocutio"))
     }
 
@@ -214,6 +217,7 @@ impl Config {
             "auto_update": self.auto_update,
             "last_update_check": self.last_update_check,
             "highlighter_service_enabled": self.highlighter_service_enabled,
+            "provider_model": self.provider_model,
         }))
     }
 
@@ -247,6 +251,8 @@ impl Config {
                 "highlighter_service_enabled",
             )?
             .unwrap_or(true),
+            provider_model: deserialize_optional_field(object, "provider_model")?
+                .unwrap_or_else(|| crate::openrouter::DEFAULT_MODEL.to_string()),
         })
     }
 }

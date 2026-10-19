@@ -34,6 +34,10 @@ to follow [Semantic Versioning](https://semver.org/).
 - Keychain-backed OpenRouter key validation and an in-app rewrite path.
 - Onboarding checklist for Accessibility, OpenRouter key, and the rewrite
   shortcut; completion is persisted so setup opens only once.
+- Persisted OpenRouter model selection for in-app rewrites and Rewrite
+  Selection.
+- Local metadata-only usage log at `usage.jsonl` with token and cost totals;
+  selected/rewritten text is never recorded.
 - System-wide **Rewrite Selection** action via **⌥⌘E** or the tray menu, using
   a transient/concealed pasteboard string, ⌘V, read-back verification, text
   clipboard restore, and macOS notifications. Verified in TextEdit, Safari, and

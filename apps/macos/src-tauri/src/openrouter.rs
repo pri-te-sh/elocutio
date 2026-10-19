@@ -39,6 +39,7 @@ pub struct RewriteResult {
     pub model: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub cost_usd: Option<f64>,
 }
 
 fn entry() -> Result<keyring::Entry, String> {
@@ -157,6 +158,7 @@ struct ChatMessage {
 struct ChatUsage {
     prompt_tokens: Option<u64>,
     completion_tokens: Option<u64>,
+    cost: Option<f64>,
 }
 
 pub async fn rewrite(text: &str, model: Option<String>) -> Result<RewriteResult, String> {
@@ -178,7 +180,8 @@ pub async fn rewrite(text: &str, model: Option<String>) -> Result<RewriteResult,
             { "role": "user", "content": text }
         ],
         "temperature": 0.0,
-        "max_tokens": 1024
+        "max_tokens": 1024,
+        "usage": { "include": true }
     });
 
     let response = client()?
@@ -223,6 +226,7 @@ pub async fn rewrite(text: &str, model: Option<String>) -> Result<RewriteResult,
             .as_ref()
             .and_then(|usage| usage.completion_tokens)
             .unwrap_or(0),
+        cost_usd: parsed.usage.as_ref().and_then(|usage| usage.cost),
     })
 }
 

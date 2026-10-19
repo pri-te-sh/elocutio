@@ -92,6 +92,7 @@ apps/macos/
   system-wide **Rewrite Selection** tray action using pasteboard + ⌘V with
   read-back verification and clipboard restore.
 - Added macOS notifications for rewrite success/failure.
+- Added provider/model persistence and a local metadata-only usage/cost log.
 - Added a real onboarding checklist (Accessibility, provider key, shortcut)
   that persists `onboarding_completed` so setup no longer reopens every launch.
 - Added the global **⌥⌘E** shortcut, transient/concealed pasteboard writes, and
@@ -114,8 +115,11 @@ apps/macos/
 - **Shortcut configuration:** ⌥⌘E is fixed; make it configurable in settings.
 - **Clipboard fidelity:** only text is restored after the paste; non-text
   pasteboard items are replaced. Use a safe item reconstruction path in M1.
-- **Settings depth:** onboarding is complete, but settings are still the
-  minimal M1 shell (no full rule editor, voice profile, or usage history).
+- **Settings depth:** onboarding, model persistence, and usage are in place;
+  per-app enablement, privacy controls, budget warnings, and voice settings
+  remain M1/M2.
+- **Usage scope:** the log is local and metadata-only; the Usage card sums all
+  entries, not a calendar month.
 - **Unsigned debug build:** no notarization, updater, or release packaging yet.
 
 ## Tests and checks

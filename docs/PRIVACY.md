@@ -52,6 +52,7 @@ Voice is intended for your own writing or a brand you are authorized to represen
 | Style card / traits | Until profile deleted | Reset learned values |
 | Exemplars | Until sample/profile deleted | Exclude sensitive samples |
 | Feedback events | 180-day half-life weighting; rows until cleared | Clear |
+| Usage metadata (`usage.jsonl`) | timestamp, model, token counts, provider-reported cost; no text | Delete the file from Application Support |
 
 ## Cross-device
 

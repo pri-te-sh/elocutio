@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T18:55:00Z",
+  "updatedAt": "2026-10-19T19:25:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -365,7 +365,9 @@
           "estimateDays": 2,
           "dependsOn": [
             "m0-llm"
-          ]
+          ],
+          "status": "in_progress",
+          "notes": "OpenRouter key validation and non-streaming rewrite work. OpenAI-compatible adapters, streaming, retries, and error UX remain."
         },
         {
           "id": "m1-pipeline",
@@ -401,21 +403,27 @@
           "title": "Onboarding: local-only vs provider, key, model, permissions, and playground",
           "area": "ux",
           "priority": "P0",
-          "estimateDays": 1
+          "estimateDays": 1,
+          "status": "done",
+          "notes": "Onboarding checklist checks Accessibility, Keychain provider key, and \u2325\u2318E; completion persists so setup opens once."
         },
         {
           "id": "m1-settings",
           "title": "Settings: providers and models, per-app enablement, privacy, and usage",
           "area": "settings",
           "priority": "P1",
-          "estimateDays": 1
+          "estimateDays": 1,
+          "status": "in_progress",
+          "notes": "Provider/model selection and local usage summary are implemented. Per-app enablement, privacy controls, and the full settings IA remain."
         },
         {
           "id": "m1-keychain",
           "title": "Keychain storage, cost log, and budget warnings",
           "area": "privacy",
           "priority": "P0",
-          "estimateDays": 0.5
+          "estimateDays": 0.5,
+          "status": "in_progress",
+          "notes": "Keychain storage and a metadata-only cost/usage log work. Budget warnings and model pricing validation remain."
         },
         {
           "id": "m1-events",
@@ -463,13 +471,14 @@
         },
         {
           "text": "Zero user text in logs",
-          "accepted": false
+          "accepted": true
         },
         {
           "text": "The API key survives an app restart",
-          "accepted": false
+          "accepted": true
         }
-      ]
+      ],
+      "status": "in_progress"
     },
     {
       "id": "M2",

@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["apps/macos/src-tauri", "vendor/harper"]
 members = [
     "crates/elocutio-core",
     "crates/elocutio-analysis",

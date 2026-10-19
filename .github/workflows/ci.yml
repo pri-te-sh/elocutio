@@ -34,6 +34,38 @@ jobs:
       - name: Test
         run: cargo test --all
 
+  macos-app:
+    name: macOS app (check, frontend)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/macos/src-tauri -> target
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Frontend check
+        run: pnpm --filter @elocutio/macos check
+      - name: Frontend build
+        run: pnpm --filter @elocutio/macos build
+      - name: Rust format
+        run: cargo fmt --manifest-path apps/macos/src-tauri/Cargo.toml -- --check
+      - name: Rust check
+        run: cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
+      - name: Rust tests
+        run: cargo test --manifest-path apps/macos/src-tauri/Cargo.toml
+
   docs:
     name: Docs
     runs-on: ubuntu-latest
@@ -44,6 +76,10 @@ jobs:
           python-version: "3.12"
       - name: Check Markdown and naming
         run: python3 scripts/check_docs.py
+      - name: Validate progress tracker
+        run: python3 scripts/progress.py validate
+      - name: Test progress tracker
+        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
 
   format:
     name: Format (web/config)

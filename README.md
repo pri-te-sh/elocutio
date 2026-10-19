@@ -18,7 +18,7 @@
 
 **Elocutio** (el-oh-KOO-tee-oh) is a private writing companion that refines clarity, correctness, and tone while preserving your voice. It starts on macOS, where it lives in your menu bar and improves the text you are already writing — in Mail, Slack, Notes, Word, or your browser. Local rules catch the obvious mistakes instantly; your chosen model handles judgment: clarity, tone, rewrites, compose, translate, and humanize. Over time it learns **your voice** from the writing you upload and the edits you accept, so rewrites sound like *you*. You bring the API key; your text goes only to the provider you configured.
 
-> **Status: pre-alpha.** The audit, plan, architecture, and repository scaffold are in place. The macOS app is being built on a fork of [Harper](https://github.com/Automattic/harper) (Apache-2.0); Windows, the browser extension, iOS, and Android follow. See the [roadmap](ROADMAP.md) and [build plan](docs/PLAN.md). Expect breaking changes; there is no installable release yet.
+> **Status: pre-alpha / M0 partial.** The macOS developer shell builds and runs on a rebranded [Harper](https://github.com/Automattic/harper) fork (Apache-2.0). TextEdit, Notes, and Safari pass the overlay matrix; an OpenRouter key validates and in-app rewrite works. Chrome/Mail and system-wide AI rewrite are still open. See [M0 verification](docs/M0-VERIFICATION.md), the [roadmap](ROADMAP.md), and [build plan](docs/PLAN.md). Execution is tracked in the [progress dashboard](docs/PROGRESS.md). Expect breaking changes; there is no installable release yet.
 
 ## Why Elocutio
 
@@ -110,7 +110,7 @@ Two independent switches, both **off by default**: *Learn from my edits* and *Us
 | M4 — Personal + voice v2 | Planned | Style guide, brand voice, glossary, snippets, provenance, history; per-context voices |
 | M5 — v1.0 | Planned | Notarized DMG, signed updates, Homebrew, docs, security review |
 
-Full roadmap: [ROADMAP.md](ROADMAP.md). Detailed scope and estimates: [docs/PLAN.md](docs/PLAN.md).
+Full roadmap: [ROADMAP.md](ROADMAP.md). Detailed scope and estimates: [docs/PLAN.md](docs/PLAN.md). Task-level execution status, evidence, and acceptance criteria: [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Platforms
 
@@ -131,7 +131,7 @@ The shared crates (`elocutio-core`, `elocutio-analysis`, `elocutio-llm`, `elocut
 - Accessibility permission on macOS (required for cross-app text access)
 - Optional: Screen Recording (OCR fallback only)
 - An API key for a supported provider, or a local model
-- For development: Xcode Command Line Tools, Rust 1.98+, Node.js 22+, pnpm 11+
+- For development: Xcode Command Line Tools, Rust 1.98+, Node.js 22+, pnpm 11+, Python 3.11+ (docs and progress scripts)
 
 ## Development
 
@@ -145,7 +145,12 @@ just check               # fmt + clippy + tests + docs + prettier
 just test                # Rust tests only
 just fetch-upstream      # shallow-clone Harper v2.13.0 into .upstream/
 just assets              # regenerate app/platform icons from brand sources
+just macos-check         # type-check the macOS frontend + Tauri backend
+just macos-build         # build an unsigned debug Elocutio.app
+just macos-dev           # run the macOS shell in development mode
 just dev-cert            # create a stable self-signed cert for TCC
+just progress            # build the static progress dashboard
+just progress-serve      # live progress dashboard at http://127.0.0.1:8787
 ```
 
 If you do not have `just`, run the commands directly:
@@ -155,8 +160,23 @@ cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all
 python3 scripts/check_docs.py
+python3 scripts/progress.py validate
+python3 -m unittest discover -s scripts -p "test_*.py"
 pnpm format:check
 ```
+
+## Build progress
+
+Milestones, work items, and acceptance criteria are tracked in
+[`progress/tracker.json`](progress/tracker.json). Most statuses are derived
+automatically from repository evidence — files, globs, text markers, git
+remotes, and commit subjects — so the dashboard updates as code lands. Manual
+overrides are supported and always win.
+
+`just progress` writes a static snapshot to `progress/out/dashboard.html`;
+`just progress-serve` runs the live dashboard with filters, git activity, and
+inline status editing. See [docs/PROGRESS.md](docs/PROGRESS.md) for the ledger
+schema, evidence rules, and API.
 
 ## Repository layout
 
@@ -173,14 +193,16 @@ pnpm format:check
 │   ├── elocutio-store/      # SQLite schema and repositories (growing)
 │   ├── elocutio-bridge/     # browser-extension protocol
 │   └── elocutio-platform/   # shared capture/injection/overlay traits
-├── apps/macos/              # forked Harper macOS shell (M0)
+├── apps/macos/              # forked Harper macOS shell (M0, buildable)
+├── vendor/harper/           # vendored harper-core subset (Apache-2.0)
 ├── apps/windows/            # Windows shell (post-v1)
 ├── apps/ios/                # iOS app + keyboard extension (planned)
 ├── apps/android/            # Android app + accessibility service (planned)
 ├── extensions/chrome/       # MV3 extension (M3)
 ├── docs/                    # audit, plan, architecture, prompts, privacy
 ├── research/                # source material and citations
-├── scripts/                 # bootstrap, docs check, signing, upstream fetch
+├── scripts/                 # bootstrap, docs check, signing, upstream fetch, progress tracker
+├── progress/                # build-progress ledger, dashboard template, snapshots
 ├── .github/                 # CI, release placeholder, templates, Dependabot
 ├── Cargo.toml               # Rust workspace
 ├── justfile                 # developer tasks
@@ -192,6 +214,8 @@ pnpm format:check
 - **[Executive brief](docs/EXECUTIVE-BRIEF.md)** — the two-page version: findings, scope, timeline, costs, decisions.
 - **[Product audit](docs/AUDIT.md)** — what Grammarly/Superhuman ships in 2026, what is replicable, what is not, and where the gap is.
 - **[Build plan](docs/PLAN.md)** — strategy, scope, UX, milestones, testing, distribution, risks.
+- **[M0 verification](docs/M0-VERIFICATION.md)** — build evidence, overlay matrix, OpenRouter check, and known gaps.
+- **[Progress tracker](docs/PROGRESS.md)** — evidence-derived milestone status, the live dashboard, and how to update the ledger.
 - **[Architecture](docs/ARCHITECTURE.md)** — process model, modules, data types, provider layer, macOS integration, IPC, store, security.
 - **[Feature matrix](docs/FEATURE-MATRIX.md)** — 94 features with parity target, approach, phase, effort, and risk.
 - **[Decision records](docs/DECISIONS.md)** — the choices that shape the build, with alternatives.

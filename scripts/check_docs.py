@@ -11,7 +11,7 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SKIP_DIRS = {".git", "target", "node_modules", ".upstream", "dist", "build"}
+SKIP_DIRS = {".git", "target", "node_modules", ".upstream", "vendor", "dist", "build"}
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 LEGACY_RE = re.compile(r"\bStet\b|\bstet\b")
 

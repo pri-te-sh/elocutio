@@ -2,6 +2,8 @@
 
 **Elocutio** · *Your voice. Clearly expressed.*
 
+Brand guide v1.1 — adds Soft Indigo for dark-mode contrast.
+
 A private writing companion that refines clarity, correctness, and tone while preserving your voice.
 
 The name comes from the classical rhetorical canon of **elocutio**: the art of choosing words, shaping sentences, and setting tone. The brand should feel like an editor, not a grammar police officer: clear, thoughtful, human.
@@ -20,10 +22,12 @@ The mark is built from two quotation marks and a raised eyebrow:
 | --- | --- |
 | `assets/brand/lockup-indigo.png` | Primary lockup on Warm Paper or White |
 | `assets/brand/lockup-black.png` | Near-black lockup for high-contrast light surfaces |
-| `assets/brand/lockup-white.png` | Reversed lockup on Ink Indigo or dark surfaces |
+| `assets/brand/lockup-white.png` | Reversed lockup, default on dark surfaces |
+| `assets/brand/lockup-soft-indigo.png` | Optional soft-indigo lockup on dark surfaces |
 | `assets/brand/mark-indigo.png` | Standalone mark on light surfaces |
 | `assets/brand/mark-black.png` | Standalone mark, monochrome |
-| `assets/brand/mark-white.png` | Standalone mark on Ink Indigo |
+| `assets/brand/mark-white.png` | Standalone mark on Ink Indigo or dark surfaces |
+| `assets/brand/mark-soft-indigo.png` | Optional soft-indigo mark on dark surfaces |
 | `assets/brand/wordmark-white.png` | Reversed wordmark without the mark |
 
 **Rules**
@@ -33,7 +37,9 @@ The mark is built from two quotation marks and a raised eyebrow:
 - Preserve the eyebrow and the asymmetry; never redraw the marks as a generic quote pair.
 - Clear space: at least **2× the eyebrow stroke thickness** on every side.
 - Minimum sizes: **24 px** for the standalone mark, **140 px wide** for the lockup.
-- Use Ink Indigo on Warm Paper/White, or White on Ink Indigo. Near Black only for monochrome contexts.
+- Use Ink Indigo on Warm Paper/White, or White on Ink Indigo or Near Black.
+- **Never use Ink Indigo on a dark surface.** On dark surfaces use White by default, or Soft Indigo `#B8BEFF` as an optional accent. Choose by contrast, not by theme name.
+- Near Black is for text, monochrome marks, and dark surfaces.
 - Do not place the logo on busy photography or low-contrast backgrounds.
 - Do not use the logo to imply endorsement by Grammarly, Superhuman, Automattic, or Harper.
 
@@ -41,12 +47,19 @@ The mark is built from two quotation marks and a raised eyebrow:
 
 | Token | Hex | Use |
 | --- | --- | --- |
-| **Ink Indigo** | `#191F70` | Primary brand, headlines, links, active UI, app icon field |
-| **Near Black** | `#171717` | Body text, monochrome marks, high-contrast UI |
-| **Warm Paper** | `#F8F7F3` | Default app background, marketing surfaces |
-| **White** | `#FFFFFF` | Cards, reversed logo, clean surfaces |
+| **Ink Indigo** | `#191F70` | Primary brand, headlines, links, active UI on **light** surfaces; app icon field |
+| **Soft Indigo** | `#B8BEFF` | Dark-mode accents, links, active UI; optional dark-surface logo |
+| **Near Black** | `#171717` | Body text on light, primary dark surface, monochrome marks |
+| **Warm Paper** | `#F8F7F3` | Default light background, marketing surfaces |
+| **White** | `#FFFFFF` | Cards on light, reversed logo, high-contrast text on dark |
 
 Indigo leads; neutrals support. Keep large areas neutral and use indigo for emphasis, not for entire reading surfaces.
+
+**Light vs. dark:**
+
+- Light: Ink Indigo accents on Warm Paper/White; Near Black body text.
+- Dark: Soft Indigo accents on Near Black; White/Warm Paper body text. **Never Ink Indigo on dark.**
+- The logo follows contrast: Ink Indigo on light, White on dark by default, Soft Indigo optional on dark.
 
 ## 3. Typography
 
@@ -115,13 +128,14 @@ python3 scripts/build-assets.py
 - Ink Indigo `#191F70` on Warm Paper `#F8F7F3` is approximately 11:1 contrast.
 - Near Black `#171717` on Warm Paper is approximately 14:1.
 - White on Ink Indigo is approximately 12:1.
+- Soft Indigo `#B8BEFF` on Near Black is approximately 9:1, suitable for dark-mode accents and links.
 - Do not rely on color alone for suggestion categories; pair color with labels and icons.
 - Respect Reduce Motion; transitions should be 150 ms or less and never block input.
 
 ## 8. Files
 
 - Source artwork: [`assets/brand/source/`](../assets/brand/source/)
-- Brand guide reference: [`assets/brand/source/brand-guide-v1.jpg`](../assets/brand/source/brand-guide-v1.jpg)
+- Brand guide reference: [`assets/brand/source/brand-guide-v1.1.jpg`](../assets/brand/source/brand-guide-v1.1.jpg)
 - Design tokens: [`assets/brand/tokens.json`](../assets/brand/tokens.json)
 - Generated platform icons: [`assets/icons/`](../assets/icons/)
 - Icon build script: [`scripts/build-assets.py`](../scripts/build-assets.py)

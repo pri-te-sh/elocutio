@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Elocutio overlay test</title>
+    <style>
+      body {
+        font:
+          16px/1.5 -apple-system,
+          sans-serif;
+        max-width: 720px;
+        margin: 48px auto;
+        padding: 0 24px;
+      }
+      textarea,
+      [contenteditable] {
+        width: 100%;
+        box-sizing: border-box;
+        margin: 8px 0 24px;
+        padding: 12px;
+        font: inherit;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+      }
+      [contenteditable] {
+        min-height: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Elocutio overlay test</h1>
+    <p>Click the textarea, then type a deliberate typo such as “this is tehre test”.</p>
+    <textarea rows="6">This is tehre test.</textarea>
+    <p>Contenteditable target:</p>
+    <div contenteditable="true">This is tehre test in a contenteditable.</div>
+  </body>
+</html>

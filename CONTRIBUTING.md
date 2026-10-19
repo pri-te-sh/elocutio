@@ -43,9 +43,15 @@ Useful tasks:
 | `just test` | Rust tests |
 | `just fmt` | Format Rust and JS/JSON/YAML |
 | `just build` | Build the Rust workspace |
+| `just macos-check` | Type-check the macOS frontend and Tauri backend |
+| `just macos-build` | Build an unsigned debug `Elocutio.app` |
+| `just macos-dev` | Run the macOS shell in development mode |
 | `just assets` | Regenerate app/platform icons from brand sources |
 | `just fetch-upstream` | Shallow-clone Harper v2.13.0 into `.upstream/` |
 | `just dev-cert` | Create a stable self-signed certificate for TCC |
+| `just progress` | Build the static progress dashboard snapshot |
+| `just progress-serve` | Serve the live progress dashboard |
+| `just progress-check` | Validate the progress ledger and run its tests |
 
 Without `just`:
 
@@ -54,10 +60,12 @@ cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all
 python3 scripts/check_docs.py
+python3 scripts/progress.py validate
+python3 -m unittest discover -s scripts -p "test_*.py"
 pnpm format:check
 ```
 
-The desktop app arrives in M0. Once it does, macOS will prompt for Accessibility; development builds must use the stable self-signed certificate so TCC does not reset on every rebuild.
+The macOS M0 developer shell is buildable. macOS will prompt for Accessibility at runtime; development builds should use the stable self-signed certificate so TCC does not reset on every rebuild. Chrome/Mail support and system-wide AI rewrite are still open — see [M0 verification](docs/M0-VERIFICATION.md).
 
 ## Repository layout
 
@@ -69,7 +77,8 @@ crates/elocutio-voice      local voice profiles and style cards
 crates/elocutio-store      SQLite schema and repositories
 crates/elocutio-bridge     browser-extension protocol
 crates/elocutio-platform   shared capture/injection/overlay traits
-apps/macos                 forked Harper macOS shell (M0)
+apps/macos                 forked Harper macOS shell (M0, buildable)
+vendor/harper              vendored harper-core subset (Apache-2.0)
 apps/windows               Windows shell (post-v1)
 apps/ios                   iOS app + keyboard extension (planned)
 apps/android               Android app + accessibility service (planned)

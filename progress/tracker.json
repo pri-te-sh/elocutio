@@ -1,0 +1,1033 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-19T17:35:00Z",
+  "project": {
+    "name": "Elocutio",
+    "tagline": "Your voice. Clearly expressed.",
+    "status": "pre-alpha",
+    "startDate": "2026-10-19",
+    "repo": "pri-te-sh/elocutio",
+    "plan": "docs/PLAN.md",
+    "roadmap": "ROADMAP.md",
+    "description": "A private, open-source, bring-your-own-key writing assistant for macOS. Local Harper rules for instant correctness; your chosen model for judgment; a local voice profile that learns how you write.",
+    "planWeeks": [
+      14,
+      19
+    ],
+    "engineers": 1
+  },
+  "areas": {
+    "planning": "Planning",
+    "brand": "Brand",
+    "scaffold": "Scaffold",
+    "upstream": "Upstream",
+    "build": "macOS build",
+    "llm": "Providers",
+    "analysis": "Analysis",
+    "ux": "Experience",
+    "settings": "Settings",
+    "privacy": "Privacy",
+    "voice": "Voice",
+    "bridge": "Bridge",
+    "extension": "Extension",
+    "qa": "Quality",
+    "release": "Release",
+    "docs": "Docs"
+  },
+  "priorities": {
+    "P0": "Gate-critical",
+    "P1": "Core scope",
+    "P2": "Polish / later"
+  },
+  "milestones": [
+    {
+      "id": "P",
+      "name": "Planning & foundation",
+      "short": "Planning",
+      "outcome": "Audit, plan, architecture, feature matrix, decisions, prompt library, voice design, brand system, and a compiling repository scaffold.",
+      "status": "done",
+      "completedAt": "2026-10-19",
+      "estimateDays": [
+        4,
+        4
+      ],
+      "weeks": [
+        0,
+        0
+      ],
+      "tasks": [
+        {
+          "id": "p-audit",
+          "title": "Product, competitor, and market audit",
+          "area": "planning",
+          "priority": "P0",
+          "estimateDays": 1,
+          "evidence": [
+            {
+              "type": "path",
+              "path": "docs/AUDIT.md"
+            }
+          ]
+        },
+        {
+          "id": "p-plan",
+          "title": "Build plan: strategy, scope, phase gates, estimates",
+          "area": "planning",
+          "priority": "P0",
+          "estimateDays": 1,
+          "evidence": [
+            {
+              "type": "path",
+              "path": "docs/PLAN.md"
+            }
+          ]
+        },
+        {
+          "id": "p-arch",
+          "title": "Architecture: process model, data types, IPC, platform strategy",
+          "area": "planning",
+          "priority": "P0",
+          "estimateDays": 1,
+          "evidence": [
+            {
+              "type": "path",
+              "path": "docs/ARCHITECTURE.md"
+            }
+          ]
+        },
+        {
+          "id": "p-brand",
+          "title": "Brand system, palette, and generated platform icons",
+          "area": "brand",
+          "priority": "P1",
+          "estimateDays": 0.5,
+          "evidence": [
+            {
+              "type": "path",
+              "path": "docs/BRAND.md"
+            },
+            {
+              "type": "path",
+              "path": "assets/brand/tokens.json"
+            },
+            {
+              "type": "path",
+              "path": "assets/icons/AppIcon.icns"
+            }
+          ]
+        },
+        {
+          "id": "p-scaffold",
+          "title": "Repository scaffold: Rust workspace, crates, CI, governance",
+          "area": "scaffold",
+          "priority": "P1",
+          "estimateDays": 0.5,
+          "evidence": [
+            {
+              "type": "path",
+              "path": "Cargo.toml"
+            },
+            {
+              "type": "path",
+              "path": ".github/workflows/ci.yml"
+            },
+            {
+              "type": "path",
+              "path": "crates/elocutio-core/Cargo.toml"
+            }
+          ]
+        }
+      ],
+      "acceptance": [
+        {
+          "text": "Audit, plan, and architecture are approved and committed",
+          "accepted": true
+        },
+        {
+          "text": "Rust workspace compiles and the CI workflow is in place",
+          "accepted": true
+        },
+        {
+          "text": "Brand system and platform icons are generated from source art",
+          "accepted": true
+        }
+      ]
+    },
+    {
+      "id": "M0",
+      "name": "Fork, rebrand, spike",
+      "short": "Fork & spike",
+      "outcome": "Rebranded app builds and runs; overlay works in five apps; an OpenRouter key validates; a minimal LLM rewrite replaces a selection.",
+      "estimateDays": [
+        5,
+        7
+      ],
+      "weeks": [
+        1,
+        1
+      ],
+      "tasks": [
+        {
+          "id": "m0-fork",
+          "title": "Fork Harper v2.13.0, add the upstream remote, write UPSTREAM.md",
+          "area": "upstream",
+          "priority": "P0",
+          "estimateDays": 0.5,
+          "status": "done",
+          "notes": "Fork documentation, base lock, and upstream remote are in place; the source checkout is local-only.",
+          "evidence": [
+            {
+              "type": "path",
+              "path": "UPSTREAM.md"
+            },
+            {
+              "type": "path",
+              "path": "upstream.lock"
+            },
+            {
+              "type": "git-remote",
+              "name": "upstream"
+            }
+          ]
+        },
+        {
+          "id": "m0-rebrand",
+          "title": "Rebrand product name, bundle ID, icons, tray, config paths, updater keys, and About",
+          "area": "brand",
+          "priority": "P0",
+          "estimateDays": 1.5,
+          "status": "done",
+          "notes": "Product name, bundle ID, generated icons, tray, window copy, issue URL, config path, and About/issue surfaces are rebranded. The updater was removed for M0 and returns in M5 with our own keypair.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/tauri.conf.json",
+              "contains": "\"productName\": \"Elocutio\""
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/tauri.conf.json",
+              "contains": "\"identifier\": \"app.elocutio.desktop\""
+            },
+            {
+              "type": "path",
+              "path": "assets/brand/tokens.json"
+            },
+            {
+              "type": "path",
+              "path": "apps/macos/src-tauri/icons/icon.icns"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/config/mod.rs",
+              "contains": "path.join(\"elocutio\")"
+            }
+          ]
+        },
+        {
+          "id": "m0-build",
+          "title": "Build and run on macOS; verify the AX overlay in TextEdit, Notes, Mail, Safari, and Chrome",
+          "area": "build",
+          "priority": "P0",
+          "estimateDays": 1.5,
+          "status": "in_progress",
+          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay and click-to-replace check. Chrome reaches AX text-range bounds but draws no overlay; Mail exposes no usable text-range bounds. 3 of 5 apps pass; see docs/M0-VERIFICATION.md.",
+          "dependsOn": [
+            "m0-fork"
+          ],
+          "evidence": [
+            {
+              "type": "glob",
+              "pattern": "apps/macos/src-tauri/src/**/*.rs"
+            },
+            {
+              "type": "path",
+              "path": "docs/M0-VERIFICATION.md"
+            }
+          ]
+        },
+        {
+          "id": "m0-llm",
+          "title": "Add the elocutio-llm skeleton: OpenRouter client, Keychain, model catalog, key validation",
+          "area": "llm",
+          "priority": "P0",
+          "estimateDays": 1,
+          "status": "done",
+          "notes": "OpenRouter key validation, Keychain storage, and an in-app rewrite are implemented in apps/macos/src-tauri/src/openrouter.rs. The full provider router and model catalog remain M1.",
+          "dependsOn": [
+            "m0-fork"
+          ],
+          "evidence": [
+            {
+              "type": "path",
+              "path": "crates/elocutio-llm/src/lib.rs"
+            },
+            {
+              "type": "path",
+              "path": "apps/macos/src-tauri/src/openrouter.rs"
+            }
+          ]
+        },
+        {
+          "id": "m0-rewrite",
+          "title": "Prove the end-to-end path: rewrite the selection with AI through the write ladder",
+          "area": "build",
+          "priority": "P0",
+          "estimateDays": 1,
+          "notes": "In-app OpenRouter rewrite works and the spelling click path replaces text correctly. System-wide AI rewrite through pasteboard + \u2318V with read-back verification is still M1 work.",
+          "dependsOn": [
+            "m0-build",
+            "m0-llm"
+          ],
+          "status": "in_progress"
+        },
+        {
+          "id": "m0-ipc",
+          "title": "Decide IPC ownership and document the main \u2194 highlighter protocol",
+          "area": "build",
+          "priority": "P0",
+          "estimateDays": 0,
+          "notes": "Decided: the main process owns secrets and network, the highlighter owns text and injection. Protocol framing, messages, and failure handling are documented.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "docs/ARCHITECTURE.md",
+              "contains": "## 10. IPC between main and highlighter"
+            },
+            {
+              "type": "text",
+              "path": "docs/PLAN.md",
+              "contains": "### 5.5 Suggestion contract"
+            }
+          ],
+          "status": "done"
+        },
+        {
+          "id": "m0-security",
+          "title": "Security audit of inherited network, IPC, updater, and permission surfaces",
+          "area": "privacy",
+          "priority": "P0",
+          "estimateDays": 0.5,
+          "dependsOn": [
+            "m0-build"
+          ],
+          "status": "in_progress",
+          "notes": "Updater removed for M0; the OpenRouter key is in the Keychain and never in config/logs. A full audit of the inherited network/IPC/AX surfaces remains."
+        }
+      ],
+      "acceptance": [
+        {
+          "text": "Rebranded app builds and launches on macOS",
+          "accepted": true
+        },
+        {
+          "text": "Overlay works in TextEdit, Notes, Mail, Safari, and Chrome",
+          "accepted": false
+        },
+        {
+          "text": "OpenRouter key validates and is stored in the Keychain",
+          "accepted": true
+        },
+        {
+          "text": "A rewrite replaces the selection correctly via pasteboard + \u2318V, with AX fast path where settable",
+          "accepted": false
+        },
+        {
+          "text": "The suggestion card never steals focus",
+          "accepted": true
+        },
+        {
+          "text": "No Harper branding, bundle IDs, URLs, or config paths remain",
+          "accepted": true
+        }
+      ],
+      "status": "in_progress"
+    },
+    {
+      "id": "M1",
+      "name": "LLM MVP",
+      "short": "LLM MVP",
+      "outcome": "Local and LLM suggestions in the focused field, a suggestion card with accept/dismiss, tone detection, onboarding, Keychain storage, and a usage log.",
+      "estimateDays": [
+        10,
+        14
+      ],
+      "weeks": [
+        2,
+        3
+      ],
+      "tasks": [
+        {
+          "id": "m1-providers",
+          "title": "Provider abstraction with OpenRouter and OpenAI-compatible adapters; streaming, retries, error taxonomy",
+          "area": "llm",
+          "priority": "P0",
+          "estimateDays": 2,
+          "dependsOn": [
+            "m0-llm"
+          ]
+        },
+        {
+          "id": "m1-pipeline",
+          "title": "Chunking, prompt v1, JSON schema, validation, offset resolver, and dedupe",
+          "area": "analysis",
+          "priority": "P0",
+          "estimateDays": 2,
+          "notes": "Offset resolution is the quality core; implement and test it before polishing UI."
+        },
+        {
+          "id": "m1-merge",
+          "title": "Merge local and LLM suggestions; rank by confidence, severity, and category",
+          "area": "analysis",
+          "priority": "P0",
+          "estimateDays": 1,
+          "dependsOn": [
+            "m1-pipeline",
+            "m1-providers"
+          ]
+        },
+        {
+          "id": "m1-card",
+          "title": "Suggestion card UI: accept, dismiss, explain; inherited local underlines; LLM suggestions in the card",
+          "area": "ux",
+          "priority": "P0",
+          "estimateDays": 1.5,
+          "dependsOn": [
+            "m0-build"
+          ]
+        },
+        {
+          "id": "m1-onboarding",
+          "title": "Onboarding: local-only vs provider, key, model, permissions, and playground",
+          "area": "ux",
+          "priority": "P0",
+          "estimateDays": 1
+        },
+        {
+          "id": "m1-settings",
+          "title": "Settings: providers and models, per-app enablement, privacy, and usage",
+          "area": "settings",
+          "priority": "P1",
+          "estimateDays": 1
+        },
+        {
+          "id": "m1-keychain",
+          "title": "Keychain storage, cost log, and budget warnings",
+          "area": "privacy",
+          "priority": "P0",
+          "estimateDays": 0.5
+        },
+        {
+          "id": "m1-events",
+          "title": "Record accept, dismiss, and edit-after-accept events locally (opt-in) for voice v0",
+          "area": "voice",
+          "priority": "P1",
+          "estimateDays": 0.5
+        },
+        {
+          "id": "m1-golden",
+          "title": "Golden-set harness v0: false-positive rate and span-accuracy metrics",
+          "area": "qa",
+          "priority": "P1",
+          "estimateDays": 1
+        },
+        {
+          "id": "m1-gate",
+          "title": "M1 gate: five-app end-to-end run (pasteboard, read-back, undo, offline/402 states, key restart)",
+          "area": "qa",
+          "priority": "P0",
+          "estimateDays": 1.5,
+          "dependsOn": [
+            "m1-card",
+            "m1-onboarding",
+            "m1-keychain"
+          ]
+        }
+      ],
+      "acceptance": [
+        {
+          "text": "In five apps, including a Chromium-based app, a shortcut produces suggestions",
+          "accepted": false
+        },
+        {
+          "text": "Accept edits the correct span via pasteboard or the AppKit AX fast path; read-back verification passes",
+          "accepted": false
+        },
+        {
+          "text": "Undo works after an accepted suggestion",
+          "accepted": false
+        },
+        {
+          "text": "Invalid key, offline, and 402 states are clear and actionable",
+          "accepted": false
+        },
+        {
+          "text": "Zero user text in logs",
+          "accepted": false
+        },
+        {
+          "text": "The API key survives an app restart",
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "id": "M2",
+      "name": "Inline UX + Voice v0",
+      "short": "Inline & voice",
+      "outcome": "Grammarly-style widget, live LLM mode, tone and paragraph rewrites with diffs, cache and cost caps, a hardened 10-app matrix, and a voice profile learned from feedback.",
+      "estimateDays": [
+        13,
+        18
+      ],
+      "weeks": [
+        4,
+        7
+      ],
+      "tasks": [
+        {
+          "id": "m2-widget",
+          "title": "Grammarly-style widget: count, tone, anchors, and per-app positioning",
+          "area": "ux",
+          "priority": "P0",
+          "estimateDays": 3,
+          "dependsOn": [
+            "m1-card"
+          ],
+          "evidence": [
+            {
+              "type": "glob",
+              "pattern": "apps/macos/src/**/widget*"
+            }
+          ]
+        },
+        {
+          "id": "m2-live",
+          "title": "Live LLM mode: debounce, diff-only requests, cancel, stale guard, and throttles",
+          "area": "ux",
+          "priority": "P0",
+          "estimateDays": 2,
+          "dependsOn": [
+            "m1-providers"
+          ]
+        },
+        {
+          "id": "m2-tone",
+          "title": "Tone detection, tone rewrite presets, and custom instructions",
+          "area": "ux",
+          "priority": "P1",
+          "estimateDays": 2
+        },
+        {
+          "id": "m2-paragraph",
+          "title": "Paragraph rewrite with word-level diff and accept/reject",
+          "area": "ux",
+          "priority": "P1",
+          "estimateDays": 2
+        },
+        {
+          "id": "m2-cache",
+          "title": "Cache, request coalescing, and cost caps",
+          "area": "analysis",
+          "priority": "P1",
+          "estimateDays": 1
+        },
+        {
+          "id": "m2-secure",
+          "title": "Secure-field and blocklist hardening",
+          "area": "privacy",
+          "priority": "P0",
+          "estimateDays": 1
+        },
+        {
+          "id": "m2-matrix",
+          "title": "Tier A matrix: 10 apps across light/dark, multi-monitor, Spaces, and full-screen",
+          "area": "qa",
+          "priority": "P0",
+          "estimateDays": 2,
+          "dependsOn": [
+            "m2-widget"
+          ]
+        },
+        {
+          "id": "m2-voice-profile",
+          "title": "Voice v0: learn traits with confidence from accepted, dismissed, and edited suggestions",
+          "area": "voice",
+          "priority": "P0",
+          "estimateDays": 1.5,
+          "dependsOn": [
+            "m1-events"
+          ]
+        },
+        {
+          "id": "m2-voice-apply",
+          "title": "Voice v0: style card in rewrites, trait overrides, \"sounds like me\" rating, and settings tab",
+          "area": "voice",
+          "priority": "P0",
+          "estimateDays": 1,
+          "dependsOn": [
+            "m2-voice-profile"
+          ]
+        }
+      ],
+      "acceptance": [
+        {
+          "text": "The widget never activates the host app",
+          "accepted": false
+        },
+        {
+          "text": "Underlines align within \u00b12 pt",
+          "accepted": false
+        },
+        {
+          "text": "Live-mode p95 latency stays under 4 s",
+          "accepted": false
+        },
+        {
+          "text": "Widget position persists when the host window moves",
+          "accepted": false
+        },
+        {
+          "text": "No request storms: coalescing and stale-result guards hold under fast typing",
+          "accepted": false
+        },
+        {
+          "text": "After five accepted or edited suggestions, the profile shows at least three learned traits with confidence and applies to a rewrite",
+          "accepted": false
+        },
+        {
+          "text": "The elocutio-voice copy guard passes",
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "id": "M3",
+      "name": "Everywhere + Voice uploads",
+      "short": "Everywhere",
+      "outcome": "Chrome/Edge extension on Gmail, Notion, Slack, and Linear; assistant panel; compose/reply/summarize; multi-provider support; voice profiles from uploaded samples.",
+      "estimateDays": [
+        19,
+        25
+      ],
+      "weeks": [
+        8,
+        12
+      ],
+      "tasks": [
+        {
+          "id": "m3-extension",
+          "title": "Chrome/Edge MV3 extension: content script, shadow-DOM overlay, popup, background worker",
+          "area": "extension",
+          "priority": "P0",
+          "estimateDays": 3.5,
+          "dependsOn": [
+            "m3-bridge"
+          ]
+        },
+        {
+          "id": "m3-bridge",
+          "title": "Local bridge: WebSocket, pairing token, Origin allowlist, reconnect, and backpressure",
+          "area": "bridge",
+          "priority": "P0",
+          "estimateDays": 2,
+          "dependsOn": [
+            "m1-gate"
+          ]
+        },
+        {
+          "id": "m3-adapters",
+          "title": "Web adapters: Gmail, Notion, Slack web, Linear, and generic textarea/contenteditable",
+          "area": "extension",
+          "priority": "P0",
+          "estimateDays": 3.5,
+          "dependsOn": [
+            "m3-extension"
+          ]
+        },
+        {
+          "id": "m3-gdocs",
+          "title": "Google Docs: explicit unsupported state and \"copy into Elocutio\" fallback",
+          "area": "extension",
+          "priority": "P1",
+          "estimateDays": 0.5
+        },
+        {
+          "id": "m3-panel",
+          "title": "Assistant panel: context chips, streaming, insert/replace",
+          "area": "ux",
+          "priority": "P1",
+          "estimateDays": 2
+        },
+        {
+          "id": "m3-compose",
+          "title": "Compose, reply, and summarize flows",
+          "area": "ux",
+          "priority": "P1",
+          "estimateDays": 1.5
+        },
+        {
+          "id": "m3-providers",
+          "title": "Anthropic, Gemini, Ollama, and custom OpenAI-compatible provider adapters",
+          "area": "llm",
+          "priority": "P1",
+          "estimateDays": 2,
+          "dependsOn": [
+            "m1-providers"
+          ]
+        },
+        {
+          "id": "m3-routing",
+          "title": "Provider routing UI: per-task default, fallback, and budget",
+          "area": "settings",
+          "priority": "P1",
+          "estimateDays": 1
+        },
+        {
+          "id": "m3-voice-upload",
+          "title": "Voice uploads: txt/md/docx/paste, quality gates, traits, exemplars, preview, delete, encrypted storage",
+          "area": "voice",
+          "priority": "P0",
+          "estimateDays": 3,
+          "dependsOn": [
+            "m2-voice-profile"
+          ]
+        },
+        {
+          "id": "m3-gate",
+          "title": "M3 gate: extension matrix, pairing security, provider switching, and reply insertion",
+          "area": "qa",
+          "priority": "P0",
+          "estimateDays": 3,
+          "dependsOn": [
+            "m3-adapters",
+            "m3-compose",
+            "m3-routing"
+          ]
+        }
+      ],
+      "acceptance": [
+        {
+          "text": "Extension works on Gmail, Notion, Slack web, Linear, and a plain textarea",
+          "accepted": false
+        },
+        {
+          "text": "Google Docs shows a clear unsupported state with a copy fallback",
+          "accepted": false
+        },
+        {
+          "text": "Pairing is one-time and rejects unpaired origins",
+          "accepted": false
+        },
+        {
+          "text": "Switching provider takes fewer than three clicks",
+          "accepted": false
+        },
+        {
+          "text": "A generated reply inserts at the caret",
+          "accepted": false
+        },
+        {
+          "text": "Three uploaded samples produce a style card with confidence and a preview rewrite",
+          "accepted": false
+        },
+        {
+          "text": "Deleting a sample removes its exemplars and statistics",
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "Personal & trust + Voice v2",
+      "short": "Personal & trust",
+      "outcome": "Style guide, brand voice, glossary, snippets, provenance, local history, AI-phrase linting, translation/humanizer, 24 languages, and per-context voice profiles.",
+      "estimateDays": [
+        14,
+        20
+      ],
+      "weeks": [
+        13,
+        16
+      ],
+      "tasks": [
+        {
+          "id": "m4-style",
+          "title": "Style guide YAML import/export, regex and term rules, severity, and examples",
+          "area": "settings",
+          "priority": "P1",
+          "estimateDays": 2.5
+        },
+        {
+          "id": "m4-brandvoice",
+          "title": "Brand voice from 3\u201310 sample documents (few-shot profile)",
+          "area": "voice",
+          "priority": "P1",
+          "estimateDays": 2,
+          "dependsOn": [
+            "m3-voice-upload"
+          ]
+        },
+        {
+          "id": "m4-glossary",
+          "title": "Glossary, snippets, and personal dictionary UI",
+          "area": "settings",
+          "priority": "P2",
+          "estimateDays": 1,
+          "dependsOn": [
+            "m1-settings"
+          ]
+        },
+        {
+          "id": "m4-provenance",
+          "title": "Provenance log (typing/paste hashes and AI edits) with export",
+          "area": "privacy",
+          "priority": "P1",
+          "estimateDays": 2,
+          "dependsOn": [
+            "m1-events"
+          ]
+        },
+        {
+          "id": "m4-history",
+          "title": "Local history and analytics (opt-in)",
+          "area": "privacy",
+          "priority": "P2",
+          "estimateDays": 1.5
+        },
+        {
+          "id": "m4-linter",
+          "title": "AI-phrase linter: style feedback, not an AI-detector verdict",
+          "area": "analysis",
+          "priority": "P2",
+          "estimateDays": 1
+        },
+        {
+          "id": "m4-translate",
+          "title": "Translation and humanizer presets; 24-language support",
+          "area": "llm",
+          "priority": "P1",
+          "estimateDays": 1.5
+        },
+        {
+          "id": "m4-a11y",
+          "title": "Accessibility and localization pass",
+          "area": "qa",
+          "priority": "P1",
+          "estimateDays": 2
+        },
+        {
+          "id": "m4-voice-v2",
+          "title": "Voice v2: per-context profiles, exemplar retrieval, drift detection, export/import, PDF, freeze",
+          "area": "voice",
+          "priority": "P1",
+          "estimateDays": 3.5,
+          "dependsOn": [
+            "m4-brandvoice"
+          ]
+        }
+      ],
+      "acceptance": [
+        {
+          "text": "A shared style guide survives restart and is enforced",
+          "accepted": false
+        },
+        {
+          "text": "Provenance data exports cleanly",
+          "accepted": false
+        },
+        {
+          "text": "No AI-detector score is ever shown",
+          "accepted": false
+        },
+        {
+          "text": "Local-only mode works fully offline",
+          "accepted": false
+        },
+        {
+          "text": "Email, chat, and document contexts select the right voice profile",
+          "accepted": false
+        },
+        {
+          "text": "A drifted profile prompts an update",
+          "accepted": false
+        },
+        {
+          "text": "Voice export/import round-trips without loss",
+          "accepted": false
+        },
+        {
+          "text": "PDF ingestion works or fails with a clear message",
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "Launch",
+      "short": "Launch",
+      "outcome": "Notarized DMG, signed updates, Homebrew, documentation, support matrix, privacy and security pages, crash reporting, and a completed security review.",
+      "estimateDays": [
+        8,
+        12
+      ],
+      "weeks": [
+        17,
+        19
+      ],
+      "tasks": [
+        {
+          "id": "m5-sign",
+          "title": "Developer ID signing, hardened runtime, notarization, and DMG packaging",
+          "area": "release",
+          "priority": "P0",
+          "estimateDays": 2
+        },
+        {
+          "id": "m5-updater",
+          "title": "Tauri updater: signing keys, appcast endpoint, stable/beta channels",
+          "area": "release",
+          "priority": "P0",
+          "estimateDays": 1.5,
+          "dependsOn": [
+            "m5-sign"
+          ]
+        },
+        {
+          "id": "m5-distro",
+          "title": "Homebrew cask, GitHub Releases, and checksums",
+          "area": "release",
+          "priority": "P1",
+          "estimateDays": 1,
+          "dependsOn": [
+            "m5-sign"
+          ]
+        },
+        {
+          "id": "m5-docs",
+          "title": "Docs, website, support matrix, privacy and security pages",
+          "area": "docs",
+          "priority": "P1",
+          "estimateDays": 2
+        },
+        {
+          "id": "m5-crash",
+          "title": "Opt-in crash reporting and diagnostics export",
+          "area": "release",
+          "priority": "P2",
+          "estimateDays": 1
+        },
+        {
+          "id": "m5-security",
+          "title": "Security review: key handling, bridge auth, IPC, dependencies, update verification",
+          "area": "privacy",
+          "priority": "P0",
+          "estimateDays": 1.5
+        },
+        {
+          "id": "m5-release",
+          "title": "Release checklist and rollback plan",
+          "area": "release",
+          "priority": "P1",
+          "estimateDays": 1,
+          "dependsOn": [
+            "m5-sign",
+            "m5-updater",
+            "m5-distro",
+            "m5-docs",
+            "m5-crash",
+            "m5-security"
+          ]
+        }
+      ],
+      "acceptance": [
+        {
+          "text": "A clean Mac installs from the DMG, grants permissions, onboards, and updates through the app",
+          "accepted": false
+        },
+        {
+          "text": "Gatekeeper passes and the app is notarized",
+          "accepted": false
+        },
+        {
+          "text": "brew install --cask elocutio works",
+          "accepted": false
+        }
+      ]
+    }
+  ],
+  "blockers": [],
+  "risks": [
+    {
+      "id": "R1",
+      "risk": "Inherited Harper beta bugs",
+      "mitigation": "Pin v2.13.0, audit the inherited surface, add tests, keep upstream sync, be ready to patch.",
+      "severity": "medium",
+      "area": "upstream"
+    },
+    {
+      "id": "R2",
+      "risk": "Tauri UI feels non-native",
+      "mitigation": "Custom design system, native overlay windows, small webviews only for settings and panels.",
+      "severity": "medium",
+      "area": "build"
+    },
+    {
+      "id": "R3",
+      "risk": "Overlay misalignment",
+      "mitigation": "Reuse Harper geometry, add golden screenshots, keep a widget-first fallback.",
+      "severity": "high",
+      "area": "build"
+    },
+    {
+      "id": "R4",
+      "risk": "Text injection corruption",
+      "mitigation": "Re-read before injecting; pasteboard + \u2318V primary; read-back verify; abort on mismatch; undo; never touch secure fields.",
+      "severity": "high",
+      "area": "build"
+    },
+    {
+      "id": "R5",
+      "risk": "Latency and cost",
+      "mitigation": "Instant local rules, debounced or on-demand LLM, caching, a cheap default model, and budget caps.",
+      "severity": "medium",
+      "area": "llm"
+    },
+    {
+      "id": "R6",
+      "risk": "Bad model spans",
+      "mitigation": "Quote-based schema, local resolution, ambiguity rejection, and a repair loop.",
+      "severity": "high",
+      "area": "analysis"
+    },
+    {
+      "id": "R7",
+      "risk": "Key leakage",
+      "mitigation": "Keychain only in the main process, redaction, and no keys in highlighter logs.",
+      "severity": "high",
+      "area": "privacy"
+    },
+    {
+      "id": "R8",
+      "risk": "Local bridge exposure",
+      "mitigation": "127.0.0.1 only, pairing token, Origin allowlist, and close on quit.",
+      "severity": "medium",
+      "area": "bridge"
+    },
+    {
+      "id": "R9",
+      "risk": "Upstream divergence",
+      "mitigation": "Small isolated patches, contribute generic fixes upstream, quarterly base review.",
+      "severity": "medium",
+      "area": "upstream"
+    },
+    {
+      "id": "R10",
+      "risk": "Scope creep",
+      "mitigation": "Phase gates, explicit non-goals, and the deferred list are enforced at each milestone.",
+      "severity": "medium",
+      "area": "planning"
+    }
+  ],
+  "history": []
+}

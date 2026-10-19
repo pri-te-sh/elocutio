@@ -539,6 +539,8 @@ Estimates assume one experienced Rust/TypeScript engineer full-time; add 30–50
 
 **Acceptance:** rebranded app builds; overlay works in 5 apps; key validates; a rewrite replaces the selection correctly using the write ladder (pasteboard + ⌘V primary, AX fast path in AppKit); the card never steals focus; no Harper branding remains.
 
+**Status (2026-10-19):** partial. App builds/runs; TextEdit, Notes, and Safari pass; OpenRouter key and in-app rewrite work; click-to-replace is stable. Chrome/Mail AX geometry and system-wide AI rewrite remain. Evidence: [`M0-VERIFICATION.md`](M0-VERIFICATION.md).
+
 ### M1 — LLM MVP (10–14 days)
 
 - Provider abstraction + OpenRouter + OpenAI-compatible; streaming; errors; retries.

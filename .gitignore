@@ -54,6 +54,9 @@ plugins/
 # Generated icon intermediates
 assets/icons/AppIcon.iconset/
 
+# Generated progress dashboard snapshots
+progress/out/
+
 # Local fixtures and private samples
 fixtures/private/
 *.voice-sample

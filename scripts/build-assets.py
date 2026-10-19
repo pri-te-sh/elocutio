@@ -23,6 +23,7 @@ ICONS = ROOT / "assets" / "icons"
 
 # Brand palette (docs/BRAND.md)
 INK_INDIGO = (25, 31, 112, 255)  # #191F70
+SOFT_INDIGO = (184, 190, 255, 255)  # #B8BEFF
 NEAR_BLACK = (23, 23, 23, 255)  # #171717
 WARM_PAPER = (248, 247, 243, 255)  # #F8F7F3
 WHITE = (255, 255, 255, 255)
@@ -66,14 +67,17 @@ def build_lockups() -> None:
     save(trim(recolor(SOURCE / "lockup-indigo.png", INK_INDIGO)), BRAND / "lockup-indigo.png")
     save(trim(recolor(SOURCE / "lockup-black.png", NEAR_BLACK)), BRAND / "lockup-black.png")
     save(trim(recolor(SOURCE / "lockup-white.png", WHITE)), BRAND / "lockup-white.png")
+    save(trim(recolor(SOURCE / "lockup-white.png", SOFT_INDIGO)), BRAND / "lockup-soft-indigo.png")
     save(trim(recolor(SOURCE / "wordmark-white-transparent.png", WHITE)), BRAND / "wordmark-white.png")
 
 
 def build_marks() -> Image.Image:
     indigo = square(trim(recolor(SOURCE / "mark-indigo.png", INK_INDIGO)))
     black = square(trim(recolor(SOURCE / "mark-black.png", NEAR_BLACK)))
+    soft = square(trim(recolor(SOURCE / "mark-white-transparent.png", SOFT_INDIGO)))
     white = square(trim(recolor(SOURCE / "mark-white-transparent.png", WHITE)))
     save(indigo, BRAND / "mark-indigo.png")
+    save(soft, BRAND / "mark-soft-indigo.png")
     save(black, BRAND / "mark-black.png")
     save(white, BRAND / "mark-white.png")
     return white

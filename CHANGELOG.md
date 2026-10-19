@@ -24,16 +24,52 @@ to follow [Semantic Versioning](https://semver.org/).
 - Cross-platform architecture: shared Rust core plus thin macOS, Windows,
   browser, iOS, and Android shells; `elocutio-platform` traits.
 - Platform coverage matrix and platform-expansion roadmap.
+- Live build-progress dashboard with evidence-derived statuses, milestone and
+  acceptance tracking, git activity, filters, and inline status editing
+  (`just progress-serve`); static snapshot via `just progress`.
+- Validated progress ledger, unit and HTTP tests, and `docs/PROGRESS.md`;
+  wired into `just check` and CI.
+- M0 macOS shell: rebranded Tauri app, vendored Harper subset under
+  `vendor/harper/`, generated app/menu-bar icons, and a minimal Svelte setup UI.
+- Keychain-backed OpenRouter key validation and an in-app rewrite path.
+- Controlled Accessibility test page (`apps/macos/test/overlay.html`) and
+  [`docs/M0-VERIFICATION.md`](docs/M0-VERIFICATION.md).
+- Brand guide v1.1 with **Soft Indigo `#B8BEFF`** for dark-mode accents and
+  optional dark-surface logo, plus dark-mode UI tokens.
 
 ### Changed
 
+- The macOS shell now lives in `apps/macos`; the root Cargo workspace excludes
+  it and `vendor/harper`.
+- Config moved to `~/Library/Application Support/elocutio/`; bundle ID is
+  `app.elocutio.desktop`.
+- The inherited updater is removed for M0; it returns in M5 with our own
+  minisign keypair.
 - Product name set to **Elocutio** (ADR-020).
 - Build strategy set to fork Harper Desktop (ADR-001).
 - License set to Apache-2.0 (ADR-002).
 
+### Fixed
+
+- Dark mode no longer uses Ink Indigo on a dark surface; Soft Indigo accents and
+  the white lockup follow the v1.1 contrast rules.
+- Suggestion click no longer freezes after bounding AX tree walks and skipping
+  unnecessary native-app activation.
+- Mail no longer spins the highlighter in an endless activation retry.
+
 ### Security
 
 - Documented the key-handling, voice-sample, and local-bridge threat models.
+- OpenRouter keys are stored in the macOS Keychain and never written to config
+  or logs.
+
+### Known issues
+
+- Chrome and Mail do not show the overlay yet; Chrome needs the M3 extension
+  path and Mail needs a text-bounds fallback.
+- System-wide AI rewrite through pasteboard + ⌘V is not implemented; only the
+  in-app rewrite works.
+- M0 uses an unsigned debug app; no notarized release or updater yet.
 
 ## [0.0.0] - 2026-10-19
 

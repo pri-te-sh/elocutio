@@ -1,5 +1,7 @@
 node_modules/
 target/
+vendor/
+apps/macos/src-tauri/gen/
 dist/
 build/
 docs/
@@ -8,3 +10,6 @@ research/
 pnpm-lock.yaml
 Cargo.lock
 assets/
+# Machine-managed and generated progress files
+progress/out/
+progress/tracker.json

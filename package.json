@@ -20,8 +20,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:docs": "python3 scripts/check_docs.py",
-    "check": "pnpm run check:docs && pnpm run format:check",
-    "test": "cargo test --all"
+    "check": "pnpm run check:docs && pnpm run check:progress && pnpm run format:check",
+    "test": "cargo test --all",
+    "check:progress": "python3 scripts/progress.py validate && python3 -m unittest discover -s scripts -p 'test_*.py'"
   },
   "devDependencies": {
     "prettier": "^3.6.2"

@@ -1169,7 +1169,7 @@ If the inherited egui overlay cannot meet the visual bar, replace the widget/car
 Brand tokens live in `assets/brand/tokens.json`; the full system is in [`BRAND.md`](BRAND.md).
 
 - **Typeface:** Inter (400/500/600), with system fallbacks; native menus may use SF Pro on macOS.
-- **Palette:** Ink Indigo `#191F70`, Near Black `#171717`, Warm Paper `#F8F7F3`, White `#FFFFFF`.
+- **Palette:** Ink Indigo `#191F70` (light accents), Soft Indigo `#B8BEFF` (dark accents), Near Black `#171717` (dark surface), Warm Paper `#F8F7F3` (light surface), White `#FFFFFF` (cards/reversed text). Never Ink Indigo on dark.
 - **Semantic colors:** error red, clarity blue, tone purple, style gray; always pair color with labels/icons.
 - **Materials:** `NSVisualEffectView` on macOS 14/15; `NSGlassEffectView` on macOS 26 when available.
 - **Motion:** 150 ms ease-out; respect Reduce Motion.

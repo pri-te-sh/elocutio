@@ -17,10 +17,42 @@ check:
 	cargo clippy --all-targets --all-features -- -D warnings
 	cargo test --all
 	python3 scripts/check_docs.py
+	python3 scripts/progress.py validate
+	python3 -m unittest discover -s scripts -p "test_*.py"
 	pnpm format:check
 
 test:
 	cargo test --all
+
+# Type-check the macOS frontend and Tauri backend.
+macos-check:
+	pnpm --filter @elocutio/macos check
+	pnpm --filter @elocutio/macos build
+	cargo fmt --manifest-path apps/macos/src-tauri/Cargo.toml -- --check
+	cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
+	cargo test --manifest-path apps/macos/src-tauri/Cargo.toml
+
+# Build an unsigned debug Elocutio.app.
+macos-build:
+	pnpm --filter @elocutio/macos build
+	cd apps/macos && pnpm exec tauri build --debug --bundles app
+
+# Run the macOS shell in development mode.
+macos-dev:
+	cd apps/macos && pnpm tauri dev
+
+# Build the static progress dashboard snapshot (progress/out/).
+progress:
+	python3 scripts/progress.py build
+
+# Serve the live progress dashboard at http://127.0.0.1:8787.
+progress-serve:
+	python3 scripts/progress.py serve --open
+
+# Validate the progress ledger and run the tracker tests.
+progress-check:
+	python3 scripts/progress.py validate
+	python3 -m unittest discover -s scripts -p "test_*.py"
 
 build:
 	cargo build --all

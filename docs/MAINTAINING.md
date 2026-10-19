@@ -80,6 +80,9 @@ Never ask users to paste API keys, private text, or voice samples.
 
 - Use the PR template; require a test plan and a docs update when behavior changes.
 - Run `just check` before merging.
+- Keep [`progress/tracker.json`](../progress/tracker.json) current when a
+  milestone gate moves; the live dashboard (`just progress-serve`) is the
+  status of record. See [PROGRESS.md](PROGRESS.md).
 - For UI changes, require a screenshot or short recording.
 - For prompt changes, require golden-set metrics.
 - For dependency additions, check license compatibility and maintenance status.

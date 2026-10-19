@@ -19,6 +19,11 @@ to follow [Semantic Versioning](https://semver.org/).
 - Bootstrap, documentation-check, development-signing, and upstream-fetch
   scripts.
 - Initial repository scaffold and pinned Harper v2.13.0 upstream lock.
+- Brand system v1: twin-quote mark, Ink Indigo palette, Inter typography,
+  light/dark lockups, brand guide, and generated platform icons.
+- Cross-platform architecture: shared Rust core plus thin macOS, Windows,
+  browser, iOS, and Android shells; `elocutio-platform` traits.
+- Platform coverage matrix and platform-expansion roadmap.
 
 ### Changed
 

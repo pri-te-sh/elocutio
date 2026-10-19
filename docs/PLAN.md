@@ -477,8 +477,10 @@ elocutio/
 │   ├── DECISIONS.md
 │   ├── PROMPTS.md
 │   ├── VOICE-LEARNING.md
+│   ├── BRAND.md
 │   ├── PRIVACY.md
-│   └── TESTING.md
+│   ├── TESTING.md
+│   └── MAINTAINING.md
 ├── harper-core/                 # vendored (English rules)
 ├── harper-*/                    # vendored dependencies
 ├── apps/

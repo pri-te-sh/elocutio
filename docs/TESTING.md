@@ -235,7 +235,21 @@ Fail CI if:
 
 ---
 
-## 8. Release checklist
+## 8. Platform expansion testing
+
+Each new platform gets its own matrix and must not inherit a "supported" claim from macOS.
+
+| Platform | Minimum tests before announcement |
+| --- | --- |
+| **Chrome/Edge** | Gmail, Notion, Slack web, Linear, textarea; pairing; unpaired rejection; no keys in extension |
+| **Windows** | Notepad, Word, Outlook, Chrome, Slack; UIA read/write; clipboard fallback; signed installer; SmartScreen |
+| **iOS** | Keyboard install + full-access prompt, share extension, in-app editor, voice profile import/export, App Store review |
+| **Android** | Keyboard enable/switch, 5 apps with AccessibilityService, overlay permission, Play policy review, battery/background limits |
+| **Safari/Firefox** | Extension load, contenteditable adapter, native messaging/WS, store review |
+
+Shared fixtures and the fake provider should be reused; do not duplicate the analysis tests per platform.
+
+## 9. Release checklist
 
 - [ ] Unit + integration + frontend tests pass.
 - [ ] Golden set meets thresholds; no regression.

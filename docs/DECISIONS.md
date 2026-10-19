@@ -340,3 +340,46 @@ Short, dated records of the choices that shape the build. Format: context → de
 - Public trademark search is a signal, not clearance; complete US/EU/UK searches in classes 9 and 42 and file an intent-to-use application before launch.
 
 **Alternatives considered.** **Stet** (proofreader's mark "let it stand"; excellent meaning, but prime domains taken, `stet/stet` on GitHub, and a Google security tool named Stet); **Pilcrow** (paragraph mark; existing open-source Markdown editor and iOS document editor use the name, domains taken); **Locution** (existing macOS dictation app, npm/GitHub taken); **Faircopy** (existing word processor for humanities scholars); **Timbre** (44 US trademark records, crowded audio use); **Tacet** (live Class 009 software trademark filed Oct 2026).
+
+---
+
+## ADR-021 — Shared Rust core with thin platform shells; macOS first
+
+**Date:** 2026-10-19
+**Status:** **Accepted**
+
+**Context.** The product starts on macOS but will ship a browser extension, a Windows app, and iOS/Android apps. Rebuilding analysis, providers, voice, and storage per platform would fragment quality, double the prompt/validation work, and make voice profiles non-portable. At the same time, text capture, overlays, replacement, permissions, and distribution are unavoidably platform-specific.
+
+**Decision.** Put all product logic in platform-agnostic Rust crates (`elocutio-core`, `elocutio-analysis`, `elocutio-llm`, `elocutio-voice`, `elocutio-store`, `elocutio-bridge`, `elocutio-platform` traits). Give each platform a thin shell for capture, overlay, injection, permissions, and distribution. Ship macOS v1 first, then Chrome/Edge in M3, Windows next, and iOS/Android after the desktop apps. Voice profiles are portable JSON with export/import; cloud sync is not v1.
+
+**Consequences.**
+
+- One analysis engine and one prompt/validation contract across platforms.
+- Platform work is bounded and testable against shared fixtures.
+- Rust FFI (UniFFI/JNI) and per-platform packaging are new costs on mobile.
+- iOS cannot read other apps' text; the keyboard/share extension is the product.
+- Android AccessibilityService is policy-sensitive; the keyboard is the reliable fallback.
+- No platform is announced as supported until it has a tested app matrix.
+
+**Alternatives.** Duplicate the engine per platform (quality drift, maintenance cost); a cloud backend for all platforms (violates the local-first premise); web-only (loses system-wide access).
+
+---
+
+## ADR-022 — Brand system v1: Ink Indigo, Inter, twin-quote mark
+
+**Date:** 2026-10-19
+**Status:** **Accepted**
+
+**Context.** The product needed a distinctive identity that reads as an editor, not a grammar checker, and works across macOS, Windows, browser, iOS, and Android.
+
+**Decision.** Adopt the twin-quote mark with the raised eyebrow, the tagline **"Your voice. Clearly expressed."**, the palette **Ink Indigo `#191F70`, Near Black `#171717`, Warm Paper `#F8F7F3`, White `#FFFFFF`**, and **Inter** as the primary typeface. Keep the mark flat and preserve the eyebrow and asymmetry. Generate platform icons from source artwork with `scripts/build-assets.py`. Full rules: [`BRAND.md`](BRAND.md).
+
+**Consequences.**
+
+- Consistent identity across platforms and store listings.
+- The menu-bar icon needs a simplified monochrome template at 16–18 px.
+- App icons are generated, not hand-edited, so they stay consistent.
+- The design tokens are a single source of truth for web and native UI.
+- The name and mark still require formal trademark clearance.
+
+**Alternatives.** A wordmark-only identity (weaker at small sizes); a generic quote mark (loses the eyebrow and the editorial wink); system fonts only (less distinctive across platforms).

@@ -25,6 +25,10 @@ test:
 build:
 	cargo build --all
 
+# Regenerate brand and platform icons from assets/brand/source.
+assets:
+	python3 scripts/build-assets.py
+
 # Shallow-clone the pinned Harper source for the M0 fork spike.
 fetch-upstream:
 	./scripts/fetch-upstream.sh

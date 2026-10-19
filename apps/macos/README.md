@@ -3,7 +3,7 @@
 This directory will hold the forked Harper desktop shell:
 
 ```text
-apps/desktop/
+apps/macos/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── main.rs

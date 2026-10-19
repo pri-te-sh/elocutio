@@ -20,6 +20,7 @@ This document is the engineering contract. Product scope and milestones live in 
 5. Support OpenRouter by default and add providers without changing the analysis pipeline.
 6. Learn the user's voice from uploads and feedback, locally and explainably, and apply it across providers.
 7. Be honest about what is not supported (Google Docs, secure fields, terminals).
+8. Keep the core (analysis, providers, voice, storage, protocol) platform-agnostic so Windows, browser, iOS, and Android can reuse it behind thin platform shells.
 
 ### Hard constraints
 
@@ -125,13 +126,13 @@ Running the LLM in the highlighter would remove IPC latency (~2–5 ms) but put 
 - Fork `Automattic/harper` at tag **v2.13.0** (16 Oct 2026).
 - Keep `upstream` remote. `UPSTREAM.md` records the base commit, local patches, and sync procedure.
 - Vendor `harper-core` and its path dependencies in the same workspace so the build is reproducible.
-- If the monorepo proves too large, extract `elocutio-desktop` + required `harper-*` crates into a smaller workspace and pin `harper-core` by git tag. Decide in M0 after measuring clean build time.
+- If the monorepo proves too large, extract `apps/macos` + the required `harper-*` crates into a smaller workspace and pin `harper-core` by git tag. Decide in M0 after measuring clean build time.
 
 ### 4.2 Rename map
 
 | Harper | Elocutio |
 | --- | --- |
-| `harper-desktop` | `elocutio-desktop` |
+| `harper-desktop` | `apps/macos` (product name: Elocutio) |
 | productName `Harper` | `Elocutio` |
 | identifier `com.elijahpotter.harper-desktop` | `app.elocutio.desktop` |
 | tray title/menu | Elocutio |
@@ -160,30 +161,82 @@ elocutio/
 ├── LICENSE / NOTICE / UPSTREAM.md
 ├── harper-core/               # vendored
 ├── harper-*/                  # vendored path deps
-├── elocutio-desktop/
-│   ├── src-tauri/
-│   │   ├── Cargo.toml
-│   │   ├── tauri.conf.json
-│   │   └── src/
-│   │       ├── main.rs
-│   │       ├── tray.rs
-│   │       ├── config/
-│   │       ├── command/        # Tauri commands
-│   │       ├── llm/            # coordinator, IPC, events
-│   │       ├── store/
-│   │       ├── bridge/
-│   │       └── (inherited) mac_broker/, highlighter/, ...
-│   └── src/                    # Svelte UI
+├── apps/
+│   ├── macos/                  # v1: forked Harper shell
+│   │   ├── src-tauri/
+│   │   │   ├── Cargo.toml
+│   │   │   ├── tauri.conf.json
+│   │   │   └── src/
+│   │   │       ├── main.rs
+│   │   │       ├── tray.rs
+│   │   │       ├── config/
+│   │   │       ├── command/    # Tauri commands
+│   │   │       ├── llm/        # coordinator, IPC, events
+│   │   │       ├── store/
+│   │   │       ├── bridge/
+│   │   │       └── (inherited) mac_broker/, highlighter/, ...
+│   │   └── src/                # Svelte UI
+│   ├── windows/                # post-v1: Tauri + UIA
+│   ├── ios/                    # planned: SwiftUI + keyboard/share
+│   └── android/                # planned: Compose + IME/accessibility
 ├── crates/
-│   ├── elocutio-llm/
+│   ├── elocutio-core/
 │   ├── elocutio-analysis/
-│   ├── elocutio-voice/            # samples, traits, style card, feedback
+│   ├── elocutio-llm/
+│   ├── elocutio-voice/         # samples, traits, style card, feedback
 │   ├── elocutio-store/
-│   └── elocutio-bridge/
-├── extensions/chrome/
+│   ├── elocutio-bridge/
+│   └── elocutio-platform/      # shared capture/injection/overlay traits
+├── extensions/
+│   ├── chrome/
+│   ├── safari/                 # later
+│   └── firefox/                # later
 ├── tools/fake-provider/
 └── scripts/
 ```
+
+### 4.4 Cross-platform architecture
+
+The product is **one core + N thin shells**. macOS is the first shell, not the architecture.
+
+| Layer | Shared across platforms | Platform-specific |
+| --- | --- | --- |
+| Domain / suggestions | `elocutio-core` | — |
+| Chunking / validation / span resolution | `elocutio-analysis` | — |
+| Providers, streaming, retries, cost | `elocutio-llm` | Network/key storage in the shell |
+| Voice profiles / style cards | `elocutio-voice` | Sample ingestion UI, encryption key storage |
+| SQLite schema / repositories | `elocutio-store` | Database location, file protection |
+| Browser protocol | `elocutio-bridge` | Transport (WS/native messaging) |
+| Capture / injection / overlay | `elocutio-platform` traits | macOS AX, Windows UIA, Android accessibility, iOS keyboard |
+| UI tokens | `assets/brand/tokens.json` | Native controls and platform chrome |
+| Distribution | — | DMG/notarization, MSIX, App Store, Play Store, extension stores |
+
+**Platform trait sketch:**
+
+```rust
+pub trait TextCapture {
+    fn focused_field(&self) -> Result<Option<CapturedField>, PlatformError>;
+}
+
+pub trait TextInjector {
+    fn replace(&self, field: &CapturedField, span: TextSpan, replacement: &str) -> Result<InjectReport, PlatformError>;
+}
+
+pub trait OverlayHost {
+    fn show_suggestions(&self, anchor: ScreenRect, suggestions: &[Suggestion]) -> Result<(), PlatformError>;
+    fn hide(&self);
+}
+```
+
+**Hard platform differences:**
+
+- macOS: Accessibility API + pasteboard/⌘V; non-sandboxed; no Mac App Store.
+- Windows: UI Automation + clipboard/Ctrl+V; signed installer; SmartScreen reputation.
+- iOS: no cross-app accessibility; keyboard extension and share sheet only; App Store review.
+- Android: AccessibilityService is permission-heavy and policy-sensitive; keyboard is the reliable fallback.
+- Browser: DOM only; Google Docs canvas is unsupported.
+
+**Rules:** no provider keys outside the desktop main process; no platform code in shared crates; voice profiles are portable JSON; never claim a platform until it has a tested app matrix.
 
 ---
 
@@ -1113,12 +1166,15 @@ If the inherited egui overlay cannot meet the visual bar, replace the widget/car
 
 ### 13.2 Design tokens
 
-- Typography: SF Pro (system), 13 pt base, 11 pt captions, 15 pt headings.
-- Colors: semantic (error red, clarity blue, tone purple, style gray), light/dark, increased contrast.
-- Materials: `NSVisualEffectView` on macOS 14/15; `NSGlassEffectView` on macOS 26 when available.
-- Motion: 150 ms ease-out; respect Reduce Motion.
-- Density: compact; the card is ≤320 pt wide.
-- Accessibility: VoiceOver labels, keyboard navigation, focus rings, ≥4.5:1 contrast.
+Brand tokens live in `assets/brand/tokens.json`; the full system is in [`BRAND.md`](BRAND.md).
+
+- **Typeface:** Inter (400/500/600), with system fallbacks; native menus may use SF Pro on macOS.
+- **Palette:** Ink Indigo `#191F70`, Near Black `#171717`, Warm Paper `#F8F7F3`, White `#FFFFFF`.
+- **Semantic colors:** error red, clarity blue, tone purple, style gray; always pair color with labels/icons.
+- **Materials:** `NSVisualEffectView` on macOS 14/15; `NSGlassEffectView` on macOS 26 when available.
+- **Motion:** 150 ms ease-out; respect Reduce Motion.
+- **Density:** compact; the card is ≤320 pt wide.
+- **Accessibility:** VoiceOver labels, keyboard navigation, focus rings, ≥4.5:1 contrast.
 
 ### 13.3 State model
 

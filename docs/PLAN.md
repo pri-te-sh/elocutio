@@ -45,7 +45,7 @@ Elocutio sits in the menu bar, watches the text field you are already using, and
 | Network requests not initiated by a configured provider | 0 |
 | Tier A apps in the tested matrix | ≥ 12 |
 
-Non-goals for v1.0: plagiarism parity, AI-detector parity, enterprise admin/SSO/SCIM/DLP, Windows/mobile, real-time collaboration, cloud sync, cloud fine-tuning of a model on user writing (voice uses a local style card + retrieval), and impersonating another person.
+Non-goals for v1.0: plagiarism parity, AI-detector parity, enterprise admin/SSO/SCIM/DLP, real-time collaboration, cloud sync, cloud fine-tuning of a model on user writing (voice uses a local style card + retrieval), and impersonating another person. **Windows, iOS, Android, and Safari are planned platform expansions after the macOS release, not v1 deliverables.**
 
 ---
 
@@ -371,14 +371,18 @@ Full design: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 | Module | Status | Responsibility |
 | --- | --- | --- |
 | `harper-core` | vendor | Local grammar engine (English) |
-| `harper-desktop` (renamed `elocutio-desktop`) | fork | Tauri shell, tray, config, highlighter, AX broker, updater |
+| `harper-desktop` (forked into `apps/macos`) | fork | Tauri shell, tray, config, highlighter, AX broker, updater |
 | `elocutio-llm` | new | Canonical provider types, adapters, streaming, retries, costs |
 | `elocutio-analysis` | new | Chunking, prompts, JSON schema, validation, offset resolver, dedupe, merge |
 | `elocutio-voice` | new | Sample ingestion, feature extraction, style card, preference learning, per-context profiles |
 | `elocutio-store` | new | SQLite schema/migrations, repositories, keychain wrapper |
 | `elocutio-bridge` | new | Local WebSocket server, pairing, extension protocol |
-| `elocutio-ui` (Svelte) | new | Design system, onboarding, settings, assistant, usage |
-| `elocutio-extension` (TS) | new | MV3 content script, overlay, popup, background |
+| `elocutio-platform` | new | Shared traits for capture, injection, overlay, and permissions; implemented per platform |
+| `apps/macos` | fork + new | macOS Tauri shell, AX broker, highlighter, tray, updater |
+| `apps/windows` | later | Windows Tauri shell, UIA broker, overlay |
+| `apps/ios` | later | SwiftUI app + keyboard/share extensions |
+| `apps/android` | later | Compose app + IME/AccessibilityService |
+| `extensions/chrome` | M3 | MV3 content script, overlay, popup, background |
 | `elocutio-cli` | later | Headless lint/rewrite for scripts and CI |
 
 ### 5.3 Stack
@@ -477,24 +481,32 @@ elocutio/
 │   └── TESTING.md
 ├── harper-core/                 # vendored (English rules)
 ├── harper-*/                    # vendored dependencies
-├── elocutio-desktop/                # forked from harper-desktop
-│   ├── src-tauri/
-│   │   ├── src/
-│   │   │   ├── mac_broker/      # inherited; audited
-│   │   │   ├── highlighter/     # inherited; extended
-│   │   │   ├── tray.rs
-│   │   │   ├── config/
-│   │   │   └── llm/             # new: orchestration, commands
-│   │   └── tauri.conf.json      # rebranded
-│   └── src/                     # Svelte UI (new design)
+├── apps/
+│   ├── macos/                    # forked from harper-desktop
+│   │   ├── src-tauri/
+│   │   │   ├── src/
+│   │   │   │   ├── mac_broker/   # inherited; audited
+│   │   │   │   ├── highlighter/  # inherited; extended
+│   │   │   │   ├── tray.rs
+│   │   │   │   ├── config/
+│   │   │   │   └── llm/          # new: orchestration, commands
+│   │   │   └── tauri.conf.json   # rebranded
+│   │   └── src/                  # Svelte UI (new design)
+│   ├── windows/                  # post-v1: Tauri + UIA
+│   ├── ios/                      # planned: SwiftUI + keyboard extension
+│   └── android/                  # planned: Compose + IME/accessibility
 ├── crates/
-│   ├── elocutio-llm/
+│   ├── elocutio-core/
 │   ├── elocutio-analysis/
-│   ├── elocutio-voice/             # new: samples, traits, style card, feedback learning
+│   ├── elocutio-llm/
+│   ├── elocutio-voice/           # samples, traits, style card, feedback learning
 │   ├── elocutio-store/
-│   └── elocutio-bridge/
+│   ├── elocutio-bridge/
+│   └── elocutio-platform/        # shared platform traits (M0/M1)
 ├── extensions/
-│   └── chrome/
+│   ├── chrome/
+│   ├── safari/                   # later
+│   └── firefox/                  # later
 ├── tools/
 │   ├── fake-provider/
 │   └── eval/
@@ -505,7 +517,7 @@ elocutio/
     └── release.sh
 ```
 
-If vendoring the entire monorepo proves unwieldy, extract `elocutio-desktop` + the required `harper-*` crates into a smaller workspace and pin `harper-core` by git tag. Decide in M0 after measuring build times.
+If vendoring the entire monorepo proves unwieldy, extract `apps/macos` + the required `harper-*` crates into a smaller workspace and pin `harper-core` by git tag. Decide in M0 after measuring build times.
 
 ---
 
@@ -605,6 +617,20 @@ Estimates assume one experienced Rust/TypeScript engineer full-time; add 30–50
 | **Total** | **69–96** | **~14–19 weeks** |
 
 MVP (through M1) ~3–5 weeks of engineering; plan for 4–6 with buffer. Public beta (through M3) ~10–13 weeks. v1.0 ~14–19 weeks. Voice learning adds ~11–14 engineering days across M2–M4. Option B adds 6–10 weeks.
+
+### Platform expansion (after v1)
+
+These are separate milestones with their own acceptance criteria; they are not part of the macOS v1 date.
+
+| Order | Platform | Reuse | New work | Main risk |
+| --- | --- | --- | --- | --- |
+| 1 | **Chrome/Edge extension** | Protocol, providers, analysis, voice | MV3 UI, adapters, pairing | Web editor quirks |
+| 2 | **Windows** | All shared crates, protocol, voice | UIA broker, overlay, installer, signing | UIA inconsistency; antivirus/signing |
+| 3 | **iOS** | Core via UniFFI, voice, providers | Keyboard/share extensions, App Store | No cross-app access; keyboard UX |
+| 4 | **Android** | Core via UniFFI/JNI, voice, providers | IME, optional AccessibilityService, Play policy | Permissions/OEM variance |
+| 5 | **Safari/Firefox** | Extension code | WebExtension adaptation, Safari packaging | Safari distribution |
+
+Rules: do not duplicate the analysis engine; do not fork the provider layer; keep voice profiles portable; ship only after a tested app matrix.
 
 ---
 
@@ -766,6 +792,8 @@ Show the estimate before long analyses; cap monthly spend; default to Haiku with
 | 11 | Voice learning approach | Fine-tune / style card + retrieval | **Style card + feedback + exemplars**; local LoRA later |
 | 12 | Raw voice samples | Encrypted raw / features only | **Encrypted raw by default**, "features only" option |
 | 13 | Voice sample formats | txt+md+docx / +pdf / +email | **txt+md+docx+paste in v1**, PDF/email later |
+| 14 | Platform order | macOS → browser → Windows → mobile | **macOS v1, Chrome/Edge in M3, Windows next, iOS/Android after** |
+| 15 | Cross-device profiles | Export/import / encrypted sync | **Export/import in v1**, E2E sync later |
 
 ---
 
@@ -784,6 +812,8 @@ Show the estimate before long analyses; cap monthly spend; default to Haiku with
 
 ## 14. Definition of done for v1.0
 
+**macOS v1:**
+
 - A new user can install from a notarized DMG, choose local-only or OpenRouter, grant Accessibility, and get a correct suggestion in under 3 minutes.
 - 12 Tier A apps pass the manual matrix on current and previous macOS.
 - Local rules respond in <50 ms; LLM suggestions are explainable and minimally invasive; accept always edits the intended span.
@@ -793,3 +823,5 @@ Show the estimate before long analyses; cap monthly spend; default to Haiku with
 - Voice: a user can add 3 samples or 5 edits, see a clear style card, preview a rewrite, and rate it "sounds like me" ≥4/5; no sample content is copied; samples are encrypted and deletable.
 - Signed updates work from a clean install.
 - Apache-2.0 with Harper attribution, contributing guide, code of conduct, security policy, support matrix, and public roadmap.
+
+**Platform expansion:** each platform has its own definition of done, tested app matrix, and distribution path. Windows must reuse the shared core; iOS must not claim cross-app access; Android must pass Play policy review for any AccessibilityService use. The platform matrix lives in [`apps/README.md`](../apps/README.md).

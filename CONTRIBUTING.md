@@ -43,6 +43,7 @@ Useful tasks:
 | `just test` | Rust tests |
 | `just fmt` | Format Rust and JS/JSON/YAML |
 | `just build` | Build the Rust workspace |
+| `just assets` | Regenerate app/platform icons from brand sources |
 | `just fetch-upstream` | Shallow-clone Harper v2.13.0 into `.upstream/` |
 | `just dev-cert` | Create a stable self-signed certificate for TCC |
 
@@ -67,7 +68,11 @@ crates/elocutio-llm        provider-agnostic request/response types
 crates/elocutio-voice      local voice profiles and style cards
 crates/elocutio-store      SQLite schema and repositories
 crates/elocutio-bridge     browser-extension protocol
-apps/desktop               forked Harper desktop shell (M0)
+crates/elocutio-platform   shared capture/injection/overlay traits
+apps/macos                 forked Harper macOS shell (M0)
+apps/windows               Windows shell (post-v1)
+apps/ios                   iOS app + keyboard extension (planned)
+apps/android               Android app + accessibility service (planned)
 extensions/chrome          Manifest V3 extension (M3)
 docs/                      audit, plan, architecture, prompts, privacy
 research/                  source material and citations

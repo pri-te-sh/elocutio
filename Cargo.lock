@@ -139,6 +139,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "elocutio-platform"
+version = "0.1.0"
+dependencies = [
+ "elocutio-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "elocutio-store"
 version = "0.1.0"
 

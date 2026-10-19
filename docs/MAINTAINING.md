@@ -11,7 +11,7 @@ architecture live in [`PLAN.md`](PLAN.md) and [`ARCHITECTURE.md`](ARCHITECTURE.m
 - **Website:** `https://elocutio.app` once the domain and site are live.
 - **Topics:** `macos`, `writing`, `grammar-checker`, `ai`, `llm`, `openrouter`,
   `byok`, `privacy`, `tauri`, `rust`, `open-source`.
-- **Social preview:** upload a 1280×640 PNG built from `assets/logo.svg`.
+- **Social preview:** upload `assets/icons/social-preview.png` (1280×640).
 - **License:** GitHub should detect Apache-2.0 from `LICENSE`; keep `NOTICE` visible.
 
 ## Security
@@ -84,6 +84,19 @@ Never ask users to paste API keys, private text, or voice samples.
 - For prompt changes, require golden-set metrics.
 - For dependency additions, check license compatibility and maintenance status.
 - Keep the `NOTICE` and Harper attribution intact.
+
+## Platform releases
+
+| Platform | Distribution | Gate |
+| --- | --- | --- |
+| macOS | Developer ID DMG + notarization + Tauri updater | M5 |
+| Chrome/Edge | Chrome Web Store / Edge Add-ons | M3 |
+| Windows | Signed installer/MSIX + updater | post-v1 |
+| iOS | App Store / TestFlight | planned |
+| Android | Google Play / direct APK for dev | planned |
+| Safari/Firefox | App Store / AMO | later |
+
+Do not announce a platform until its app matrix and store review are complete.
 
 ## Releases
 

@@ -1,6 +1,6 @@
 # Executive Brief — Elocutio
 
-**A private, open-source writing assistant for macOS, powered by the model you choose.**
+**A private, open-source writing companion for macOS — with Windows, browser, iOS, and Android on the roadmap — powered by the model you choose.**
 
 Prepared 19 October 2026 · Product: Elocutio · License: Apache-2.0
 
@@ -37,7 +37,7 @@ That creates an unoccupied position: **Harper's local-first macOS ergonomics + G
 
 ## What we're building (v1)
 
-**A macOS menu-bar app + Chrome/Edge extension that:**
+**A shared Rust core with thin platform shells, starting with a macOS menu-bar app + Chrome/Edge extension that:**
 
 - proofreads the focused field using Harper locally (<10 ms) and your model for judgment;
 - shows grammar, clarity, conciseness, tone, and rewrite suggestions in place;
@@ -50,7 +50,20 @@ That creates an unoccupied position: **Harper's local-first macOS ergonomics + G
 - lets you bring a style guide, brand voice, glossary, snippets, and dictionary;
 - keeps voice samples encrypted locally and off by default.
 
-**Not in v1:** Google Docs, plagiarism/AI-detector scores, enterprise SSO/SCIM/DLP, Windows, mobile, Safari extension.
+**Not in v1:** Google Docs, plagiarism/AI-detector scores, enterprise SSO/SCIM/DLP, Safari extension. Windows, iOS, and Android follow the macOS release; the core is designed for them from day one.
+
+## Platforms
+
+| Platform | Timing | Approach |
+| --- | --- | --- |
+| macOS | v1 | Tauri + Harper Accessibility overlay |
+| Chrome/Edge | M3 | MV3 extension + local bridge |
+| Windows | After v1 | Tauri + UI Automation |
+| iOS | Planned | SwiftUI + keyboard/share extensions |
+| Android | Planned | Compose + IME/AccessibilityService |
+| Safari/Firefox | Later | WebExtension adaptation |
+
+The shared Rust crates carry the analysis engine, providers, voice profiles, and storage. Each platform adds only capture, overlay, injection, permissions, and distribution.
 
 ---
 
@@ -157,4 +170,4 @@ No subscription, no markup. Local mode is free.
 
 ---
 
-**Read more:** [Product audit](AUDIT.md) · [Full plan](PLAN.md) · [Architecture](ARCHITECTURE.md) · [Feature matrix](FEATURE-MATRIX.md) · [Decisions](DECISIONS.md) · [Voice learning](VOICE-LEARNING.md) · [Prompts](PROMPTS.md)
+**Read more:** [Brand](BRAND.md) · [Product audit](AUDIT.md) · [Full plan](PLAN.md) · [Architecture](ARCHITECTURE.md) · [Feature matrix](FEATURE-MATRIX.md) · [Decisions](DECISIONS.md) · [Voice learning](VOICE-LEARNING.md) · [Prompts](PROMPTS.md)

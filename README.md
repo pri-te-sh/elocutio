@@ -1,7 +1,10 @@
 <div align="center">
-  <img src="assets/logo.svg" alt="Elocutio" width="380" />
-  <h3>Your voice, refined.</h3>
-  <p>An open-source, bring-your-own-key writing assistant for macOS.</p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-white.png" />
+    <img src="assets/brand/lockup-indigo.png" alt="Elocutio" width="420" />
+  </picture>
+  <h3>Your voice. Clearly expressed.</h3>
+  <p>A private, open-source writing companion for macOS — with Windows, browser, iOS, and Android on the roadmap.</p>
   <p>
     <a href="https://github.com/pri-te-sh/elocutio/actions/workflows/ci.yml"><img src="https://github.com/pri-te-sh/elocutio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
@@ -13,9 +16,9 @@
 
 ---
 
-**Elocutio** (el-oh-KOO-tee-oh) lives in your menu bar and improves the text you are already writing — in Mail, Slack, Notes, Word, your browser, or anywhere else with a text field. Local rules catch the obvious mistakes instantly. Your chosen model handles judgment: clarity, tone, rewrites, compose, translate, and humanize. Over time it learns **your voice** from the writing you upload and the edits you accept, so rewrites sound like *you*. You bring the API key; your text goes only to the provider you configured.
+**Elocutio** (el-oh-KOO-tee-oh) is a private writing companion that refines clarity, correctness, and tone while preserving your voice. It starts on macOS, where it lives in your menu bar and improves the text you are already writing — in Mail, Slack, Notes, Word, or your browser. Local rules catch the obvious mistakes instantly; your chosen model handles judgment: clarity, tone, rewrites, compose, translate, and humanize. Over time it learns **your voice** from the writing you upload and the edits you accept, so rewrites sound like *you*. You bring the API key; your text goes only to the provider you configured.
 
-> **Status: pre-alpha.** The audit, plan, architecture, and repository scaffold are in place. The desktop app is being built on a fork of [Harper](https://github.com/Automattic/harper) (Apache-2.0). See the [roadmap](ROADMAP.md) and [build plan](docs/PLAN.md). Expect breaking changes; there is no installable release yet.
+> **Status: pre-alpha.** The audit, plan, architecture, and repository scaffold are in place. The macOS app is being built on a fork of [Harper](https://github.com/Automattic/harper) (Apache-2.0); Windows, the browser extension, iOS, and Android follow. See the [roadmap](ROADMAP.md) and [build plan](docs/PLAN.md). Expect breaking changes; there is no installable release yet.
 
 ## Why Elocutio
 
@@ -39,10 +42,10 @@ Grammarly has no documented offline mode: its clients send text to the cloud for
 | **Voice** | Learns your rhythm, diction, punctuation, greetings, sign-offs, rhetorical moves, and signature phrases from uploads and feedback; per-context profiles; encrypted, local samples |
 | **Assistant** | Context-aware chat panel with explicit context chips |
 | **Personalization** | Personal dictionary, style guide, brand voice, glossary, snippets, per-app preferences |
-| **Everywhere** | Menu-bar app with inline suggestions in native apps; Chrome/Edge extension for web editors |
+| **Everywhere** | macOS menu-bar app with inline suggestions in native apps; Chrome/Edge extension for web editors; Windows, iOS, and Android next |
 | **Control** | Per-app on/off, local-only mode, provider routing, model picker, cost meter, network log |
 
-**Not in v1:** Google Docs (canvas), plagiarism detection, AI-detector scores, enterprise SSO/SCIM/DLP, Windows, mobile, Safari extension. See the [feature matrix](docs/FEATURE-MATRIX.md) for the honest parity plan.
+**Not in v1:** Google Docs (canvas), plagiarism detection, AI-detector scores, enterprise SSO/SCIM/DLP, Safari extension. **Windows, iOS, and Android are planned after the macOS release**, and the shared Rust core is designed for them from day one. See the [feature matrix](docs/FEATURE-MATRIX.md) and [platform strategy](#platforms).
 
 ## How it works
 
@@ -68,7 +71,7 @@ Grammarly has no documented offline mode: its clients send text to the cloud for
 - Google Docs is explicitly unsupported (canvas rendering); Gmail, Notion, Slack, and Linear are covered by the extension.
 - Voice samples stay local and encrypted; only the style card and selected excerpts are sent, with a preview.
 
-More detail: [architecture](docs/ARCHITECTURE.md) · [voice design](docs/VOICE-LEARNING.md) · [privacy](docs/PRIVACY.md).
+The core is shared Rust; platform shells are thin. More detail: [architecture](docs/ARCHITECTURE.md) · [voice design](docs/VOICE-LEARNING.md) · [brand](docs/BRAND.md) · [privacy](docs/PRIVACY.md).
 
 ## Providers
 
@@ -109,10 +112,23 @@ Two independent switches, both **off by default**: *Learn from my edits* and *Us
 
 Full roadmap: [ROADMAP.md](ROADMAP.md). Detailed scope and estimates: [docs/PLAN.md](docs/PLAN.md).
 
+## Platforms
+
+| Platform | Status | Approach |
+| --- | --- | --- |
+| **macOS** | **v1 target** | Tauri + Harper Accessibility overlay, menu-bar agent |
+| **Chrome/Edge** | M3 | Manifest V3 extension + local bridge |
+| **Windows** | After v1 | Tauri + UI Automation/Win32; shared Rust core |
+| **iOS** | Planned | Native app + keyboard/share extensions; no cross-app accessibility |
+| **Android** | Planned | Native app + AccessibilityService and/or IME; shared Rust core |
+| **Safari/Firefox** | Later | WebExtension adaptation; Safari inside the notarized app |
+
+The shared crates (`elocutio-core`, `elocutio-analysis`, `elocutio-llm`, `elocutio-voice`, `elocutio-store`, `elocutio-bridge`) are platform-agnostic. Each platform gets a thin shell for text capture, overlays, injection, and distribution. See [ADR-021](docs/DECISIONS.md).
+
 ## Requirements
 
-- macOS 14 Sonoma or later
-- Accessibility permission (required for cross-app text access)
+- macOS 14 Sonoma or later for the v1 app (Windows, iOS, and Android are planned)
+- Accessibility permission on macOS (required for cross-app text access)
 - Optional: Screen Recording (OCR fallback only)
 - An API key for a supported provider, or a local model
 - For development: Xcode Command Line Tools, Rust 1.98+, Node.js 22+, pnpm 11+
@@ -128,6 +144,7 @@ cd elocutio
 just check               # fmt + clippy + tests + docs + prettier
 just test                # Rust tests only
 just fetch-upstream      # shallow-clone Harper v2.13.0 into .upstream/
+just assets              # regenerate app/platform icons from brand sources
 just dev-cert            # create a stable self-signed cert for TCC
 ```
 
@@ -145,15 +162,21 @@ pnpm format:check
 
 ```text
 .
-├── assets/                  # logo and menu-bar mark
+├── assets/
+│   ├── brand/               # logo sources, lockups, tokens, brand guide
+│   └── icons/               # generated app/menu-bar/platform icons
 ├── crates/
 │   ├── elocutio-core/       # domain types, suggestion model
 │   ├── elocutio-analysis/   # span resolution, chunking (growing)
 │   ├── elocutio-llm/        # provider-agnostic request/response types
 │   ├── elocutio-voice/      # local voice profiles and style cards
 │   ├── elocutio-store/      # SQLite schema and repositories (growing)
-│   └── elocutio-bridge/     # browser-extension protocol
-├── apps/desktop/            # forked Harper desktop shell (M0)
+│   ├── elocutio-bridge/     # browser-extension protocol
+│   └── elocutio-platform/   # shared capture/injection/overlay traits
+├── apps/macos/              # forked Harper macOS shell (M0)
+├── apps/windows/            # Windows shell (post-v1)
+├── apps/ios/                # iOS app + keyboard extension (planned)
+├── apps/android/            # Android app + accessibility service (planned)
 ├── extensions/chrome/       # MV3 extension (M3)
 ├── docs/                    # audit, plan, architecture, prompts, privacy
 ├── research/                # source material and citations
@@ -176,6 +199,7 @@ pnpm format:check
 - **[Prompt library](docs/PROMPTS.md)** — system prompts, JSON schemas, token budgets, and evaluation rules.
 - **[Privacy](docs/PRIVACY.md)** — data flows, permissions, retention, and verifiable claims.
 - **[Testing](docs/TESTING.md)** — unit, integration, manual matrix, and quality gates.
+- **[Brand](docs/BRAND.md)** — logo system, palette, typography, voice, and platform icon assets.
 - **[Maintaining](docs/MAINTAINING.md)** — GitHub settings, labels, triage, CI, security, and release checklist.
 - **[Research notes](research/)** — sources, citations, and the raw OpenRouter model analysis.
 

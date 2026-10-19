@@ -53,6 +53,10 @@ Voice is intended for your own writing or a brand you are authorized to represen
 | Exemplars | Until sample/profile deleted | Exclude sensitive samples |
 | Feedback events | 180-day half-life weighting; rows until cleared | Clear |
 
+## Cross-device
+
+There is **no cloud sync in v1**. Voice profiles, settings, and style guides can be exported as JSON and imported on another platform. If optional sync is added later, it will be end-to-end encrypted and opt-in; the server will never be able to read samples or profiles.
+
 ---
 
 ## Permissions

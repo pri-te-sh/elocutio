@@ -51,6 +51,9 @@ plugins/
 .vscode/
 *.swp
 
+# Generated icon intermediates
+assets/icons/AppIcon.iconset/
+
 # Local fixtures and private samples
 fixtures/private/
 *.voice-sample

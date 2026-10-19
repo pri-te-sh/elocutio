@@ -183,6 +183,29 @@ The point is not the count. It is that **76 of 94 features are reachable at good
 
 ---
 
+## 11. Platform coverage
+
+● v1/M3 target · ○ planned · — not applicable
+
+| Capability | macOS | Chrome/Edge | Windows | iOS | Android |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| System-wide inline suggestions | ● | ● | ○ | — | ○ |
+| Menu bar / system tray | ● | — | ○ | — | — |
+| Browser editor support (Gmail, Notion, Slack) | via extension | ● | via extension | — | — |
+| Google Docs | — | — | — | — | — |
+| Voice profile (learn + apply) | ● | ● | ○ | ○ | ○ |
+| Assistant / compose / reply | ● | ● | ○ | ○ | ○ |
+| BYOK providers | ● | via app | ○ | ○ | ○ |
+| Local-only mode | ● | via app | ○ | ○ | ○ |
+| Style guide / snippets / glossary | ● | ● | ○ | ○ | ○ |
+| System-wide text capture | ● | — | ○ | keyboard only | ○ |
+| Keyboard extension | — | — | — | ○ | ○ |
+| Background menu-bar agent | ● | — | ○ | — | — |
+
+The shared Rust core makes these rows reuse the same analysis, provider, voice, and storage code; only the platform shell changes. See [`apps/README.md`](../apps/README.md) and [ADR-021](DECISIONS.md).
+
+---
+
 ## Critical path
 
 These features determine whether the product is credible. Everything else can slip.

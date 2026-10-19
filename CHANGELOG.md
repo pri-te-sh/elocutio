@@ -58,6 +58,7 @@ to follow [Semantic Versioning](https://semver.org/).
   the provider prompt.
 - Local-only mode blocks analysis, auto-analysis, widget AI, and rewrites while
   keeping local checks active.
+- Word-level rewrite previews with inserted/deleted segments in Settings.
 - LLM-cache bridge: Analyze Field (widget, ⌥⌘A, or tray) publishes validated suggestions;
   the highlighter merges them with local lints in the inherited card.
 - Structured LLM analysis pipeline: paragraph chunking, prompt/schema,

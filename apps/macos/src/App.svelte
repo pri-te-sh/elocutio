@@ -10,8 +10,12 @@
     limit: number | null;
     is_free_tier: boolean;
   };
-  type RewriteResult = {
-    text: string;
+
+  type DiffSegment = { kind: "equal" | "insert" | "delete"; text: string };
+  type RewritePreview = {
+    original: string;
+    rewritten: string;
+    diff: DiffSegment[];
     model: string;
     input_tokens: number;
     output_tokens: number;
@@ -136,6 +140,7 @@
     "Tehre are alot of ways to say this, but I think this one is more better.";
   let rewriteOutput = "";
   let rewriteMeta = "";
+  let rewriteDiff: DiffSegment[] = [];
 
   let analysisText =
     "Their going to the conference next week , and they has a presentation.\n\nThis is definitely fine.";
@@ -578,12 +583,14 @@
     providerMessage = "";
     rewriteOutput = "";
     rewriteMeta = "";
+    rewriteDiff = [];
     try {
-      const result = await invoke<RewriteResult>("rewrite_text", {
+      const result = await invoke<RewritePreview>("rewrite_preview", {
         text: sourceText,
         model,
       });
-      rewriteOutput = result.text;
+      rewriteOutput = result.rewritten;
+      rewriteDiff = result.diff;
       const cost =
         result.cost_usd === null ? "cost unavailable" : `$${result.cost_usd.toFixed(4)}`;
       rewriteMeta = `${result.model} · ${result.input_tokens} in / ${result.output_tokens} out · ${cost}`;
@@ -971,7 +978,19 @@
     {#if rewriteOutput}
       <div class="rewrite">
         <p class="rewrite-label">Result</p>
-        <p class="rewrite-text">{rewriteOutput}</p>
+        {#if rewriteDiff.length > 0}
+          <p class="rewrite-text diff-text">
+            {#each rewriteDiff as segment}
+              <span
+                class:diff-insert={segment.kind === "insert"}
+                class:diff-delete={segment.kind === "delete"}
+                class:diff-equal={segment.kind === "equal"}>{segment.text} </span
+              >
+            {/each}
+          </p>
+        {:else}
+          <p class="rewrite-text">{rewriteOutput}</p>
+        {/if}
         <p class="muted">{rewriteMeta}</p>
       </div>
     {/if}
@@ -1513,6 +1532,23 @@
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+  }
+
+  .diff-insert {
+    background: rgba(14, 173, 105, 0.16);
+    color: #0b6b43;
+    border-radius: 3px;
+  }
+
+  .diff-delete {
+    background: rgba(238, 66, 102, 0.14);
+    color: #a31336;
+    text-decoration: line-through;
+    border-radius: 3px;
+  }
+
+  .diff-equal {
+    color: inherit;
   }
 
   .rewrite-text {

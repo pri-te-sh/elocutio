@@ -37,6 +37,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         clear_openrouter_key,
         test_openrouter_key,
         rewrite_text,
+        rewrite_preview,
         get_provider_model,
         set_provider_model,
         get_auto_analyze,
@@ -267,6 +268,62 @@ async fn rewrite_text(
         eprintln!("Could not record usage: {error}");
     }
     Ok(result)
+}
+
+#[derive(serde::Serialize)]
+struct RewritePreview {
+    original: String,
+    rewritten: String,
+    diff: Vec<elocutio_analysis::DiffSegment>,
+    model: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_usd: Option<f64>,
+}
+
+#[tauri::command]
+async fn rewrite_preview(
+    text: String,
+    model: Option<String>,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<RewritePreview, String> {
+    let (provider, model, tone) = {
+        let config = config.lock().await;
+        if config.local_only {
+            return Err("Local-only mode is on. Turn it off to use a provider.".into());
+        }
+        (
+            ProviderConfig {
+                kind: config.provider_kind,
+                base_url: config.provider_base_url.clone(),
+            },
+            match model.filter(|value| !value.trim().is_empty()) {
+                Some(model) => model,
+                None => config.provider_model.clone(),
+            },
+            config.rewrite_tone,
+        )
+    };
+    let result = openrouter::rewrite_with(
+        &provider,
+        &text,
+        Some(model),
+        crate::voice::guidance(),
+        tone,
+    )
+    .await?;
+    if let Err(error) = usage::record(&result) {
+        eprintln!("Could not record usage: {error}");
+    }
+    Ok(RewritePreview {
+        original: text.trim().to_string(),
+        rewritten: result.text.clone(),
+        diff: elocutio_analysis::diff_words(text.trim(), &result.text),
+        model: result.model,
+        input_tokens: result.input_tokens,
+        output_tokens: result.output_tokens,
+        cost_usd: result.cost_usd,
+    })
 }
 
 #[tauri::command]

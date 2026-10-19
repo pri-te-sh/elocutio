@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-20T01:30:00Z",
+  "updatedAt": "2026-10-20T01:50:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -541,7 +541,9 @@
           "title": "Paragraph rewrite with word-level diff and accept/reject",
           "area": "ux",
           "priority": "P1",
-          "estimateDays": 2
+          "estimateDays": 2,
+          "status": "in_progress",
+          "notes": "Word-level diff previews render in Settings for provider rewrites. System-wide paragraph replacement with accept/reject from the overlay remains."
         },
         {
           "id": "m2-cache",

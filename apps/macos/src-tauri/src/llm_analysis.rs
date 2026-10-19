@@ -27,9 +27,16 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
     let focused = focused
         .ok_or_else(|| "Focus a text field in TextEdit, Notes, or Safari first.".to_string())?;
 
-    let model = {
+    let (provider, model) = {
         let config = app.state::<Arc<Mutex<Config>>>();
-        config.lock().await.provider_model.clone()
+        let config = config.lock().await;
+        (
+            openrouter::ProviderConfig {
+                kind: config.provider_kind,
+                base_url: config.provider_base_url.clone(),
+            },
+            config.provider_model.clone(),
+        )
     };
 
     let paragraphs = chunk_paragraphs(&focused.text);
@@ -39,9 +46,14 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
 
     let mut suggestions = Vec::new();
     for paragraph in paragraphs.iter().take(3) {
-        let completion =
-            openrouter::analyze(&paragraph.id, &paragraph.text, Some(model.clone()), "en-US")
-                .await?;
+        let completion = openrouter::analyze_with(
+            &provider,
+            &paragraph.id,
+            &paragraph.text,
+            Some(model.clone()),
+            "en-US",
+        )
+        .await?;
         let parsed = parse_response(&completion.content, &paragraphs)?;
         eprintln!(
             "Analyze {}: model={} content_chars={} suggestions={} rejected={}",

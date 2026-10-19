@@ -3,7 +3,9 @@
 
 use crate::config::Config;
 use crate::highlighter_service::HighlighterService;
-use crate::openrouter::{self, KeyStatus, OpenRouterStatus, RewriteResult};
+use crate::openrouter::{
+    self, KeyStatus, OpenRouterStatus, ProviderConfig, ProviderKind, RewriteResult,
+};
 use crate::os_broker::{AccessibilityPermissionStatus, AppSearchResult, OsBroker};
 use crate::usage::{self, UsageSummary};
 use crate::{IntegrationView, PlatformBroker};
@@ -27,6 +29,9 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_auto_update,
         set_auto_update,
         get_current_version,
+        get_provider_settings,
+        set_provider_kind,
+        set_provider_base_url,
         get_openrouter_key_status,
         set_openrouter_key,
         clear_openrouter_key,
@@ -128,24 +133,96 @@ fn get_current_version<R: Runtime>(app: tauri::AppHandle<R>) -> String {
     app.package_info().version.to_string()
 }
 
-#[tauri::command]
-fn get_openrouter_key_status() -> Result<KeyStatus, String> {
-    openrouter::key_status()
+#[derive(serde::Serialize)]
+struct ProviderSettings {
+    kind: ProviderKind,
+    base_url: String,
+    model: String,
+    key_present: bool,
 }
 
 #[tauri::command]
-fn set_openrouter_key(key: String) -> Result<KeyStatus, String> {
-    openrouter::save_key(&key)
+async fn get_provider_settings(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<ProviderSettings, String> {
+    let config = config.lock().await;
+    let key_present = openrouter::key_status_for(config.provider_kind)?.present;
+    Ok(ProviderSettings {
+        kind: config.provider_kind,
+        base_url: config.provider_base_url.clone(),
+        model: config.provider_model.clone(),
+        key_present,
+    })
 }
 
 #[tauri::command]
-fn clear_openrouter_key() -> Result<KeyStatus, String> {
-    openrouter::clear_key()
+async fn set_provider_kind(
+    kind: ProviderKind,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<ProviderSettings, String> {
+    let mut config = config.lock().await;
+    config.provider_kind = kind;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    let key_present = openrouter::key_status_for(config.provider_kind)?.present;
+    Ok(ProviderSettings {
+        kind: config.provider_kind,
+        base_url: config.provider_base_url.clone(),
+        model: config.provider_model.clone(),
+        key_present,
+    })
 }
 
 #[tauri::command]
-async fn test_openrouter_key() -> Result<OpenRouterStatus, String> {
-    openrouter::test_key().await
+async fn set_provider_base_url(
+    base_url: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<String, String> {
+    let base_url = base_url.trim().trim_end_matches('/').to_string();
+    if base_url.is_empty() || !base_url.starts_with("http") {
+        return Err("Enter an http(s) base URL, for example https://api.openai.com/v1.".into());
+    }
+    let mut config = config.lock().await;
+    config.provider_base_url = base_url.clone();
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(base_url)
+}
+
+#[tauri::command]
+async fn get_openrouter_key_status(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<KeyStatus, String> {
+    openrouter::key_status_for(config.lock().await.provider_kind)
+}
+
+#[tauri::command]
+async fn set_openrouter_key(
+    key: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<KeyStatus, String> {
+    openrouter::save_key_for(config.lock().await.provider_kind, &key)
+}
+
+#[tauri::command]
+async fn clear_openrouter_key(config: State<'_, Arc<Mutex<Config>>>) -> Result<KeyStatus, String> {
+    openrouter::clear_key_for(config.lock().await.provider_kind)
+}
+
+#[tauri::command]
+async fn test_openrouter_key(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<OpenRouterStatus, String> {
+    let config = config.lock().await;
+    let provider = ProviderConfig {
+        kind: config.provider_kind,
+        base_url: config.provider_base_url.clone(),
+    };
+    openrouter::test_key_for(&provider).await
 }
 
 #[tauri::command]
@@ -154,11 +231,21 @@ async fn rewrite_text(
     model: Option<String>,
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<RewriteResult, String> {
-    let model = match model.filter(|value| !value.trim().is_empty()) {
-        Some(model) => model,
-        None => config.lock().await.provider_model.clone(),
+    let (provider, model) = {
+        let config = config.lock().await;
+        (
+            ProviderConfig {
+                kind: config.provider_kind,
+                base_url: config.provider_base_url.clone(),
+            },
+            match model.filter(|value| !value.trim().is_empty()) {
+                Some(model) => model,
+                None => config.provider_model.clone(),
+            },
+        )
     };
-    let result = openrouter::rewrite(&text, Some(model), crate::voice::guidance()).await?;
+    let result =
+        openrouter::rewrite_with(&provider, &text, Some(model), crate::voice::guidance()).await?;
     if let Err(error) = usage::record(&result) {
         eprintln!("Could not record usage: {error}");
     }
@@ -258,7 +345,16 @@ async fn analyze_text(
         return Err("Enter some text to analyze first.".into());
     }
 
-    let model = config.lock().await.provider_model.clone();
+    let (provider, model) = {
+        let config = config.lock().await;
+        (
+            ProviderConfig {
+                kind: config.provider_kind,
+                base_url: config.provider_base_url.clone(),
+            },
+            config.provider_model.clone(),
+        )
+    };
     let paragraphs = elocutio_analysis::chunk_paragraphs(text);
     if paragraphs.is_empty() {
         return Err("No paragraphs found.".into());
@@ -272,9 +368,14 @@ async fn analyze_text(
     let mut response_model = model.clone();
 
     for paragraph in paragraphs.iter().take(3) {
-        let completion =
-            openrouter::analyze(&paragraph.id, &paragraph.text, Some(model.clone()), "en-US")
-                .await?;
+        let completion = openrouter::analyze_with(
+            &provider,
+            &paragraph.id,
+            &paragraph.text,
+            Some(model.clone()),
+            "en-US",
+        )
+        .await?;
         input_tokens += completion.input_tokens;
         output_tokens += completion.output_tokens;
         if let Some(cost) = completion.cost_usd {

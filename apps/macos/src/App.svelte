@@ -46,6 +46,12 @@
     explanation: string;
     resolution: string;
   };
+  type ProviderSettings = {
+    kind: "open_router" | "open_ai_compatible";
+    base_url: string;
+    model: string;
+    key_present: boolean;
+  };
   type IntegrationView = {
     display_name: string;
     bundle_id: string;
@@ -94,6 +100,11 @@
   let providerBusy = false;
   let providerMessage = "";
   let providerStatus: OpenRouterStatus | null = null;
+  let providerKind: ProviderSettings["kind"] = "open_router";
+  let providerBaseUrl = "https://api.openai.com/v1";
+  let providerBaseInput = "";
+  let providerSettingsBusy = false;
+  let providerSettingsMessage = "";
   let autoAnalyze = false;
   let autoAnalysisBusy = false;
   let autoAnalysisMessage = "";
@@ -139,12 +150,50 @@
     }
   }
 
-  async function refreshKey() {
+  async function refreshProvider() {
     try {
-      const status = await invoke<KeyStatus>("get_openrouter_key_status");
-      keyPresent = status.present;
+      const settings = await invoke<ProviderSettings>("get_provider_settings");
+      providerKind = settings.kind;
+      providerBaseUrl = settings.base_url;
+      providerBaseInput = settings.base_url;
+      model = settings.model;
+      keyPresent = settings.key_present;
     } catch (error) {
       providerMessage = String(error);
+    }
+  }
+
+  async function setProviderKind(kind: ProviderSettings["kind"]) {
+    providerSettingsBusy = true;
+    providerSettingsMessage = "";
+    try {
+      const settings = await invoke<ProviderSettings>("set_provider_kind", { kind });
+      providerKind = settings.kind;
+      providerBaseUrl = settings.base_url;
+      providerBaseInput = settings.base_url;
+      keyPresent = settings.key_present;
+      providerStatus = null;
+      providerSettingsMessage = `${kind === "open_router" ? "OpenRouter" : "OpenAI-compatible endpoint"} selected.`;
+    } catch (error) {
+      providerSettingsMessage = String(error);
+    } finally {
+      providerSettingsBusy = false;
+    }
+  }
+
+  async function saveProviderBaseUrl() {
+    providerSettingsBusy = true;
+    providerSettingsMessage = "";
+    try {
+      providerBaseUrl = await invoke<string>("set_provider_base_url", {
+        baseUrl: providerBaseInput,
+      });
+      providerBaseInput = providerBaseUrl;
+      providerSettingsMessage = "Base URL saved.";
+    } catch (error) {
+      providerSettingsMessage = String(error);
+    } finally {
+      providerSettingsBusy = false;
     }
   }
 
@@ -422,7 +471,10 @@
     providerMessage = "";
     try {
       providerStatus = await invoke<OpenRouterStatus>("test_openrouter_key");
-      providerMessage = "OpenRouter accepted the key.";
+      providerMessage =
+        providerKind === "open_router"
+          ? "OpenRouter accepted the key."
+          : "The endpoint accepted the request.";
     } catch (error) {
       providerMessage = String(error);
     } finally {
@@ -495,7 +547,7 @@
   onMount(() => {
     void refresh();
     void refreshServiceStatus();
-    void refreshKey();
+    void refreshProvider();
     void refreshOnboarding();
     void refreshModel();
     void refreshAutoAnalyze();
@@ -539,7 +591,7 @@
         <li class:done={keyPresent}>
           <span class="check">{keyPresent ? "✓" : "○"}</span>
           <div>
-            <strong>OpenRouter key</strong>
+            <strong>Provider key</strong>
             <p class="muted">
               {keyPresent
                 ? "Saved in the macOS Keychain."
@@ -685,27 +737,63 @@
   <section class="card">
     <div class="row">
       <div>
-        <h2>OpenRouter</h2>
-        <p class="muted">Bring your own key. It is stored in the macOS Keychain, not in config.</p>
+        <h2>Provider</h2>
+        <p class="muted">Bring your own key or endpoint. Keys are stored in the macOS Keychain, not in config.</p>
       </div>
       <span class="status" class:on={keyPresent} class:off={!keyPresent}>
         {keyPresent ? "Key saved" : "No key"}
       </span>
     </div>
 
+    <label class="field">
+      <span>Provider</span>
+      <select
+        value={providerKind}
+        onchange={(event) =>
+          setProviderKind((event.currentTarget as HTMLSelectElement).value as ProviderSettings["kind"])}
+        disabled={providerSettingsBusy}
+      >
+        <option value="open_router">OpenRouter</option>
+        <option value="open_ai_compatible">OpenAI-compatible endpoint</option>
+      </select>
+    </label>
+
+    {#if providerKind === "open_ai_compatible"}
+      <label class="field">
+        <span>Base URL</span>
+        <div class="model-row">
+          <input bind:value={providerBaseInput} spellcheck="false" placeholder="https://api.openai.com/v1" />
+          <button onclick={saveProviderBaseUrl} disabled={providerSettingsBusy || !providerBaseInput.trim()}>
+            Save
+          </button>
+        </div>
+      </label>
+      <p class="muted">
+        Works with OpenAI, Ollama, LM Studio, and other Chat Completions endpoints. Use a model id the endpoint supports.
+      </p>
+    {/if}
+
+    {#if providerSettingsMessage}
+      <p class="message">{providerSettingsMessage}</p>
+    {/if}
+
     {#if !keyPresent}
       <label class="field">
-        <span>API key</span>
+        <span>API key {providerKind === "open_ai_compatible" ? "(optional for local endpoints)" : ""}</span>
         <input
           type="password"
           bind:value={keyInput}
-          placeholder="sk-or-v1-…"
+          placeholder={providerKind === "open_router" ? "sk-or-v1-…" : "optional"}
           autocomplete="off"
           spellcheck="false"
         />
       </label>
       <div class="actions">
-        <button class="primary" onclick={saveKey} disabled={providerBusy || !keyInput.trim()}>
+        <button
+          class="primary"
+          onclick={saveKey}
+          disabled={providerBusy || (providerKind === "open_router" && !keyInput.trim())}
+        >
           Save to Keychain
         </button>
       </div>
@@ -744,7 +832,7 @@
   <section class="card">
     <h2>Test a rewrite</h2>
     <p class="muted">
-      This proves the provider path in-app; the system-wide overlay uses the same provider and model.
+      This proves the selected provider path in-app; the system-wide overlay uses the same provider and model.
     </p>
 
     <label class="field">
@@ -766,7 +854,7 @@
 
     <div class="actions">
       <button class="primary" onclick={rewrite} disabled={providerBusy || !keyPresent}>
-        Rewrite with OpenRouter
+        Rewrite with provider
       </button>
     </div>
 

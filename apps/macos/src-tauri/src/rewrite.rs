@@ -34,11 +34,19 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
         ));
     }
 
-    let model = {
-        let config = app.state::<std::sync::Arc<tokio::sync::Mutex<crate::config::Config>>>();
-        config.lock().await.provider_model.clone()
+    let (provider, model) = {
+        let state = app.state::<std::sync::Arc<tokio::sync::Mutex<crate::config::Config>>>();
+        let config = state.lock().await;
+        (
+            openrouter::ProviderConfig {
+                kind: config.provider_kind,
+                base_url: config.provider_base_url.clone(),
+            },
+            config.provider_model.clone(),
+        )
     };
-    let result = openrouter::rewrite(&text, Some(model), crate::voice::guidance()).await?;
+    let result =
+        openrouter::rewrite_with(&provider, &text, Some(model), crate::voice::guidance()).await?;
     if let Err(error) = usage::record(&result) {
         eprintln!("Could not record usage: {error}");
     }

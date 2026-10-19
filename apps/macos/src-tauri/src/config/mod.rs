@@ -29,7 +29,11 @@ pub struct Config {
     /// Failed attempts also count toward the automatic 24-hour interval.
     pub last_update_check: Option<u64>,
     pub highlighter_service_enabled: bool,
-    /// OpenRouter model used by Rewrite Selection and the assistant.
+    /// Provider used by Rewrite Selection and the assistant.
+    pub provider_kind: crate::openrouter::ProviderKind,
+    /// Base URL for an OpenAI-compatible provider.
+    pub provider_base_url: String,
+    /// Model id used by Rewrite Selection and the assistant.
     pub provider_model: String,
     /// Analyze the focused field after a typing pause, without a shortcut.
     pub auto_analyze: bool,
@@ -51,6 +55,8 @@ impl Config {
             auto_update: true,
             last_update_check: None,
             highlighter_service_enabled: true,
+            provider_kind: crate::openrouter::ProviderKind::OpenRouter,
+            provider_base_url: crate::openrouter::DEFAULT_OPENAI_BASE_URL.to_string(),
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
             budget_usd: None,
@@ -223,6 +229,8 @@ impl Config {
             "auto_update": self.auto_update,
             "last_update_check": self.last_update_check,
             "highlighter_service_enabled": self.highlighter_service_enabled,
+            "provider_kind": self.provider_kind,
+            "provider_base_url": self.provider_base_url,
             "provider_model": self.provider_model,
             "auto_analyze": self.auto_analyze,
             "budget_usd": self.budget_usd,
@@ -259,6 +267,9 @@ impl Config {
                 "highlighter_service_enabled",
             )?
             .unwrap_or(true),
+            provider_kind: deserialize_optional_field(object, "provider_kind")?.unwrap_or_default(),
+            provider_base_url: deserialize_optional_field(object, "provider_base_url")?
+                .unwrap_or_else(|| crate::openrouter::DEFAULT_OPENAI_BASE_URL.to_string()),
             provider_model: deserialize_optional_field(object, "provider_model")?
                 .unwrap_or_else(|| crate::openrouter::DEFAULT_MODEL.to_string()),
             auto_analyze: deserialize_optional_field(object, "auto_analyze")?.unwrap_or(false),
@@ -330,6 +341,8 @@ mod tests {
         assert!(serialized.contains("highlighter_service_enabled"));
         assert!(serialized.contains("auto_analyze"));
         assert!(serialized.contains("budget_usd"));
+        assert!(serialized.contains("provider_kind"));
+        assert!(serialized.contains("provider_base_url"));
     }
 
     #[test]
@@ -358,6 +371,8 @@ mod tests {
         );
         assert_eq!(deserialized.auto_analyze, config.auto_analyze);
         assert_eq!(deserialized.budget_usd, config.budget_usd);
+        assert_eq!(deserialized.provider_kind, config.provider_kind);
+        assert_eq!(deserialized.provider_base_url, config.provider_base_url);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&deserialized.serialize_main().unwrap())
                 .unwrap(),

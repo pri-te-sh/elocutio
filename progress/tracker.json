@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T23:45:00Z",
+  "updatedAt": "2026-10-20T00:20:00Z",
   "project": {
     "name": "Elocutio",
     "tagline": "Your voice. Clearly expressed.",
@@ -367,7 +367,7 @@
             "m0-llm"
           ],
           "status": "in_progress",
-          "notes": "OpenRouter key validation and non-streaming rewrite work. OpenAI-compatible adapters, streaming, retries, and error UX remain."
+          "notes": "OpenRouter remains the default. OpenAI-compatible Chat Completions endpoints are supported with a custom base URL and optional Keychain key; error taxonomy covers auth/quota/model/rate/offline. Streaming and automatic retries remain."
         },
         {
           "id": "m1-pipeline",

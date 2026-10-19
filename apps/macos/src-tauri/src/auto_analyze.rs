@@ -26,18 +26,20 @@ pub fn start(app: AppHandle) {
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
 
-            let enabled = {
+            let (enabled, provider_kind) = {
                 let config = app.state::<Arc<Mutex<Config>>>();
-                config.lock().await.auto_analyze
+                let config = config.lock().await;
+                (config.auto_analyze, config.provider_kind)
             };
             if !enabled {
                 last_seen_hash = 0;
                 continue;
             }
 
-            if !openrouter::key_status()
-                .map(|status| status.present)
-                .unwrap_or(false)
+            if provider_kind == openrouter::ProviderKind::OpenRouter
+                && !openrouter::key_status_for(provider_kind)
+                    .map(|status| status.present)
+                    .unwrap_or(false)
             {
                 continue;
             }

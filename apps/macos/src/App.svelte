@@ -1250,8 +1250,15 @@
     font-size: 0.9rem;
   }
 
-  .switch-row input {
+  .switch-row input[type="checkbox"] {
+    width: auto;
+    flex: 0 0 auto;
     margin-top: 0.2rem;
+    accent-color: var(--accent);
+  }
+
+  .switch-row span {
+    min-width: 0;
   }
 
   .switch-row strong,

@@ -322,7 +322,13 @@ impl RenderState {
             let screen = ui.ctx().content_rect();
             let mut pos = if let Some(first) = self.lints().first() {
                 let anchor = rect_bounds(&first.rect);
-                egui::pos2(anchor.right() + 8.0, anchor.top())
+                let above = anchor.top() - size.y - 6.0;
+                let y = if above >= screen.top() + 8.0 {
+                    above
+                } else {
+                    anchor.bottom() + 6.0
+                };
+                egui::pos2(anchor.left(), y)
             } else {
                 egui::pos2(
                     screen.right() - size.x - 24.0,

@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::os_broker::OsBroker;
-use crate::{PlatformBroker, llm_analysis, llm_cache, main_thread, openrouter};
+use crate::{PlatformBroker, llm_analysis, llm_cache, main_thread};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(800);
 const STABLE_DELAY: Duration = Duration::from_millis(1_400);
@@ -26,24 +26,13 @@ pub fn start(app: AppHandle) {
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
 
-            let (enabled, provider_kind) = {
+            let enabled = {
                 let config = app.state::<Arc<Mutex<Config>>>();
                 let config = config.lock().await;
-                (
-                    config.auto_analyze && !config.local_only,
-                    config.provider_kind,
-                )
+                config.auto_analyze && !config.local_only
             };
             if !enabled {
                 last_seen_hash = 0;
-                continue;
-            }
-
-            if provider_kind == openrouter::ProviderKind::OpenRouter
-                && !openrouter::key_status_for(provider_kind)
-                    .map(|status| status.present)
-                    .unwrap_or(false)
-            {
                 continue;
             }
 

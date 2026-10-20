@@ -22,6 +22,25 @@ use super::render_state::RenderState;
 /// Each window owns its own egui context. A painter only receives the texture updates (such as
 /// font atlas changes) from passes run on its own window, so windows that share one context end
 /// up drawing with incomplete textures.
+#[cfg(target_os = "macos")]
+fn join_all_spaces(window: &WinitWindow) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    if let Ok(handle) = window.window_handle()
+        && let RawWindowHandle::AppKit(handle) = handle.as_raw()
+    {
+        // SAFETY: the handle points at the winit-owned NSView for this window,
+        // which outlives this call.
+        let view = unsafe { &*(handle.ns_view.as_ptr() as *const objc2_app_kit::NSView) };
+        if let Some(ns_window) = view.window() {
+            let behavior = ns_window.collectionBehavior()
+                | objc2_app_kit::NSWindowCollectionBehavior::CanJoinAllSpaces
+                | objc2_app_kit::NSWindowCollectionBehavior::Stationary;
+            ns_window.setCollectionBehavior(behavior);
+        }
+    }
+}
+
 pub struct Window {
     inner: Arc<WinitWindow>,
     egui_state: egui_winit::State,
@@ -48,6 +67,9 @@ impl Window {
                     .with_active(false),
             )?,
         );
+
+        #[cfg(target_os = "macos")]
+        join_all_spaces(&window);
 
         window.set_outer_position(PhysicalPosition::new(position.x, position.y));
         let _ = window.request_inner_size(PhysicalSize::new(size.width, size.height));

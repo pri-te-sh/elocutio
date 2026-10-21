@@ -260,6 +260,85 @@ async fn endpoint_for(provider: &ProviderConfig) -> Result<Endpoint, String> {
     })
 }
 
+/// Rewrite through a streaming request.
+///
+/// Streaming matters for long rewrites: the user sees the text appear rather
+/// than waiting for the whole response. The copy guard still runs on the
+/// finished text, so a streaming response cannot smuggle sample content
+/// through.
+pub async fn rewrite_with_stream(
+    provider: &ProviderConfig,
+    text: &str,
+    model: Option<String>,
+    voice_guidance: Option<String>,
+    tone: RewriteTone,
+    custom_instruction: Option<&str>,
+) -> Result<RewriteResult, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Enter some text to rewrite first.".into());
+    }
+
+    let model = model
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let mut system = SYSTEM_PROMPT.to_string();
+    if let Some(guidance) = voice_guidance {
+        system.push_str("\n\n");
+        system.push_str(&guidance);
+    }
+    if let Some(guidance) = tone.guidance() {
+        system.push_str("\n\n");
+        system.push_str(guidance);
+    }
+    if let Some(instruction) = custom_instruction.and_then(elocutio_analysis::custom_instruction) {
+        system.push_str("\n\n");
+        system.push_str(&instruction);
+    }
+
+    let request = llm::build_chat_request(
+        provider.kind,
+        &model,
+        Some(system),
+        text.to_string(),
+        Some(REWRITE_MAX_TOKENS),
+        ResponseFormat::Text,
+    );
+
+    let adapter = llm::adapter_for(provider.kind).map_err(|error| llm::user_message(&error))?;
+    let endpoint = endpoint_for(provider).await?;
+    let streamed = llm::streaming::stream_chat(adapter.as_ref(), &endpoint, &request)
+        .await
+        .map_err(|error| llm::user_message(&error))?;
+
+    let content = streamed.text.trim().to_string();
+    if content.is_empty() {
+        return Err("The provider returned no text.".into());
+    }
+
+    // The copy guard runs on the finished text, so a streaming response is
+    // checked exactly like a non-streaming one.
+    crate::voice::check_for_copy(&content)?;
+
+    Ok(RewriteResult {
+        text: content,
+        model: if streamed.model.is_empty() {
+            model
+        } else {
+            streamed.model
+        },
+        input_tokens: streamed
+            .usage
+            .as_ref()
+            .map_or(0, |usage| usage.input_tokens),
+        output_tokens: streamed
+            .usage
+            .as_ref()
+            .map_or(0, |usage| usage.output_tokens),
+        cost_usd: streamed.usage.as_ref().and_then(|usage| usage.cost_usd()),
+    })
+}
+
 pub async fn test_key_for(provider: &ProviderConfig) -> Result<OpenRouterStatus, String> {
     let key = load_key_optional(provider.kind)?;
     if provider.kind == ProviderKind::OpenRouter && key.is_none() {
@@ -308,13 +387,17 @@ pub async fn test_key_for(provider: &ProviderConfig) -> Result<OpenRouterStatus,
     })
 }
 
-/// Rewrite through an explicit provider configuration.
+/// Rewrite the text with the provider.
+///
+/// The custom instruction is sanitized and wrapped as data, so it cannot be used
+/// to fake a prompt boundary.
 pub async fn rewrite_with(
     provider: &ProviderConfig,
     text: &str,
     model: Option<String>,
     voice_guidance: Option<String>,
     tone: RewriteTone,
+    custom_instruction: Option<&str>,
 ) -> Result<RewriteResult, String> {
     let text = text.trim();
     if text.is_empty() {
@@ -332,6 +415,10 @@ pub async fn rewrite_with(
     if let Some(guidance) = tone.guidance() {
         system.push_str("\n\n");
         system.push_str(guidance);
+    }
+    if let Some(instruction) = custom_instruction.and_then(elocutio_analysis::custom_instruction) {
+        system.push_str("\n\n");
+        system.push_str(&instruction);
     }
 
     // `temperature` is deliberately left unset: the Claude 5 family rejects
@@ -407,6 +494,11 @@ async fn send_request(
 }
 
 /// Structured analysis through an explicit provider configuration.
+///
+/// The voice style card is included when the user has turned it on, so an
+/// inline suggestion matches the writer's register rather than a generic
+/// one. The card is the only thing sent: no sample content ever reaches the
+/// provider.
 pub async fn analyze_with(
     provider: &ProviderConfig,
     paragraph_id: &str,
@@ -414,17 +506,45 @@ pub async fn analyze_with(
     model: Option<String>,
     dialect: &str,
 ) -> Result<AnalyzeCompletion, String> {
+    analyze_with_context(provider, paragraph_id, paragraph, model, dialect, None).await
+}
+
+/// Structured analysis with a custom instruction and a voice style card.
+///
+/// The instruction and the style card are both sanitized and both marked as
+/// data, so neither can turn into a prompt boundary.
+pub async fn analyze_with_context(
+    provider: &ProviderConfig,
+    paragraph_id: &str,
+    paragraph: &str,
+    model: Option<String>,
+    dialect: &str,
+    custom_instruction: Option<&str>,
+) -> Result<AnalyzeCompletion, String> {
     let model = model
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+
+    let mut system = elocutio_analysis::system_prompt().to_string();
+    let voice_guidance = crate::voice::guidance();
+    if let Some(guidance) = &voice_guidance {
+        system.push_str("\n\n");
+        system.push_str(guidance);
+    }
 
     // The strict JSON-schema response format is what OpenRouter expects for
     // structured output, and it is what makes the suggestion list parseable.
     let request = llm::build_chat_request(
         provider.kind,
         &model,
-        Some(elocutio_analysis::system_prompt().to_string()),
-        elocutio_analysis::build_user_prompt(paragraph_id, paragraph, dialect),
+        Some(system),
+        elocutio_analysis::build_user_prompt_with_context(
+            paragraph_id,
+            paragraph,
+            dialect,
+            custom_instruction,
+            voice_guidance.as_deref(),
+        ),
         Some(ANALYSIS_MAX_TOKENS),
         ResponseFormat::JsonSchema {
             name: "suggestions".to_string(),

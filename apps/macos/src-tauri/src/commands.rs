@@ -42,6 +42,11 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_provider_model,
         set_provider_model,
         list_provider_models,
+        get_coalescer_state,
+        clear_coalescer_state,
+        get_custom_instruction,
+        rewrite_text_streamed,
+        set_custom_instruction,
         get_default_model,
         get_auto_analyze,
         set_auto_analyze,
@@ -267,7 +272,7 @@ async fn rewrite_text(
     model: Option<String>,
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<RewriteResult, String> {
-    let (provider, model, tone, cost_cap) = {
+    let (provider, model, tone, cost_cap, instruction) = {
         let config = config.lock().await;
         if config.local_only {
             return Err("Local-only mode is on. Turn it off to use a provider.".into());
@@ -283,6 +288,7 @@ async fn rewrite_text(
             },
             config.rewrite_tone,
             config.cost_cap_usd,
+            config.custom_instruction.clone(),
         )
     };
     openrouter::check_cost_cap(
@@ -297,6 +303,7 @@ async fn rewrite_text(
         Some(model),
         crate::voice::guidance(),
         tone,
+        Some(instruction.as_str()),
     )
     .await?;
     if let Err(error) = usage::record(&result) {
@@ -322,7 +329,7 @@ async fn rewrite_preview(
     model: Option<String>,
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<RewritePreview, String> {
-    let (provider, model, tone, cost_cap) = {
+    let (provider, model, tone, cost_cap, instruction) = {
         let config = config.lock().await;
         if config.local_only {
             return Err("Local-only mode is on. Turn it off to use a provider.".into());
@@ -338,6 +345,7 @@ async fn rewrite_preview(
             },
             config.rewrite_tone,
             config.cost_cap_usd,
+            config.custom_instruction.clone(),
         )
     };
     openrouter::check_cost_cap(
@@ -352,6 +360,7 @@ async fn rewrite_preview(
         Some(model),
         crate::voice::guidance(),
         tone,
+        Some(instruction.as_str()),
     )
     .await?;
     if let Err(error) = usage::record(&result) {
@@ -371,6 +380,112 @@ async fn rewrite_preview(
 #[tauri::command]
 async fn get_provider_model(config: State<'_, Arc<Mutex<Config>>>) -> Result<String, String> {
     Ok(config.lock().await.provider_model.clone())
+}
+
+/// Rewrite through a streaming request.
+///
+/// The response arrives in pieces rather than all at once, which matters for
+/// long rewrites. The copy guard still runs on the finished text.
+#[tauri::command]
+async fn rewrite_text_streamed(
+    text: String,
+    model: Option<String>,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<RewriteResult, String> {
+    let (provider, model, tone, cost_cap, instruction) = {
+        let config = config.lock().await;
+        if config.local_only {
+            return Err("Local-only mode is on. Turn it off to use a provider.".into());
+        }
+        (
+            ProviderConfig {
+                kind: config.provider_kind,
+                base_url: config.provider_base_url.clone(),
+            },
+            match model.filter(|value| !value.trim().is_empty()) {
+                Some(model) => model,
+                None => config.provider_model.clone(),
+            },
+            config.rewrite_tone,
+            config.cost_cap_usd,
+            config.custom_instruction.clone(),
+        )
+    };
+    openrouter::check_cost_cap(
+        &model,
+        text.chars().count(),
+        openrouter::REWRITE_MAX_TOKENS,
+        cost_cap,
+    )?;
+    let result = openrouter::rewrite_with_stream(
+        &provider,
+        &text,
+        Some(model),
+        crate::voice::guidance(),
+        tone,
+        Some(instruction.as_str()),
+    )
+    .await?;
+    if let Err(error) = usage::record(&result) {
+        eprintln!("Could not record usage: {error}");
+    }
+    Ok(result)
+}
+
+/// The custom instruction applied to every request.
+#[tauri::command]
+async fn get_custom_instruction(config: State<'_, Arc<Mutex<Config>>>) -> Result<String, String> {
+    Ok(config.lock().await.custom_instruction.clone())
+}
+
+/// Set the custom instruction applied to every request.
+///
+/// The instruction is sanitized before it is stored, so it cannot be used to
+/// fake a prompt boundary.
+#[tauri::command]
+async fn set_custom_instruction(
+    instruction: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<String, String> {
+    let sanitized = elocutio_analysis::custom_instruction(&instruction)
+        .map(|wrapped| {
+            // The stored value is the plain text; the wrapper is added at
+            // request time.
+            wrapped
+                .trim_start_matches("<custom_instruction data=\"true\">")
+                .trim_end_matches("</custom_instruction>")
+                .to_string()
+        })
+        .unwrap_or_default();
+
+    let mut config = config.lock().await;
+    config.custom_instruction = sanitized;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.custom_instruction.clone())
+}
+
+/// The number of analysis requests the coalescer is tracking.
+///
+/// This is a diagnostic: it shows how many distinct texts have been analyzed
+/// recently, and lets the user clear the tracking.
+#[tauri::command]
+fn get_coalescer_state() -> serde_json::Value {
+    let coalescer = crate::coalesce::shared();
+    serde_json::json!({
+        "tracked": coalescer.len(),
+        "empty": coalescer.is_empty(),
+    })
+}
+
+/// Forget every tracked analysis request.
+#[tauri::command]
+fn clear_coalescer_state() -> usize {
+    let coalescer = crate::coalesce::shared();
+    coalescer.clear();
+    coalescer.len()
 }
 
 /// The models the configured provider can serve.
@@ -564,7 +679,7 @@ async fn analyze_text(
         return Err("Enter some text to analyze first.".into());
     }
 
-    let (provider, model, cost_cap) = {
+    let (provider, model, cost_cap, instruction) = {
         let config = config.lock().await;
         if config.local_only {
             return Err("Local-only mode is on. Turn it off to use a provider.".into());
@@ -576,6 +691,7 @@ async fn analyze_text(
             },
             config.provider_model.clone(),
             config.cost_cap_usd,
+            config.custom_instruction.clone(),
         )
     };
     let paragraphs = elocutio_analysis::chunk_paragraphs(text);
@@ -604,12 +720,13 @@ async fn analyze_text(
     let mut response_model = model.clone();
 
     for paragraph in paragraphs.iter().take(3) {
-        let completion = openrouter::analyze_with(
+        let completion = openrouter::analyze_with_context(
             &provider,
             &paragraph.id,
             &paragraph.text,
             Some(model.clone()),
             "en-US",
+            Some(instruction.as_str()),
         )
         .await?;
         input_tokens += completion.input_tokens;

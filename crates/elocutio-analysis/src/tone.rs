@@ -459,6 +459,8 @@ pub fn tone_guidance(tone: Tone) -> Option<&'static str> {
 /// * the text is collapsed to a single line (no prompt smuggling via
 ///   newlines),
 /// * it is truncated to [`MAX_INSTRUCTION_LENGTH`] characters,
+/// * angle brackets are removed, so the text cannot close the wrapper tag and
+///   escape into the rest of the prompt,
 /// * it is wrapped in a data marker so the model reads it as content, not as
 ///   instructions.
 ///
@@ -495,8 +497,15 @@ pub fn custom_instruction(text: &str) -> Option<String> {
         return None;
     }
 
+    // The instruction is wrapped in a tag, so the text must not be able to
+    // close that tag. Angle brackets are the only characters that can do it.
+    let safe: String = truncated
+        .chars()
+        .filter(|character| *character != '<')
+        .collect();
+
     Some(format!(
-        "<custom_instruction data=\"true\">{truncated}</custom_instruction>"
+        "<custom_instruction data=\"true\">{safe}</custom_instruction>"
     ))
 }
 

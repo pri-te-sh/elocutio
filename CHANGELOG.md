@@ -107,6 +107,13 @@ to follow [Semantic Versioning](https://semver.org/).
 - A tracked app support matrix that a test keeps in step with the code.
 - A progress ledger that derives status from evidence, flags unsupported
   claims, and rejects evidence rules that match nothing.
+- A custom instruction applied to every rewrite and analysis, sanitized so it
+  cannot be used to fake a prompt boundary.
+- The voice style card now reaches the inline analysis path, not just rewrites.
+- Request coalescing: two callers asking the same question share one request,
+  and a burst for the same key is throttled.
+- A streaming rewrite path, with the copy guard still applied to the finished
+  text.
 
 ### Changed
 
@@ -143,7 +150,6 @@ to follow [Semantic Versioning](https://semver.org/).
 - The Rewrite Selection shortcut is fixed at ⌥⌘E; it is not configurable yet.
 - The word-level diff renders in Settings; the system-wide rewrite still
   replaces the selection without a preview to accept or reject.
-- Custom rewrite instructions are sanitized but not yet exposed in the UI.
 - The voice fingerprint set grows with the sample size, so a very large upload
   would make the style card large. This needs a decision before M3.
 - Streaming is implemented and tested but not yet wired to a command.

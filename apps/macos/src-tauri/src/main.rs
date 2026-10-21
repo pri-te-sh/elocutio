@@ -45,6 +45,7 @@ pub mod app_matrix;
 mod app_matrix_consistency;
 mod args;
 mod auto_analyze;
+mod coalesce;
 pub mod color;
 mod commands;
 pub mod communication;
@@ -503,6 +504,7 @@ pub fn run_highlighter(has_parent: bool) {
             cost_cap_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
+            custom_instruction: String::new(),
             local_only: false,
             blocklist: Vec::new(),
         };
@@ -673,6 +675,7 @@ fn fetch_highlighter_config(
             cost_cap_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
+            custom_instruction: String::new(),
             local_only: false,
             blocklist: Vec::new(),
         })

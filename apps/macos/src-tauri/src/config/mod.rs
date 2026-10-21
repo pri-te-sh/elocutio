@@ -49,6 +49,12 @@ pub struct Config {
     pub learn_from_edits: bool,
     /// Requested rewrite tone.
     pub rewrite_tone: crate::openrouter::RewriteTone,
+    /// A free-text instruction the user applies to every request.
+    ///
+    /// It is sanitized before it reaches a prompt: control characters are
+    /// stripped, newlines are collapsed, angle brackets are removed, and it is
+    /// length-capped, so it cannot be used to fake a prompt boundary.
+    pub custom_instruction: String,
     /// When true, no text may leave the Mac for a provider.
     pub local_only: bool,
     /// Apps Elocutio must never read, even when they are enabled for suggestions.
@@ -81,6 +87,7 @@ impl Config {
             cost_cap_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
+            custom_instruction: String::new(),
             local_only: false,
             blocklist: Vec::new(),
         }
@@ -295,6 +302,7 @@ impl Config {
             "cost_cap_usd": self.cost_cap_usd,
             "learn_from_edits": self.learn_from_edits,
             "rewrite_tone": self.rewrite_tone,
+            "custom_instruction": self.custom_instruction,
             "local_only": self.local_only,
             "blocklist": self.blocklist,
         }))
@@ -341,6 +349,8 @@ impl Config {
             learn_from_edits: deserialize_optional_field(object, "learn_from_edits")?
                 .unwrap_or(false),
             rewrite_tone: deserialize_optional_field(object, "rewrite_tone")?.unwrap_or_default(),
+            custom_instruction: deserialize_optional_field(object, "custom_instruction")?
+                .unwrap_or_default(),
             local_only: deserialize_optional_field(object, "local_only")?.unwrap_or(false),
             blocklist: deserialize_optional_field(object, "blocklist")?.unwrap_or_default(),
         })

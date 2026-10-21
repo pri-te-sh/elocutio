@@ -34,7 +34,7 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
         ));
     }
 
-    let (provider, model, tone, cost_cap) = {
+    let (provider, model, tone, cost_cap, instruction) = {
         let state = app.state::<std::sync::Arc<tokio::sync::Mutex<crate::config::Config>>>();
         let config = state.lock().await;
         if config.local_only {
@@ -48,6 +48,7 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
             config.provider_model.clone(),
             config.rewrite_tone,
             config.cost_cap_usd,
+            config.custom_instruction.clone(),
         )
     };
     openrouter::check_cost_cap(
@@ -56,12 +57,15 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
         openrouter::REWRITE_MAX_TOKENS,
         cost_cap,
     )?;
+    // The system-wide rewrite honours the user's custom instruction, so it
+    // goes through the context-aware path.
     let result = openrouter::rewrite_with(
         &provider,
         &text,
         Some(model),
         crate::voice::guidance(),
         tone,
+        Some(instruction.as_str()),
     )
     .await?;
     if let Err(error) = usage::record(&result) {

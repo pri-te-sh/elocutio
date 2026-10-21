@@ -185,6 +185,9 @@
   let costCapInput = "";
   let costCapBusy = false;
   let costCapMessage = "";
+  let customInstruction = "";
+  let instructionBusy = false;
+  let instructionMessage = "";
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";
@@ -418,6 +421,29 @@
       costCapMessage = String(error);
     } finally {
       costCapBusy = false;
+    }
+  }
+
+  async function refreshInstruction() {
+    try {
+      customInstruction = await invoke<string>("get_custom_instruction");
+    } catch (error) {
+      instructionMessage = String(error);
+    }
+  }
+
+  async function saveInstruction() {
+    instructionBusy = true;
+    instructionMessage = "";
+    try {
+      customInstruction = await invoke<string>("set_custom_instruction", {
+        instruction: customInstruction,
+      });
+      instructionMessage = "Saved. This instruction is applied to every request.";
+    } catch (error) {
+      instructionMessage = String(error);
+    } finally {
+      instructionBusy = false;
     }
   }
 
@@ -845,6 +871,7 @@
     void loadVoiceTraits();
     void refreshModels();
     void refreshCostCap();
+    void refreshInstruction();
   });
 </script>
 
@@ -1200,6 +1227,22 @@
         provider at the time the catalog was written.
       </p>
     </label>
+
+    <label class="field">
+      <span>Custom instruction</span>
+      <textarea bind:value={customInstruction} rows="2" placeholder="e.g. Prefer British spelling, and keep sentences short."></textarea>
+      <div class="model-row">
+        <button onclick={saveInstruction} disabled={instructionBusy}>Save</button>
+      </div>
+      <p class="muted">
+        Applied to every rewrite and analysis. The text is sanitized before it reaches a prompt, so it
+        cannot be used to fake a prompt boundary.
+      </p>
+    </label>
+
+    {#if instructionMessage}
+      <p class="message">{instructionMessage}</p>
+    {/if}
 
     <label class="field">
       <span>Cost cap (USD per request, optional)</span>

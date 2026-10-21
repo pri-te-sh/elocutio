@@ -31,7 +31,10 @@ pub use merge::{
     SuggestionSource, cap_suggestions, merge, merge_with_limit, rank_suggestions,
 };
 pub use parse::{AnalysisResult, RejectedEdit, parse_response};
-pub use prompt::{PROMPT_VERSION, SCHEMA_VERSION, build_user_prompt, json_schema, system_prompt};
+pub use prompt::{
+    PROMPT_VERSION, SCHEMA_VERSION, build_user_prompt, build_user_prompt_with_context, json_schema,
+    system_prompt,
+};
 pub use resolve::{RawEdit, ResolveError, resolve_edit, resolve_exact};
 pub use tone::{Tone, ToneSignal, custom_instruction, detect_tone, tone_guidance};
 

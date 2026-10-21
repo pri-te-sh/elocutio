@@ -647,8 +647,8 @@
               "contains": "STABLE_DELAY"
             }
           ],
-          "status": "in_progress",
-          "notes": "The live watcher debounces, deduplicates, throttles per app, and discards a stale result. Only the changed paragraphs are sent, so a long document costs the same as a short one."
+          "status": "done",
+          "notes": "The live watcher debounces, deduplicates, throttles per app, sends only the changed paragraphs, and discards a result that was superseded while the request was in flight."
         },
         {
           "id": "m2-tone",
@@ -656,8 +656,8 @@
           "area": "ux",
           "priority": "P1",
           "estimateDays": 2,
-          "status": "in_progress",
-          "notes": "Tone detection is local, deterministic, and explainable: it measures contractions, hedges, intensifiers, pronouns, imperatives, passive voice, and sentence length, and shows the evidence. Tone presets feed the provider prompt. Custom instructions are sanitized but not yet exposed in the UI.",
+          "status": "done",
+          "notes": "Tone detection is local, deterministic, and explainable: it measures contractions, hedges, intensifiers, pronouns, imperatives, passive voice, and sentence length, and shows the evidence behind the label. Tone presets feed the provider prompt, and a custom instruction can be applied to every request; it is sanitized so it cannot fake a prompt boundary.",
           "evidence": [
             {
               "type": "text",
@@ -695,8 +695,8 @@
               "contains": "text_hash"
             }
           ],
-          "status": "in_progress",
-          "notes": "The suggestion cache is keyed by text hash with a 24-hour time to live, and a per-request cost cap refuses a request before it is sent. Request coalescing is not implemented."
+          "status": "done",
+          "notes": "The suggestion cache is keyed by text hash with a 24-hour time to live, a per-request cost cap refuses a request before it is sent, and a coalescer gives one request to two callers asking the same question and throttles a burst for the same key."
         },
         {
           "id": "m2-secure",
@@ -758,7 +758,7 @@
             "m2-voice-profile"
           ],
           "status": "done",
-          "notes": "The style card is injected into rewrite prompts, and a copy guard refuses output that repeats the writer's samples. The user can rate a rewrite, override any trait by hand, and clear an override to restore the learned value.",
+          "notes": "The style card is injected into rewrite and analysis prompts, and a copy guard refuses output that repeats the writer's samples. The user can rate a rewrite, override any trait by hand, and clear an override to restore the learned value.",
           "evidence": [
             {
               "type": "text",

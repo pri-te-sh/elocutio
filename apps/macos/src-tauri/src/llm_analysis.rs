@@ -12,6 +12,9 @@ use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::llm_cache::{CachedAnalysis, CachedSuggestion, text_hash};
+
+/// The shortest gap between two analyses of the same text.
+const MIN_ANALYSIS_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 use crate::os_broker::OsBroker;
 use crate::{PlatformBroker, llm_cache, main_thread, openrouter, rewrite, usage};
 
@@ -80,6 +83,17 @@ pub async fn analyze_focused_field_with(
         return Ok("Nothing changed since the last analysis.".to_string());
     }
 
+    // Coalesce: the same text, model, and dialect share one request, and a
+    // burst of requests for the same key is throttled. A key that arrives
+    // while another request is in flight waits for the newer one rather than
+    // adding to the storm.
+    let key = crate::coalesce::RequestKey::new(&model, &focused.text, "en-US");
+    let coalescer = crate::coalesce::shared();
+    if !coalescer.allows(&key, MIN_ANALYSIS_INTERVAL) {
+        return Ok("That text was just analyzed.".to_string());
+    }
+    let generation = coalescer.record(&key);
+
     let mut suggestions = Vec::new();
     for paragraph in paragraphs.iter().take(3) {
         let completion = openrouter::analyze_with(
@@ -139,6 +153,12 @@ pub async fn analyze_focused_field_with(
         suggestions,
     };
     llm_cache::write(&cache)?;
+
+    // A result that was superseded while the request was in flight describes
+    // text the user is no longer looking at, so it is discarded.
+    if !coalescer.is_current(&key, generation) {
+        return Ok("A newer analysis replaced this one.".to_string());
+    }
 
     if count == 0 {
         Ok("No safe LLM suggestions for the focused field.".to_string())

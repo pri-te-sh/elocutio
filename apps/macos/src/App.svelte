@@ -143,6 +143,16 @@
     cost_usd: number;
     hosts: [string, number][];
   };
+  type MatrixApp = { bundle_id: string; name: string; tier: string };
+  type MatrixCondition = { name: string; label: string };
+  type MatrixSummary = {
+    tier_a: number;
+    supported: number;
+    checked: number;
+    failed: number;
+    unverified: number;
+    failing_apps: string[];
+  };
   type RequestPreview = {
     host: string;
     provider: string;
@@ -232,6 +242,9 @@
   let widgetAnchors: [string, WidgetAnchor][] = [];
   let networkLog: NetworkEntry[] = [];
   let requestPreview: RequestPreview | null = null;
+  let matrixApps: MatrixApp[] = [];
+  let matrixConditions: MatrixCondition[] = [];
+  let matrixSummary: MatrixSummary | null = null;
   let previewBusy = false;
   let previewMessage = "";
   let networkSummary: NetworkSummary | null = null;
@@ -472,6 +485,20 @@
       costCapMessage = String(error);
     } finally {
       costCapBusy = false;
+    }
+  }
+
+  async function refreshMatrix() {
+    try {
+      const matrix = await invoke<{
+        tierA: MatrixApp[];
+        conditions: MatrixCondition[];
+      }>("get_app_matrix");
+      matrixApps = matrix.tierA;
+      matrixConditions = matrix.conditions;
+      matrixSummary = await invoke<MatrixSummary>("get_app_matrix_summary");
+    } catch (error) {
+      instructionMessage = String(error);
     }
   }
 
@@ -985,6 +1012,7 @@
     void refreshGate();
     void refreshWidgetAnchors();
     void refreshNetworkLog();
+    void refreshMatrix();
   });
 </script>
 
@@ -1765,6 +1793,25 @@
     <div class="actions">
       <button class="ghost" onclick={refreshGate}>Refresh</button>
     </div>
+
+    <h3>App matrix</h3>
+    {#if matrixSummary}
+      <p class="muted">
+        {matrixSummary.supported} of {matrixSummary.tier_a} Tier A apps draw in the overlay ·
+        {matrixSummary.checked} checks recorded, {matrixSummary.failed} failed,
+        {matrixSummary.unverified} still to check, across {matrixConditions.length} conditions.
+      </p>
+    {/if}
+    <ul class="app-list">
+      {#each matrixApps as app (app.bundle_id)}
+        <li>
+          <span>
+            <strong>{app.name}</strong>
+            <span class="muted">{app.bundle_id}</span>
+          </span>
+        </li>
+      {/each}
+    </ul>
   </section>
 
   <section class="card">

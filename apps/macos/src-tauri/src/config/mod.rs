@@ -86,8 +86,6 @@ pub struct Config {
     pub auto_enable_new_apps: bool,
     pub onboarding_completed: bool,
     pub debounce_ms: u64,
-    /// Whether the main process may check for and install updates automatically.
-    pub auto_update: bool,
     /// Unix milliseconds at the start of the last manual or automatic update attempt.
     /// Failed attempts also count toward the automatic 24-hour interval.
     pub last_update_check: Option<u64>,
@@ -152,7 +150,6 @@ impl Config {
             auto_enable_new_apps: false,
             onboarding_completed: false,
             debounce_ms: 0,
-            auto_update: true,
             last_update_check: None,
             highlighter_service_enabled: true,
             provider_kind: crate::openrouter::ProviderKind::OpenRouter,
@@ -370,7 +367,6 @@ impl Config {
             "auto_enable_new_apps": self.auto_enable_new_apps,
             "onboarding_completed": self.onboarding_completed,
             "debounce_ms": self.debounce_ms,
-            "auto_update": self.auto_update,
             "last_update_check": self.last_update_check,
             "highlighter_service_enabled": self.highlighter_service_enabled,
             "provider_kind": self.provider_kind,
@@ -407,7 +403,6 @@ impl Config {
             onboarding_completed: deserialize_optional_field(object, "onboarding_completed")?
                 .unwrap_or(true),
             debounce_ms: deserialize_optional_field(object, "debounce_ms")?.unwrap_or(0),
-            auto_update: deserialize_optional_field(object, "auto_update")?.unwrap_or(true),
             last_update_check: deserialize_optional_field::<Option<u64>>(
                 object,
                 "last_update_check",
@@ -501,7 +496,6 @@ mod tests {
         assert!(serialized.contains("integrations"));
         assert!(serialized.contains("onboarding_completed"));
         assert!(serialized.contains("debounce_ms"));
-        assert!(serialized.contains("auto_update"));
         assert!(serialized.contains("last_update_check"));
         assert!(serialized.contains("highlighter_service_enabled"));
         assert!(serialized.contains("auto_analyze"));
@@ -531,7 +525,6 @@ mod tests {
             config.onboarding_completed
         );
         assert_eq!(deserialized.debounce_ms, config.debounce_ms);
-        assert_eq!(deserialized.auto_update, config.auto_update);
         assert_eq!(deserialized.last_update_check, config.last_update_check);
         assert_eq!(
             deserialized.highlighter_service_enabled,
@@ -568,12 +561,10 @@ mod tests {
         let config = Config::new();
         let mut value =
             serde_json::from_str::<serde_json::Value>(&config.serialize_main().unwrap()).unwrap();
-        value.as_object_mut().unwrap().remove("auto_update");
         value.as_object_mut().unwrap().remove("last_update_check");
 
         let deserialized = Config::deserialize_main(&value.to_string()).unwrap();
 
-        assert!(deserialized.auto_update);
         assert_eq!(deserialized.last_update_check, None);
     }
 

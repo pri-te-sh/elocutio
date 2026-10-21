@@ -30,8 +30,6 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_lint_rules,
         get_debounce_ms,
         set_debounce_ms,
-        get_auto_update,
-        set_auto_update,
         get_current_version,
         get_provider_settings,
         set_provider_kind,
@@ -229,26 +227,6 @@ async fn set_debounce_ms(
 ) -> Result<(), String> {
     let mut config = config.lock().await;
     config.debounce_ms = debounce_ms;
-    config
-        .save_to_system()
-        .await
-        .map_err(|error| error.to_string())?;
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn get_auto_update(config: State<'_, Arc<Mutex<Config>>>) -> Result<bool, String> {
-    Ok(config.lock().await.auto_update)
-}
-
-#[tauri::command]
-async fn set_auto_update(
-    auto_update: bool,
-    config: State<'_, Arc<Mutex<Config>>>,
-) -> Result<(), String> {
-    let mut config = config.lock().await;
-    config.auto_update = auto_update;
     config
         .save_to_system()
         .await

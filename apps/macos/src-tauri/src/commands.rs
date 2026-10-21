@@ -25,6 +25,9 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
     tauri::generate_handler![
         get_lint_config,
         get_dialect,
+        get_dialect_name,
+        set_dialect_name,
+        get_lint_rules,
         get_debounce_ms,
         set_debounce_ms,
         get_auto_update,
@@ -137,6 +140,76 @@ async fn get_lint_config(config: State<'_, Arc<Mutex<Config>>>) -> Result<FlatCo
     lint_config.fill_with_curated();
 
     Ok(lint_config)
+}
+
+/// The dialect, as the abbreviation the UI can show.
+///
+/// The `Dialect` enum serializes as a number, which is fine for the config
+/// file but not for a settings window. This is the string form.
+#[tauri::command]
+async fn get_dialect_name(config: State<'_, Arc<Mutex<Config>>>) -> Result<String, String> {
+    Ok(dialect_abbr(config.lock().await.dialect))
+}
+
+/// Set the dialect by abbreviation.
+#[tauri::command]
+async fn set_dialect_name(
+    dialect: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<String, String> {
+    let mut config = config.lock().await;
+    config.dialect = Dialect::try_from_abbr(dialect.trim()).ok_or_else(|| {
+        "Unknown dialect. Use one of: US, CA, AU, GB, IN.".to_string()
+    })?;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(dialect_abbr(config.dialect))
+}
+
+/// The abbreviation for a dialect.
+fn dialect_abbr(dialect: Dialect) -> String {
+    match dialect {
+        Dialect::American => "US".to_string(),
+        Dialect::Canadian => "CA".to_string(),
+        Dialect::Australian => "AU".to_string(),
+        Dialect::British => "GB".to_string(),
+        Dialect::Indian => "IN".to_string(),
+    }
+}
+
+/// The rules the local engine can run, and whether each is on.
+///
+/// The settings window needs the list to show a rule picker; the local config
+/// alone is a map the UI cannot read.
+#[tauri::command]
+async fn get_lint_rules(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<Vec<LintRuleView>, String> {
+    let lint_config = config.lock().await.lint_config.clone();
+    // The config serializes as an ordered map, so the UI gets a stable order.
+    let serialized = serde_json::to_value(&lint_config)
+        .map_err(|error| format!("Could not read the rule list: {error}"))?;
+    let rules = serialized
+        .as_object()
+        .map(|map| {
+            map.iter()
+                .map(|(key, value)| LintRuleView {
+                    key: key.clone(),
+                    enabled: value.as_bool().unwrap_or(true),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(rules)
+}
+
+/// One rule in the local engine.
+#[derive(serde::Serialize, Clone)]
+struct LintRuleView {
+    key: String,
+    enabled: bool,
 }
 
 #[tauri::command]

@@ -25,6 +25,7 @@
     "check:progress": "python3 scripts/progress.py validate && python3 -m unittest discover -s scripts -p 'test_*.py'"
   },
   "devDependencies": {
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "prettier-plugin-svelte": "^4.1.1"
   }
 }

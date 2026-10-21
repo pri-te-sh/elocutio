@@ -1784,7 +1784,16 @@
 
       const state = {
         data: BOOTSTRAP,
-        static: !BOOTSTRAP || BOOTSTRAP.mode !== "live",
+        mode: BOOTSTRAP ? BOOTSTRAP.mode : "static",
+        // "live" = served by progress.py with a writable API.
+        // "published" = hosted statically; polls progress.json and is read-only.
+        // "static" = a one-shot snapshot; never polls.
+        get static() {
+          return this.mode === "static";
+        },
+        get readonly() {
+          return this.mode !== "live";
+        },
         filters: { q: "", milestone: "all", status: "all", area: "all" },
         lastFetch: Date.now(),
         failures: 0,
@@ -1912,6 +1921,9 @@
         if (mode === "static") {
           element.classList.add("is-static");
           label.textContent = "Static snapshot";
+        } else if (mode === "published") {
+          element.classList.add("is-live");
+          label.textContent = `Published · updates every ${state.data?.refreshSeconds || 60}s`;
         } else if (mode === "lost") {
           element.classList.add("is-lost");
           label.textContent = "Reconnecting…";
@@ -2120,7 +2132,7 @@
           ),
         ].join("");
 
-        const control = state.static
+        const control = state.readonly
           ? `<span class="status-chip">${statusChip(task.status, task.source === "manual" ? "manual" : "auto")}</span>`
           : `<select class="status-select" data-task-select="${esc(task.id)}" data-current="${esc(task.status)}" aria-label="Set status for ${esc(task.title)}">${options}</select>`;
 
@@ -2409,7 +2421,13 @@
           ? `${data.meta.repoUrl}/blob/main/${data.meta.roadmapPath}`
           : "#";
         $("#footer-meta").textContent =
-          `Generated ${formatDateTime(data.generatedAt)} · schema v${data.schemaVersion} · rev ${data.rev} · ${state.static ? "static snapshot" : `auto-refresh every ${data.refreshSeconds}s`}`;
+          `Generated ${formatDateTime(data.generatedAt)} · schema v${data.schemaVersion} · rev ${data.rev} · ${
+            state.mode === "published"
+              ? `published · polls every ${data.refreshSeconds}s`
+              : state.static
+                ? "static snapshot"
+                : `auto-refresh every ${data.refreshSeconds}s`
+          }`;
       }
 
       function renderAll() {
@@ -2436,7 +2454,12 @@
           setLive("static");
           return;
         }
-        if (state.static) {
+        if (state.mode === "published") {
+          setLive("published");
+          showBanner(
+            `<strong>Published view.</strong> This page polls <code>progress.json</code> and updates whenever the site is republished. Status editing is available on the local dashboard (<code>just progress-serve</code>). Generated ${esc(formatDateTime(state.data.generatedAt))}.`,
+          );
+        } else if (state.static) {
           setLive("static");
           const refresh = $("#refresh");
           refresh.hidden = true;
@@ -2453,8 +2476,10 @@
 
       async function fetchPayload({ silent = false } = {}) {
         if (state.static) return;
+        const source =
+          state.mode === "published" ? `progress.json?t=${Date.now()}` : "api/progress";
         try {
-          const response = await fetch("api/progress", {
+          const response = await fetch(source, {
             cache: "no-store",
             headers: { Accept: "application/json" },
           });
@@ -2483,7 +2508,8 @@
       function schedulePoll() {
         if (state.static) return;
         window.clearTimeout(state.pollTimer);
-        const interval = Math.max(2, Number(state.data?.refreshSeconds) || 5) * 1000;
+        const fallback = state.mode === "published" ? 60 : 5;
+        const interval = Math.max(2, Number(state.data?.refreshSeconds) || fallback) * 1000;
         state.pollTimer = window.setTimeout(() => {
           if (document.hidden) schedulePoll();
           else fetchPayload();
@@ -2509,6 +2535,10 @@
       }
 
       async function setTaskStatus(taskId, status) {
+        if (state.readonly) {
+          toast("This view is read-only. Edit statuses on the local dashboard.", "error");
+          return;
+        }
         const select = document.querySelector(`select[data-task-select="${CSS.escape(taskId)}"]`);
         if (select) select.disabled = true;
         try {
@@ -2619,7 +2649,7 @@
       function start() {
         if (BOOTSTRAP) {
           state.data = BOOTSTRAP;
-          state.static = BOOTSTRAP.mode !== "live";
+          state.mode = BOOTSTRAP.mode;
         }
         configureMode();
         renderAll();

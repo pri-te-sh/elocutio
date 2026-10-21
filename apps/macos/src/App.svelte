@@ -361,6 +361,21 @@
   let learnFromEdits = false;
   let voiceFeedbackCount = 0;
   let voiceGuidance: string | null = null;
+  let dialect = "american";
+  let dialectBusy = false;
+  let dialectMessage = "";
+  let lintRules: { key: string; enabled: boolean }[] = [];
+  let rulesBusy = false;
+  let rulesMessage = "";
+  let dictionaryWords: string[] = [];
+  let dictionaryInput = "";
+  let dictionaryBusy = false;
+  let dictionaryMessage = "";
+  let debounceMs = 0;
+  let debounceBusy = false;
+  let debounceMessage = "";
+  let appSearchQuery = "";
+  let appSearchResults: { name: string; bundle_id: string }[] = [];
   let eventsEnabled = false;
   let eventSummary: EventSummary | null = null;
   let eventsBusy = false;
@@ -640,6 +655,102 @@
       model = await invoke<string>("get_provider_model");
     } catch (error) {
       providerMessage = String(error);
+    }
+  }
+
+  async function refreshWritingRules() {
+    try {
+      dialect = await invoke<string>("get_dialect_name");
+      lintRules = await invoke<{ key: string; enabled: boolean }[]>("get_lint_rules");
+      dictionaryWords = await invoke<string[]>("get_dictionary");
+      debounceMs = await invoke<number>("get_debounce_ms");
+    } catch (error) {
+      rulesMessage = String(error);
+    }
+  }
+
+  async function setDialect(next: string) {
+    dialectBusy = true;
+    dialectMessage = "";
+    try {
+      dialect = await invoke<string>("set_dialect_name", { dialect: next });
+      dialectMessage = "Dialect saved.";
+    } catch (error) {
+      dialectMessage = String(error);
+    } finally {
+      dialectBusy = false;
+    }
+  }
+
+  async function toggleRule(key: string, enabled: boolean) {
+    rulesBusy = true;
+    rulesMessage = "";
+    try {
+      // The lint config is a map of rule name to enabled.
+      const config: Record<string, boolean> = {};
+      for (const rule of lintRules) {
+        config[rule.key] = rule.key === key ? enabled : rule.enabled;
+      }
+      await invoke("set_lint_config", { lintConfig: config });
+      lintRules = lintRules.map((rule) => (rule.key === key ? { ...rule, enabled } : rule));
+    } catch (error) {
+      rulesMessage = String(error);
+    } finally {
+      rulesBusy = false;
+    }
+  }
+
+  async function addDictionaryWord() {
+    const word = dictionaryInput.trim();
+    if (!word) return;
+    dictionaryBusy = true;
+    dictionaryMessage = "";
+    try {
+      await invoke("set_dictionary", { words: [...dictionaryWords, word] });
+      dictionaryWords = await invoke<string[]>("get_dictionary");
+      dictionaryInput = "";
+    } catch (error) {
+      dictionaryMessage = String(error);
+    } finally {
+      dictionaryBusy = false;
+    }
+  }
+
+  async function removeDictionaryWord(word: string) {
+    dictionaryBusy = true;
+    dictionaryMessage = "";
+    try {
+      await invoke("set_dictionary", {
+        words: dictionaryWords.filter((entry) => entry !== word),
+      });
+      dictionaryWords = await invoke<string[]>("get_dictionary");
+    } catch (error) {
+      dictionaryMessage = String(error);
+    } finally {
+      dictionaryBusy = false;
+    }
+  }
+
+  async function saveDebounce() {
+    debounceBusy = true;
+    debounceMessage = "";
+    try {
+      debounceMs = await invoke<number>("set_debounce_ms", { debounceMs });
+      debounceMessage = "Delay saved.";
+    } catch (error) {
+      debounceMessage = String(error);
+    } finally {
+      debounceBusy = false;
+    }
+  }
+
+  async function searchApps() {
+    try {
+      appSearchResults = await invoke<{ name: string; bundle_id: string }[]>("search_apps", {
+        query: appSearchQuery,
+      });
+    } catch (error) {
+      rulesMessage = String(error);
     }
   }
 
@@ -1577,6 +1688,7 @@
     void refreshBudget();
     void refreshIntegrations();
     void refreshVoice();
+    void refreshWritingRules();
     void refreshUsage();
     void refreshEvents();
     void loadVoiceTraits();
@@ -1940,6 +2052,121 @@
           </li>
         {/each}
       </ul>
+    </section>
+
+    <section class="card">
+      <h3 class="card-title">Writing rules</h3>
+      <p class="muted">
+        The local engine runs on your Mac, so these settings change what it suggests without
+        anything being sent anywhere.
+      </p>
+
+      <label class="field">
+        <span>English dialect</span>
+        <select
+          value={dialect}
+          onchange={(event) => setDialect((event.currentTarget as HTMLSelectElement).value)}
+          disabled={dialectBusy}
+        >
+          <option value="US">American</option>
+          <option value="CA">Canadian</option>
+          <option value="AU">Australian</option>
+          <option value="GB">British</option>
+          <option value="IN">Indian</option>
+        </select>
+      </label>
+      {#if dialectMessage}
+        <p class="message">{dialectMessage}</p>
+      {/if}
+
+      <label class="field">
+        <span>Checking delay (ms)</span>
+        <div class="model-row">
+          <input type="number" min="0" max="2000" step="10" bind:value={debounceMs} />
+          <button onclick={saveDebounce} disabled={debounceBusy}>Save</button>
+        </div>
+        <p class="muted">How long to wait after a keystroke before checking the text.</p>
+      </label>
+      {#if debounceMessage}
+        <p class="message">{debounceMessage}</p>
+      {/if}
+
+      <h4>Rules</h4>
+      <p class="muted">Turn off a rule to stop suggesting it. The rules run locally.</p>
+      <ul class="rule-list">
+        {#each lintRules as rule (rule.key)}
+          <li>
+            <label class="switch-row">
+              <input
+                type="checkbox"
+                checked={rule.enabled}
+                onchange={(event) =>
+                  toggleRule(rule.key, (event.currentTarget as HTMLInputElement).checked)}
+                disabled={rulesBusy}
+              />
+              <span>{rule.key}</span>
+            </label>
+          </li>
+        {/each}
+      </ul>
+      {#if rulesMessage}
+        <p class="message">{rulesMessage}</p>
+      {/if}
+
+      <h4>Personal dictionary</h4>
+      <p class="muted">Words Elocutio should never flag as wrong.</p>
+      <div class="model-row">
+        <input
+          bind:value={dictionaryInput}
+          placeholder="Add a word"
+          onkeydown={(event) => {
+            if (event.key === "Enter") void addDictionaryWord();
+          }}
+        />
+        <button onclick={addDictionaryWord} disabled={dictionaryBusy || !dictionaryInput.trim()}>
+          Add
+        </button>
+      </div>
+      {#if dictionaryWords.length > 0}
+        <ul class="usage-list">
+          {#each dictionaryWords as word (word)}
+            <li>
+              <span>{word}</span>
+              <button
+                class="ghost"
+                onclick={() => removeDictionaryWord(word)}
+                disabled={dictionaryBusy}>Remove</button
+              >
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if dictionaryMessage}
+        <p class="message">{dictionaryMessage}</p>
+      {/if}
+
+      <h4>Find an app</h4>
+      <p class="muted">Search for an app to add it to the list above.</p>
+      <div class="model-row">
+        <input
+          bind:value={appSearchQuery}
+          placeholder="Search apps"
+          onkeydown={(event) => {
+            if (event.key === "Enter") void searchApps();
+          }}
+        />
+        <button onclick={searchApps}>Search</button>
+      </div>
+      {#if appSearchResults.length > 0}
+        <ul class="usage-list">
+          {#each appSearchResults as app (app.bundle_id)}
+            <li>
+              <span>{app.name}</span>
+              <span class="muted">{app.bundle_id}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </section>
   </section>
 

@@ -41,6 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TRACKER_REL = Path("progress/tracker.json")
 TEMPLATE_REL = Path("progress/template.html")
 OUTPUT_REL = Path("progress/out")
+PUBLISH_REL = Path("progress/publish")
 
 SCHEMA_VERSION = 1
 STATUS_VALUES = ("planned", "in_progress", "done", "blocked")
@@ -914,16 +915,42 @@ def render_html(template: str, payload: dict) -> str:
     return template.replace(BOOTSTRAP_MARKER, blob)
 
 
-def build(root: Path, out_dir: Path) -> tuple[Path, Path]:
-    """Write the static dashboard and its JSON payload."""
+def build(root: Path, out_dir: Path, mode: str = "static", refresh_seconds: int = 0) -> tuple[Path, Path]:
+    """Write the dashboard and its JSON payload into out_dir."""
     tracker = load_tracker(root)
-    payload = build_payload(root, tracker, mode="static", refresh_seconds=0)
+    payload = build_payload(root, tracker, mode=mode, refresh_seconds=refresh_seconds)
     html = render_html(load_template(root), payload)
     out_dir.mkdir(parents=True, exist_ok=True)
-    html_path = out_dir / "dashboard.html"
+    html_path = out_dir / ("index.html" if mode == "published" else "dashboard.html")
     json_path = out_dir / "progress.json"
     html_path.write_text(html, encoding="utf-8")
     json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return html_path, json_path
+
+
+FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 32">
+  <rect width="40" height="32" rx="7" fill="#191F70"/>
+  <path fill="#F8F7F3" d="M15.6 2.8C9.4 5.1 5.2 10.3 5.2 17c0 4.7 2.5 7.7 6.3 7.7 3.4 0 6-2.5 6-5.7 0-3.2-2.3-5.4-5.3-5.4-.6 0-1.2.1-1.7.3.9-2.9 3.4-5.5 6.7-6.9l-1.6-4.2Zm16.9 0c-6.2 2.3-10.4 7.5-10.4 14.2 0 4.7 2.5 7.7 6.3 7.7 3.4 0 6-2.5 6-5.7 0-3.2-2.3-5.4-5.3-5.4-.6 0-1.2.1-1.7.3.9-2.9 3.4-5.5 6.7-6.9l-1.6-4.2Z"/>
+</svg>
+"""
+
+
+def build_published(root: Path, out_dir: Path, refresh_seconds: int = 60) -> tuple[Path, Path]:
+    """Write a self-contained folder for a static host.
+
+    The page polls ``progress.json`` next to it, so republishing the folder
+    refreshes the live site without touching the HTML.
+    """
+    html_path, json_path = build(root, out_dir, mode="published", refresh_seconds=refresh_seconds)
+    (out_dir / "favicon.svg").write_text(FAVICON_SVG, encoding="utf-8")
+    html = html_path.read_text(encoding="utf-8")
+    if 'rel="icon"' not in html:
+        html = html.replace(
+            "<title>",
+            '<link rel="icon" href="favicon.svg" type="image/svg+xml" />\n    <title>',
+            1,
+        )
+        html_path.write_text(html, encoding="utf-8")
     return html_path, json_path
 
 
@@ -1183,6 +1210,19 @@ def command_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_publish(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    out_dir = (root / PUBLISH_REL) if not args.out else Path(args.out).resolve()
+    html_path, json_path = build_published(root, out_dir, refresh_seconds=args.refresh_seconds)
+    payload = read_json(json_path)
+    print(progress_summary(load_tracker(root), payload))
+    print()
+    print(f"Published site: {html_path}")
+    print(f"Payload:        {json_path}")
+    print("Publish that folder; the page polls progress.json on the host.")
+    return 0
+
+
 def command_serve(args: argparse.Namespace) -> int:
     return serve(
         root=Path(args.root).resolve(),
@@ -1248,6 +1288,18 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser_ = subparsers.add_parser("build", help="write a static dashboard snapshot")
     build_parser_.add_argument("--out", help="output directory (default: progress/out)")
     build_parser_.set_defaults(func=command_build)
+
+    publish_parser = subparsers.add_parser(
+        "publish", help="build a folder for a static host (index.html + progress.json)"
+    )
+    publish_parser.add_argument("--out", help="output directory (default: progress/publish)")
+    publish_parser.add_argument(
+        "--refresh-seconds",
+        type=int,
+        default=60,
+        help="how often the published page polls progress.json (default: 60)",
+    )
+    publish_parser.set_defaults(func=command_publish)
 
     serve_parser = subparsers.add_parser("serve", help="serve the live dashboard")
     serve_parser.add_argument("--host", default="127.0.0.1", help="bind address (default: 127.0.0.1)")

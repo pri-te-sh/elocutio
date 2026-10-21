@@ -218,7 +218,10 @@ Widget: count + tone  ──►  Suggestion card  ──►  Accept/Dismiss
 - Appears after the first suggestion; collapses to a dot when idle.
 - Draggable to anchor points; position saved per app/site.
 - Click opens the card stack; never activates the host app.
-- Keyboard: `⌃⌥G` focuses; arrows navigate; `Return` accepts; `Esc` closes.
+- Keyboard: `⌃⌥G` focuses the card, `⌃⌥N` and `⌃⌥B` move between suggestions,
+  `⌃⌥A` accepts, `⌃⌥D` dismisses, and `⌃⌥K` closes. The card is a
+  non-activating panel, so it never holds keyboard focus and cannot receive
+  `Esc` or `Return` directly; the shortcuts are global for that reason.
 
 #### Suggestion card
 
@@ -282,15 +285,21 @@ Full design: [VOICE-LEARNING.md](VOICE-LEARNING.md).
 
 | Shortcut | Action |
 | --- | --- |
-| `⌃⌥G` | Analyze selection or focused field |
-| `⌃⌥R` | Rewrite selection (tone menu) |
-| `⌃⌥Space` | Assistant panel |
-| `⌃⌥A` | Accept top suggestion |
-| `⌃⌥D` | Dismiss top suggestion |
-| `⌃⌥P` | Pause/resume |
-| `⌃⌥L` | Toggle live LLM mode for current app |
-| `⌃⌥V` | Toggle "Use my voice" for the current task |
-| `Esc` | Close card/panel |
+| `⌃⌥G` | Focus the suggestion card |
+| `⌃⌥N` | Next suggestion |
+| `⌃⌥B` | Previous suggestion |
+| `⌃⌥A` | Accept the shown replacement |
+| `⌃⌥D` | Dismiss the current suggestion |
+| `⌃⌥K` | Close the card |
+| `⌥⌘E` | Rewrite selection (preview, then apply) |
+| `⌥⌘A` | Analyze the focused field |
+| `⌥⌘Z` | Undo the last accepted edit |
+| `⌃⌥R` | Rewrite selection (tone menu) — planned |
+| `⌃⌥Space` | Assistant panel — planned |
+| `⌃⌥P` | Pause/resume — planned |
+| `⌃⌥L` | Toggle live LLM mode for current app — planned |
+| `⌃⌥V` | Toggle "Use my voice" for the current task — planned |
+| `Esc` | Close card/panel — the card's close is `⌃⌥K`; `Esc` needs the card to hold focus, which it cannot |
 
 Use Carbon `RegisterEventHotKey` (or Tauri global-shortcut) to avoid Input Monitoring where possible.
 

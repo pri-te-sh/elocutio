@@ -227,7 +227,7 @@ fn register_card_shortcuts(app: &tauri::AppHandle) {
         ),
         (
             Modifiers::CONTROL | Modifiers::ALT,
-            Code::KeyP,
+            Code::KeyB,
             CardCommand::PreviousSuggestion,
             "previous suggestion",
         ),

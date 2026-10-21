@@ -148,6 +148,8 @@ inline experience, and the voice. What is implemented, and what is not:
 | Widget count, AI action, anchors | Implemented | `highlighter/render_state/mod.rs` |
 | Widget tone badge | Implemented | The tone is detected locally while the AX tree is walked |
 | Widget position pinned per app | Implemented | `widget_anchor.rs`; stored as an anchor, not as pixels |
+| Keyboard model for the card | Implemented | `⌃⌥G` focus, `⌃⌥N`/`⌃⌥B` navigate, `⌃⌥A` accept, `⌃⌥D` dismiss, `⌃⌥K` close |
+| Suggestion count in the menu bar | Implemented | The highlighter reports the card's state back to the main process |
 | Drag-to-anchor | **Not implemented** | The widget can be pinned from Settings, not dragged |
 | Local tone detection with evidence | Implemented | `elocutio-analysis::tone` |
 | Custom instruction, sanitized | Implemented | `elocutio-analysis::custom_instruction` |

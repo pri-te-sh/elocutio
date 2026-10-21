@@ -43,8 +43,18 @@ fn fragment() -> impl Strategy<Value = String> {
 }
 
 /// Build a document where `needle` occurs exactly once.
+///
+/// The filler has to be checked, not assumed: a needle like "efi" also occurs
+/// inside "prefix", and a document where the quote is ambiguous is not a
+/// document where the quote is unique.
 fn unique_document(needle: &str) -> String {
-    format!("prefix {needle} suffix")
+    let candidate = format!("prefix {needle} suffix");
+    if candidate.matches(needle).count() == 1 {
+        return candidate;
+    }
+
+    // Fall back to a document whose filler cannot contain the needle.
+    format!("«{needle}»")
 }
 
 /// A filler fragment that contains no non-ASCII characters.

@@ -188,6 +188,24 @@ class ValidationTests(TrackerTestCase):
         self.assertTrue(any("path must stay relative" in error for error in errors))
         self.assertTrue(any("pattern must stay relative" in error for error in errors))
 
+    def test_a_glob_that_matches_nothing_is_rejected(self) -> None:
+        # A glob that matches no file can never pass, so it is a typo rather
+        # than a check. This is the shape of the bug that hid the widget.
+        tracker = copy.deepcopy(synthetic_tracker())
+        tracker["milestones"][0]["tasks"][0]["evidence"] = [
+            {"type": "glob", "pattern": "src/**/widget*"}
+        ]
+        errors = progress.validate_tracker(tracker, self.temp)
+        self.assertTrue(any("matches no file" in error for error in errors))
+
+    def test_a_glob_that_matches_a_file_is_accepted(self) -> None:
+        tracker = copy.deepcopy(synthetic_tracker())
+        tracker["milestones"][0]["tasks"][0]["evidence"] = [
+            {"type": "glob", "pattern": "docs/*.md"}
+        ]
+        errors = progress.validate_tracker(tracker, self.temp)
+        self.assertFalse(any("matches no file" in error for error in errors))
+
     def test_plan_weeks_must_be_integers(self) -> None:
         tracker = copy.deepcopy(synthetic_tracker())
         tracker["project"]["planWeeks"] = ["a", "b"]
@@ -240,6 +258,54 @@ class EvidenceTests(TrackerTestCase):
         self.assertEqual(tasks["m0-alpha"]["suggestedStatus"], "done")
         self.assertTrue(tasks["m0-alpha"]["drift"])
 
+    def test_drift_is_symmetric(self) -> None:
+        # A manual status that runs ahead of the evidence is the dangerous
+        # direction: it claims more than the repository can prove. It has to be
+        # flagged too, not just the lagging case.
+        tracker = copy.deepcopy(self.tracker)
+        tracker["milestones"][0]["tasks"][0]["status"] = "done"
+        payload = self.build_payload(tracker)
+        task = payload["milestones"][0]["tasks"][0]
+        self.assertEqual(task["status"], "done")
+        self.assertEqual(task["suggestedStatus"], "planned")
+        self.assertTrue(task["unsupported"])
+        # The task does have a rule, it just fails, so it is unsupported rather
+        # than unverified.
+        self.assertFalse(task["unverified"])
+
+    def test_a_done_task_with_no_evidence_at_all_is_unverified(self) -> None:
+        tracker = copy.deepcopy(self.tracker)
+        tracker["milestones"][0]["tasks"][2].pop("evidence", None)
+        tracker["milestones"][0]["tasks"][2]["status"] = "done"
+        payload = self.build_payload(tracker)
+        task = payload["milestones"][0]["tasks"][2]
+        self.assertTrue(task["unverified"])
+        self.assertTrue(task["unsupported"])
+
+    def test_unsupported_is_not_set_when_the_evidence_agrees(self) -> None:
+        (self.temp / "alpha.txt").write_text("alpha", encoding="utf-8")
+        tracker = copy.deepcopy(self.tracker)
+        tracker["milestones"][0]["tasks"][0]["status"] = "done"
+        payload = self.build_payload(tracker)
+        task = payload["milestones"][0]["tasks"][0]
+        self.assertFalse(task["unsupported"])
+        self.assertFalse(task["unverified"])
+        self.assertFalse(task["drift"])
+
+    def test_a_done_task_with_failing_evidence_is_unsupported(self) -> None:
+        # The file exists but the marker does not, so the evidence fails while
+        # the manual status still claims the work is finished.
+        (self.temp / "alpha.txt").write_text("alpha", encoding="utf-8")
+        tracker = copy.deepcopy(self.tracker)
+        tracker["milestones"][0]["tasks"][0]["evidence"] = [
+            {"type": "text", "path": "alpha.txt", "contains": "not-present"}
+        ]
+        tracker["milestones"][0]["tasks"][0]["status"] = "done"
+        payload = self.build_payload(tracker)
+        task = payload["milestones"][0]["tasks"][0]
+        self.assertTrue(task["unsupported"])
+        self.assertFalse(task["unverified"])
+
     def test_text_and_glob_evidence(self) -> None:
         (self.temp / "docs" / "PLAN.md").write_text("# Plan\n\n## Milestone\n", encoding="utf-8")
         (self.temp / "src").mkdir()
@@ -269,10 +335,24 @@ class ProgressTests(TrackerTestCase):
         (self.temp / "alpha.txt").write_text("alpha", encoding="utf-8")
         payload = self.build_payload()
         milestone = payload["milestones"][0]
-        # Only the first task is done: 1 of 3 estimate days.
-        self.assertAlmostEqual(milestone["progress"], 1 / 3, places=3)
+        # The first task is done: 1 of 3 estimate days. The second task is
+        # half-done (one of its two evidence rules passes), and a started task
+        # only earns half of what its evidence coverage says, so it contributes
+        # 0.25 days. The third has no evidence and is not started.
+        self.assertAlmostEqual(milestone["progress"], 1.25 / 3, places=3)
         self.assertGreater(payload["summary"]["overallProgress"], 0)
         self.assertLess(payload["summary"]["overallProgress"], 1)
+
+    def test_a_started_task_with_passing_evidence_is_not_counted_as_done(self) -> None:
+        # The evidence shows the code landed; it does not show the work is
+        # finished. A task that is still in progress must not read as complete.
+        (self.temp / "alpha.txt").write_text("alpha", encoding="utf-8")
+        tracker = copy.deepcopy(self.tracker)
+        tracker["milestones"][0]["tasks"][0]["status"] = "in_progress"
+        payload = self.build_payload(tracker)
+        milestone = payload["milestones"][0]
+        self.assertLess(milestone["progress"], 1 / 3)
+        self.assertGreater(milestone["progress"], 0)
 
     def test_plan_window_and_expected_progress(self) -> None:
         payload = self.build_payload()

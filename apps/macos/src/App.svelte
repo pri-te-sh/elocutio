@@ -86,6 +86,41 @@
     output_tokens: number;
     cost_usd: number | null;
   };
+  type EventSummary = {
+    accepted: number;
+    dismissed: number;
+    edited_after_accept: number;
+    rated_positive: number;
+    rated_negative: number;
+    by_category: Record<string, number>;
+    dismissed_by_category: Record<string, number>;
+  };
+  type ToneResponse = {
+    tone: "neutral" | "confident" | "friendly" | "concise" | "formal";
+    label: string;
+    confidence: number;
+    evidence: string[];
+    guidance: string | null;
+  };
+  type VoiceTraitView = {
+    key: string;
+    value: number | boolean | string;
+    confidence: number;
+    is_override: boolean;
+    evidence: string[];
+  };
+  type ModelOption = {
+    id: string;
+    display_name: string;
+    provider: string;
+    model_id: string;
+    context_window: number;
+    price_input_per_million_usd: number;
+    price_output_per_million_usd: number;
+    best_for: string;
+    supports_temperature: boolean;
+    is_default: boolean;
+  };
 
   let version = "0.1.0";
   let permission: Permission = "Unknown";
@@ -136,6 +171,20 @@
   let learnFromEdits = false;
   let voiceFeedbackCount = 0;
   let voiceGuidance: string | null = null;
+  let eventsEnabled = false;
+  let eventSummary: EventSummary | null = null;
+  let eventsBusy = false;
+  let eventsMessage = "";
+  let toneResult: ToneResponse | null = null;
+  let detectToneBusy = false;
+  let blocklist: string[] = [];
+  let voiceTraits: VoiceTraitView[] = [];
+  let voiceRatingBusy = false;
+  let modelOptions: ModelOption[] = [];
+  let costCapUsd: number | null = null;
+  let costCapInput = "";
+  let costCapBusy = false;
+  let costCapMessage = "";
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";
@@ -291,6 +340,125 @@
     }
   }
 
+  async function loadVoiceTraits() {
+    try {
+      voiceTraits = await invoke<VoiceTraitView[]>("get_voice_traits");
+    } catch (error) {
+      voiceMessage = String(error);
+    }
+  }
+
+  async function rateVoice(rating: "thumbs_up" | "thumbs_down") {
+    voiceRatingBusy = true;
+    try {
+      voiceProfile = await invoke<VoiceProfile | null>("rate_voice_rewrite", { rating });
+      await loadVoiceTraits();
+      voiceMessage =
+        rating === "thumbs_up"
+          ? "Thanks — the profile is a little more confident now."
+          : "Noted — the profile is a little less confident now.";
+    } catch (error) {
+      voiceMessage = String(error);
+    } finally {
+      voiceRatingBusy = false;
+    }
+  }
+
+  async function overrideTrait(key: string, value: number | boolean | string) {
+    try {
+      voiceProfile = await invoke<VoiceProfile | null>("set_voice_trait_value", {
+        key,
+        value,
+      });
+      await loadVoiceTraits();
+      voiceMessage = `Saved your value for ${key}.`;
+    } catch (error) {
+      voiceMessage = String(error);
+    }
+  }
+
+  async function clearTraitOverride(key: string) {
+    try {
+      voiceProfile = await invoke<VoiceProfile | null>("clear_voice_trait_override", { key });
+      await loadVoiceTraits();
+      voiceMessage = `Back to what Elocutio learned for ${key}.`;
+    } catch (error) {
+      voiceMessage = String(error);
+    }
+  }
+
+  async function refreshModels() {
+    try {
+      modelOptions = await invoke<ModelOption[]>("list_provider_models");
+    } catch (error) {
+      providerMessage = String(error);
+    }
+  }
+
+  async function refreshCostCap() {
+    try {
+      costCapUsd = await invoke<number | null>("get_cost_cap");
+      costCapInput = costCapUsd === null ? "" : String(costCapUsd);
+    } catch (error) {
+      costCapMessage = String(error);
+    }
+  }
+
+  async function saveCostCap() {
+    costCapBusy = true;
+    costCapMessage = "";
+    try {
+      const parsed = costCapInput.trim() === "" ? null : Number(costCapInput);
+      costCapUsd = await invoke<number | null>("set_cost_cap", { costCapUsd: parsed });
+      costCapInput = costCapUsd === null ? "" : String(costCapUsd);
+      costCapMessage = costCapUsd === null
+        ? "Cost cap cleared."
+        : `Requests over $${costCapUsd.toFixed(2)} are refused before they are sent.`;
+    } catch (error) {
+      costCapMessage = String(error);
+    } finally {
+      costCapBusy = false;
+    }
+  }
+
+  async function refreshEvents() {
+    try {
+      eventsEnabled = await invoke<boolean>("get_suggestion_events_enabled");
+      eventSummary = await invoke<EventSummary>("get_suggestion_event_summary");
+    } catch (error) {
+      eventsMessage = String(error);
+    }
+  }
+
+  async function setEventsEnabled(enabled: boolean) {
+    eventsBusy = true;
+    eventsMessage = "";
+    try {
+      eventsEnabled = await invoke<boolean>("set_suggestion_events_enabled", { enabled });
+      eventSummary = await invoke<EventSummary>("get_suggestion_event_summary");
+      eventsMessage = enabled
+        ? "Elocutio will record which suggestions you accept and dismiss."
+        : "Suggestion events are off.";
+    } catch (error) {
+      eventsMessage = String(error);
+    } finally {
+      eventsBusy = false;
+    }
+  }
+
+  async function clearEvents() {
+    eventsBusy = true;
+    eventsMessage = "";
+    try {
+      eventSummary = await invoke<EventSummary>("clear_suggestion_events");
+      eventsMessage = "Recorded suggestion events deleted.";
+    } catch (error) {
+      eventsMessage = String(error);
+    } finally {
+      eventsBusy = false;
+    }
+  }
+
   async function learnVoice() {
     voiceBusy = true;
     voiceMessage = "";
@@ -383,8 +551,27 @@
     try {
       integrations = await invoke<IntegrationView[]>("get_integrations");
       autoEnableNewApps = await invoke<boolean>("get_auto_enable_new_apps");
+      blocklist = await invoke<string[]>("get_blocklist");
     } catch (error) {
       appsMessage = String(error);
+    }
+  }
+
+  async function setBlocked(bundleId: string, blocked: boolean) {
+    appsBusy = true;
+    appsMessage = "";
+    try {
+      blocklist = await invoke<string[]>("set_blocked", { bundleId, blocked });
+      // Blocking an app also disables it as an integration, so refresh the
+      // list to show the real state rather than a stale one.
+      await refreshIntegrations();
+      appsMessage = blocked
+        ? "The app is blocked. Elocutio will not read it."
+        : "The app is no longer blocked.";
+    } catch (error) {
+      appsMessage = String(error);
+    } finally {
+      appsBusy = false;
     }
   }
 
@@ -583,6 +770,17 @@
     }
   }
 
+  async function detectTone() {
+    detectToneBusy = true;
+    try {
+      toneResult = await invoke<ToneResponse>("detect_text_tone", { text: analysisText });
+    } catch (error) {
+      analysisMessage = String(error);
+    } finally {
+      detectToneBusy = false;
+    }
+  }
+
   async function rewrite() {
     providerBusy = true;
     providerMessage = "";
@@ -643,6 +841,10 @@
     void refreshIntegrations();
     void refreshVoice();
     void refreshUsage();
+    void refreshEvents();
+    void loadVoiceTraits();
+    void refreshModels();
+    void refreshCostCap();
   });
 </script>
 
@@ -836,6 +1038,37 @@
       </span>
     </label>
 
+    <h3>Block list</h3>
+    <p class="muted">
+      A blocked app is never read, never linted, and never sent to a provider — even if it is also
+      enabled above. Blocking an app also turns it off.
+    </p>
+
+    <ul class="app-list">
+      {#each integrations as integration (integration.bundle_id)}
+        <li>
+          <label class="switch-row">
+            <input
+              type="checkbox"
+              checked={!blocklist.includes(integration.bundle_id)}
+              onchange={(event) =>
+                setBlocked(
+                  integration.bundle_id,
+                  !(event.currentTarget as HTMLInputElement).checked,
+                )}
+              disabled={appsBusy}
+            />
+            <span>
+              <strong>{integration.display_name}</strong>
+              <span class="muted">
+                {blocklist.includes(integration.bundle_id) ? "Blocked" : "Allowed"}
+              </span>
+            </span>
+          </label>
+        </li>
+      {/each}
+    </ul>
+
     {#if appsMessage}
       <p class="message">{appsMessage}</p>
     {/if}
@@ -944,11 +1177,51 @@
 
     <label class="field">
       <span>Model</span>
-      <div class="model-row">
-        <input bind:value={model} spellcheck="false" />
-        <button onclick={saveModel} disabled={modelBusy || !model.trim()}>Save</button>
-      </div>
+      {#if modelOptions.length > 0}
+        <select bind:value={model} disabled={modelBusy}>
+          {#each modelOptions as option (option.model_id)}
+            <option value={option.model_id}>
+              {option.display_name} — ${option.price_input_per_million_usd}/$${option.price_output_per_million_usd} per 1M · {option.best_for}
+            </option>
+          {/each}
+        </select>
+        <div class="model-row">
+          <input bind:value={model} spellcheck="false" placeholder="Or type a model id" />
+          <button onclick={saveModel} disabled={modelBusy || !model.trim()}>Save</button>
+        </div>
+      {:else}
+        <div class="model-row">
+          <input bind:value={model} spellcheck="false" />
+          <button onclick={saveModel} disabled={modelBusy || !model.trim()}>Save</button>
+        </div>
+      {/if}
+      <p class="muted">
+        The list is a local catalog, so it works offline. Prices are approximate and come from the
+        provider at the time the catalog was written.
+      </p>
     </label>
+
+    <label class="field">
+      <span>Cost cap (USD per request, optional)</span>
+      <div class="model-row">
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          bind:value={costCapInput}
+          placeholder="e.g. 0.05"
+        />
+        <button onclick={saveCostCap} disabled={costCapBusy}>Save</button>
+      </div>
+      <p class="muted">
+        A request that would cost more than this is refused before it is sent. This is a hard limit;
+        the budget warning below only tells you after the fact.
+      </p>
+    </label>
+
+    {#if costCapMessage}
+      <p class="message">{costCapMessage}</p>
+    {/if}
 
     <label class="field">
       <span>Rewrite tone</span>
@@ -1017,10 +1290,33 @@
       <button class="primary" onclick={analyze} disabled={analysisBusy || !keyPresent}>
         Analyze with OpenRouter
       </button>
+      <button class="ghost" onclick={detectTone} disabled={detectToneBusy || !analysisText.trim()}>
+        Detect tone locally
+      </button>
     </div>
 
     {#if analysisMessage}
       <p class="message">{analysisMessage}</p>
+    {/if}
+
+    {#if toneResult}
+      <div class="tone-result">
+        <p>
+          <span class="badge">{toneResult.label}</span>
+          <span class="muted">
+            {(toneResult.confidence * 100).toFixed(0)}% confidence · detected on this Mac, nothing
+            was sent
+          </span>
+        </p>
+        {#if toneResult.guidance}
+          <p class="muted">{toneResult.guidance}</p>
+        {/if}
+        <ul class="tone-evidence">
+          {#each toneResult.evidence as line}
+            <li>{line}</li>
+          {/each}
+        </ul>
+      </div>
     {/if}
 
     {#if analysisResult}
@@ -1095,6 +1391,37 @@
           <span class="muted">Adds a short style card to the provider prompt; never sends the sample.</span>
         </span>
       </label>
+      <div class="voice-rating">
+        <span>Does this sound like you?</span>
+        <button class="ghost" disabled={voiceRatingBusy} onclick={() => rateVoice("thumbs_up")}>
+          Yes
+        </button>
+        <button class="ghost" disabled={voiceRatingBusy} onclick={() => rateVoice("thumbs_down")}>
+          No
+        </button>
+      </div>
+
+      {#if voiceTraits.length > 0}
+        <div class="voice-traits">
+          <h4>What Elocutio learned</h4>
+          {#each voiceTraits as trait (trait.key)}
+            <div class="voice-trait">
+              <strong>{trait.key}</strong>
+              <span>{trait.value}</span>
+              <span class="muted">{Math.round(trait.confidence * 100)}%</span>
+              {#if trait.is_override}
+                <span class="tag">set by you</span>
+                <button class="ghost" onclick={() => clearTraitOverride(trait.key)}>Reset</button>
+              {:else}
+                <button class="ghost" onclick={() => overrideTrait(trait.key, trait.value)}>
+                  Override
+                </button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       <div class="actions">
         <button class="ghost" onclick={clearVoice} disabled={voiceBusy}>Delete profile</button>
       </div>
@@ -1128,6 +1455,61 @@
 
     {#if voiceMessage}
       <p class="message">{voiceMessage}</p>
+    {/if}
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <div>
+        <h2>Suggestion events</h2>
+        <p class="muted">
+          Record which suggestions you accept and dismiss so the voice profile can learn your
+          preferences. Only the rule, the category, and the size of the edit are stored — never the
+          text.
+        </p>
+      </div>
+      <span class:on={eventsEnabled} class:off={!eventsEnabled} class="status">
+        {eventsEnabled ? "Recording" : "Off"}
+      </span>
+    </div>
+
+    <label class="switch-row">
+      <input
+        type="checkbox"
+        checked={eventsEnabled}
+        onchange={(event) => setEventsEnabled((event.currentTarget as HTMLInputElement).checked)}
+        disabled={eventsBusy}
+      />
+      <span>
+        <strong>Record suggestion events</strong>
+        <span class="muted">Off by default. Stored locally and deleted with the button below.</span>
+      </span>
+    </label>
+
+    {#if eventSummary}
+      <dl class="provider-details">
+        <div>
+          <dt>Accepted</dt>
+          <dd>{eventSummary.accepted}</dd>
+        </div>
+        <div>
+          <dt>Dismissed</dt>
+          <dd>{eventSummary.dismissed}</dd>
+        </div>
+        <div>
+          <dt>Edited</dt>
+          <dd>{eventSummary.edited_after_accept}</dd>
+        </div>
+      </dl>
+    {/if}
+
+    <div class="actions">
+      <button class="ghost" onclick={clearEvents} disabled={eventsBusy}>Delete recorded events</button>
+      <button class="ghost" onclick={refreshEvents} disabled={eventsBusy}>Refresh</button>
+    </div>
+
+    {#if eventsMessage}
+      <p class="message">{eventsMessage}</p>
     {/if}
   </section>
 
@@ -1492,6 +1874,80 @@
     padding: 1px 7px;
     color: var(--muted);
     font-size: 11px;
+  }
+
+  .tone-result {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2, transparent);
+  }
+
+  .tone-result p {
+    margin: 0 0 6px;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+
+  .tone-evidence {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .tone-evidence li {
+    margin: 2px 0;
+  }
+
+  .voice-rating {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0;
+    flex-wrap: wrap;
+  }
+
+  .voice-rating span {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .voice-traits {
+    margin: 12px 0;
+  }
+
+  .voice-traits h4 {
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .voice-trait {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+
+  .voice-trait strong {
+    font-weight: 600;
+  }
+
+  .tag {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 6px;
+    font-size: 10.5px;
+    color: var(--muted);
   }
 
   .usage-list {

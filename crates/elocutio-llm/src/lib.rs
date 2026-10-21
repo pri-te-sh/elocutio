@@ -6,9 +6,31 @@
 //! adapter compiles these canonical types to its wire format and normalizes
 //! errors and streaming events back. Network clients live in the desktop app,
 //! not here, so this crate stays pure and testable.
+//!
+//! The crate is layered:
+//!
+//! * [`ChatRequest`] / [`ChatResponse`] — the canonical shapes.
+//! * [`Provider`] — the adapter contract, with [`OpenRouterAdapter`] and
+//!   [`OpenAiCompatibleAdapter`] as the shipped implementations.
+//! * [`ProviderError`] / [`ErrorKind`] — the normalized failure taxonomy and
+//!   the sentences the UI shows for each class.
+//! * [`catalog`] — the curated model list a picker offers.
+//! * [`stream`] — canonical streaming events plus a dependency-free SSE
+//!   decoder.
+
+pub mod catalog;
+pub mod error;
+pub mod provider;
+pub mod stream;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+
+pub use catalog::{CatalogEntry, DEFAULT_MODEL_ID};
+pub use error::{ErrorKind, ProviderError};
+pub use provider::{
+    OpenAiCompatibleAdapter, OpenRouterAdapter, Provider, adapter_for, require_adapter,
+};
+pub use stream::{SseDecoder, SseFrame, StreamEvent};
 
 /// A provider Elocutio can talk to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -20,6 +42,25 @@ pub enum ProviderId {
     Google,
     Ollama,
     OpenAiCompatible,
+}
+
+impl ProviderId {
+    /// The name to show in the UI.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            ProviderId::OpenRouter => "OpenRouter",
+            ProviderId::OpenAi => "OpenAI",
+            ProviderId::Anthropic => "Anthropic",
+            ProviderId::Google => "Google",
+            ProviderId::Ollama => "Ollama",
+            ProviderId::OpenAiCompatible => "OpenAI-compatible",
+        }
+    }
+
+    /// True when Elocutio has an adapter for this provider today.
+    pub fn is_supported(self) -> bool {
+        adapter_for(self).is_some()
+    }
 }
 
 /// A model on a specific provider.
@@ -40,6 +81,22 @@ impl ModelRef {
     /// Stable key used in logs, cache keys, and settings.
     pub fn key(&self) -> String {
         format!("{:?}/{}", self.provider, self.model).to_lowercase()
+    }
+
+    /// Resolve this model against the curated catalog.
+    ///
+    /// Returns `None` when the catalog does not know the id, which is normal:
+    /// users may type any model id their provider offers.
+    pub fn resolve(&self) -> Option<&'static CatalogEntry> {
+        catalog::find_loose(&self.model)
+    }
+
+    /// True when the model accepts a `temperature` parameter.
+    ///
+    /// The Claude 5 family rejects any `temperature` other than `1`, so the
+    /// parameter must be omitted from the request for those models.
+    pub fn supports_temperature(&self) -> bool {
+        catalog::supports_temperature(&self.model)
     }
 }
 
@@ -71,6 +128,13 @@ impl Message {
             content: content.into(),
         }
     }
+
+    pub fn system(content: impl Into<String>) -> Self {
+        Self {
+            role: Role::System,
+            content: content.into(),
+        }
+    }
 }
 
 /// How the model should format its response.
@@ -87,6 +151,13 @@ pub enum ResponseFormat {
     },
 }
 
+impl ResponseFormat {
+    /// True when this format needs the provider to support structured output.
+    pub fn is_structured(&self) -> bool {
+        !matches!(self, ResponseFormat::Text)
+    }
+}
+
 /// A canonical completion request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatRequest {
@@ -94,6 +165,11 @@ pub struct ChatRequest {
     pub messages: Vec<Message>,
     pub system: Option<String>,
     pub max_output_tokens: Option<u32>,
+    /// The requested temperature. `None` means "do not send it".
+    ///
+    /// Leaving it unset is the safe default: the Claude 5 family rejects any
+    /// `temperature` other than `1`, and the provider's own default is fine
+    /// everywhere else.
     pub temperature: Option<f32>,
     pub stream: bool,
     pub response_format: ResponseFormat,
@@ -121,6 +197,25 @@ impl ChatRequest {
         self.response_format = format;
         self
     }
+
+    pub fn with_max_output_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_output_tokens = Some(max_tokens);
+        self
+    }
+
+    /// Ask for a specific temperature.
+    ///
+    /// The adapter still drops the parameter for models that reject it, so
+    /// this is safe to call unconditionally.
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = Some(temperature);
+        self
+    }
+
+    pub fn with_streaming(mut self, stream: bool) -> Self {
+        self.stream = stream;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -130,6 +225,14 @@ pub struct Usage {
     pub cached_input_tokens: Option<u64>,
     pub reasoning_tokens: Option<u64>,
     pub cost_usd_micros: Option<u64>,
+}
+
+impl Usage {
+    /// The recorded cost in USD, when the provider reported one.
+    pub fn cost_usd(&self) -> Option<f64> {
+        self.cost_usd_micros
+            .map(|micros| micros as f64 / 1_000_000.0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -152,62 +255,11 @@ pub enum FinishReason {
     Unknown,
 }
 
-/// A normalized provider failure.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{kind:?}: {message}")]
-pub struct ProviderError {
-    pub kind: ErrorKind,
-    pub message: String,
-    pub retry_after_seconds: Option<u64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ErrorKind {
-    Auth,
-    RateLimit,
-    Quota,
-    InvalidRequest,
-    ContextLength,
-    ContentFilter,
-    Overloaded,
-    Timeout,
-    Network,
-    Server,
-    Unsupported,
-    Cancelled,
-    Unknown,
-}
-
-impl ProviderError {
-    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Self {
-            kind,
-            message: message.into(),
-            retry_after_seconds: None,
-        }
+impl FinishReason {
+    /// True when the provider stopped because it hit the output cap.
+    pub fn is_truncated(&self) -> bool {
+        matches!(self, FinishReason::Length)
     }
-
-    pub fn is_retryable(&self) -> bool {
-        matches!(
-            self.kind,
-            ErrorKind::RateLimit
-                | ErrorKind::Overloaded
-                | ErrorKind::Timeout
-                | ErrorKind::Network
-                | ErrorKind::Server
-        )
-    }
-}
-
-/// The minimal contract every provider adapter implements.
-///
-/// The async HTTP implementation lives in the desktop app; this trait keeps the
-/// shape stable and lets tests use a fake provider.
-pub trait Provider: Send + Sync {
-    fn id(&self) -> ProviderId;
-    fn display_name(&self) -> &str;
-    fn supports_structured_output(&self) -> bool;
 }
 
 #[cfg(test)]
@@ -237,6 +289,8 @@ mod tests {
     #[test]
     fn default_response_format_is_text() {
         assert_eq!(ResponseFormat::default(), ResponseFormat::Text);
+        assert!(!ResponseFormat::default().is_structured());
+        assert!(ResponseFormat::JsonObject.is_structured());
     }
 
     #[test]
@@ -252,5 +306,33 @@ mod tests {
         let usage = Usage::default();
         assert_eq!(usage.input_tokens, 0);
         assert_eq!(usage.cached_input_tokens, None);
+        assert_eq!(usage.cost_usd(), None);
+    }
+
+    #[test]
+    fn a_request_does_not_ask_for_a_temperature_by_default() {
+        let request = ChatRequest::new(
+            ModelRef::new(ProviderId::OpenRouter, "anthropic/claude-haiku-5.5"),
+            vec![Message::user("Proofread this.")],
+        );
+        assert_eq!(request.temperature, None);
+    }
+
+    #[test]
+    fn a_model_ref_resolves_against_the_catalog() {
+        let model = ModelRef::new(ProviderId::OpenRouter, "anthropic/claude-haiku-5.5");
+        let entry = model
+            .resolve()
+            .expect("the default model is in the catalog");
+        assert_eq!(entry.display_name, "Claude Haiku 5.5");
+        assert!(!model.supports_temperature());
+    }
+
+    #[test]
+    fn provider_ids_know_whether_they_have_an_adapter() {
+        assert!(ProviderId::OpenRouter.is_supported());
+        assert!(ProviderId::OpenAiCompatible.is_supported());
+        assert!(!ProviderId::Ollama.is_supported());
+        assert_eq!(ProviderId::OpenRouter.display_name(), "OpenRouter");
     }
 }

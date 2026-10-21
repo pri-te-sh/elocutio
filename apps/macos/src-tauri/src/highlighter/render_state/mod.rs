@@ -266,6 +266,11 @@ impl RenderState {
                         .as_mut()
                         .and_then(|lints| lints.get_mut(index))
                     {
+                        record_interaction(
+                            actionable_lint,
+                            crate::events::EventKind::Accepted,
+                            &suggestion,
+                        );
                         actionable_lint.apply_suggestion(suggestion);
                     }
 
@@ -280,6 +285,27 @@ impl RenderState {
                             )
                         })
                     {
+                        record_interaction(
+                            &self.lints()[index],
+                            crate::events::EventKind::Dismissed,
+                            &harper_core::linting::Suggestion::Remove,
+                        );
+
+                        // Dismissing is a negative preference signal, so the
+                        // voice profile learns from it too. The call is a
+                        // no-op when voice learning is off.
+                        let actionable = &self.lints()[index];
+                        let original = lint.get_str(&source_text.chars().collect::<Vec<_>>());
+                        let category = actionable
+                            .rule_name
+                            .strip_prefix("llm:")
+                            .unwrap_or(&actionable.rule_name)
+                            .to_string();
+                        if let Err(error) = crate::voice::record_dismissed(&original, "", &category)
+                        {
+                            eprintln!("Could not record the dismissed edit: {error}");
+                        }
+
                         let document = Document::new_markdown_default_curated(&source_text);
                         (self.ignore_lint)(&lint, &document);
                     }
@@ -417,6 +443,45 @@ impl RenderState {
             self.widget_rect = None;
             self.analyze_rect = None;
         }
+    }
+}
+
+/// Records an interaction with a suggestion for the local event log.
+///
+/// The event carries sizes, not text: the user's document content never enters
+/// the log. Recording is opt-in, so this is a no-op unless the user turned it
+/// on.
+fn record_interaction(
+    actionable_lint: &ActionableLint,
+    kind: crate::events::EventKind,
+    suggestion: &harper_core::linting::Suggestion,
+) {
+    let original_length = actionable_lint.lint.span.len();
+    let replacement_length = match suggestion {
+        harper_core::linting::Suggestion::ReplaceWith(chars) => chars.len(),
+        harper_core::linting::Suggestion::InsertAfter(chars) => chars.len(),
+        harper_core::linting::Suggestion::Remove => 0,
+    };
+    let origin = if actionable_lint.rule_name.starts_with("llm:") {
+        crate::events::Origin::Model
+    } else {
+        crate::events::Origin::Local
+    };
+    let category = actionable_lint
+        .rule_name
+        .strip_prefix("llm:")
+        .unwrap_or(&actionable_lint.rule_name)
+        .to_string();
+
+    if let Err(error) = crate::events::record_event(
+        kind,
+        origin,
+        &actionable_lint.rule_name,
+        &category,
+        original_length,
+        replacement_length,
+    ) {
+        eprintln!("Could not record the suggestion event: {error}");
     }
 }
 

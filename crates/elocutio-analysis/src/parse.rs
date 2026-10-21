@@ -4,6 +4,7 @@ use elocutio_core::Suggestion;
 use serde::{Deserialize, Serialize};
 
 use crate::chunk::Paragraph;
+use crate::merge::{DEFAULT_SUGGESTION_LIMIT, cap_suggestions};
 use crate::resolve::{RawEdit, ResolveError, resolve_edit};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,7 +14,7 @@ pub struct RejectedEdit {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnalysisResult {
     pub suggestions: Vec<Suggestion>,
     pub rejected: Vec<RejectedEdit>,
@@ -69,8 +70,11 @@ pub fn parse_response(content: &str, paragraphs: &[Paragraph]) -> Result<Analysi
         }
     }
 
+    let (suggestions, dropped) = dedupe_and_sort(suggestions);
+    rejected.extend(dropped);
+
     Ok(AnalysisResult {
-        suggestions: dedupe_and_sort(suggestions),
+        suggestions,
         rejected,
     })
 }
@@ -95,7 +99,12 @@ fn reject_reason(error: &ResolveError) -> String {
     }
 }
 
-fn dedupe_and_sort(mut suggestions: Vec<Suggestion>) -> Vec<Suggestion> {
+/// Remove duplicates and overlapping suggestions, order them, and cap the
+/// result at [`DEFAULT_SUGGESTION_LIMIT`].
+///
+/// Everything that is removed is returned as a [`RejectedEdit`] so nothing is
+/// dropped silently.
+fn dedupe_and_sort(mut suggestions: Vec<Suggestion>) -> (Vec<Suggestion>, Vec<RejectedEdit>) {
     suggestions.sort_by(|a, b| {
         a.span
             .utf16_start
@@ -104,28 +113,46 @@ fn dedupe_and_sort(mut suggestions: Vec<Suggestion>) -> Vec<Suggestion> {
     });
 
     let mut result: Vec<Suggestion> = Vec::new();
+    let mut rejected: Vec<RejectedEdit> = Vec::new();
     for suggestion in suggestions {
         if result.iter().any(|existing| {
             existing.span.utf16_start == suggestion.span.utf16_start
                 && existing.span.utf16_end == suggestion.span.utf16_end
                 && existing.replacement == suggestion.replacement
         }) {
+            rejected.push(RejectedEdit {
+                paragraph_id: paragraph_id_of(&suggestion.id),
+                original: suggestion.original.clone(),
+                reason: "duplicate of an earlier suggestion".to_string(),
+            });
             continue;
         }
 
         if let Some(previous) = result.last()
             && suggestion.span.utf16_start < previous.span.utf16_end
         {
+            rejected.push(RejectedEdit {
+                paragraph_id: paragraph_id_of(&suggestion.id),
+                original: suggestion.original.clone(),
+                reason: "overlaps an earlier suggestion".to_string(),
+            });
             continue;
         }
 
         result.push(suggestion);
-        if result.len() >= 20 {
-            break;
-        }
     }
 
-    result
+    let (capped, over_limit) = cap_suggestions(result, DEFAULT_SUGGESTION_LIMIT);
+    rejected.extend(over_limit);
+    (capped, rejected)
+}
+
+/// Extract the paragraph id from a suggestion id of the form `p3:e7`.
+fn paragraph_id_of(id: &str) -> String {
+    match id.split_once(':') {
+        Some((paragraph_id, _)) if !paragraph_id.is_empty() => paragraph_id.to_string(),
+        _ => id.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -198,5 +225,41 @@ mod tests {
         );
         let result = parse_response(&json, &paragraphs()).unwrap();
         assert_eq!(result.suggestions.len(), 1);
+    }
+
+    #[test]
+    fn reports_the_overlap_it_dropped() {
+        let json = payload(
+            r#"{"paragraph_id":"p1","original":"Their","replacement":"They're","category":"grammar","severity":"high","explanation":"Agreement."},
+               {"paragraph_id":"p1","original":"Their going","replacement":"They are going","category":"clarity","severity":"medium","explanation":"Clarity."}"#,
+        );
+        let result = parse_response(&json, &paragraphs()).unwrap();
+        assert_eq!(result.rejected.len(), 1);
+        assert!(result.rejected[0].reason.contains("overlaps"));
+    }
+
+    #[test]
+    fn reports_suggestions_dropped_by_the_limit() {
+        // Zero-padded so every quote is a unique substring of the paragraph.
+        let paragraph = (0..30)
+            .map(|index| format!("Their going{index:02} to the conference."))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let paragraphs = crate::chunk::chunk_paragraphs(&paragraph);
+        let edits: Vec<String> = (0..30)
+            .map(|index| {
+                format!(
+                    r#"{{"paragraph_id":"p1","original":"going{index:02}","replacement":"going{index:02}x","category":"grammar","severity":"low","explanation":"x"}}"#
+                )
+            })
+            .collect();
+        let result = parse_response(&payload(&edits.join(",")), &paragraphs).unwrap();
+        assert_eq!(result.suggestions.len(), 20);
+        assert!(
+            result
+                .rejected
+                .iter()
+                .any(|entry| entry.reason.contains("suggestion limit"))
+        );
     }
 }

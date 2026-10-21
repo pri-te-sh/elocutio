@@ -20,7 +20,7 @@ open src-tauri/target/debug/bundle/macos/Elocutio.app
 Verified:
 
 - [x] `cargo check --manifest-path apps/macos/src-tauri/Cargo.toml` passes.
-- [x] `cargo test --manifest-path apps/macos/src-tauri/Cargo.toml` passes (75 tests).
+- [x] `cargo test --manifest-path apps/macos/src-tauri/Cargo.toml` passes.
 - [x] `pnpm --filter @elocutio/macos check` passes.
 - [x] `pnpm --filter @elocutio/macos build` passes.
 - [x] `pnpm exec tauri build --debug --bundles app` produces `Elocutio.app`.
@@ -97,7 +97,7 @@ The AX and pasteboard work runs on the Tauri main thread; calling AppKit from a 
 
 These landed after the M0 matrix and are not part of the three-of-five overlay result above:
 
-- [x] 47 workspace tests and 87 desktop tests pass; desktop clippy is clean.
+- [x] The workspace and desktop test suites pass, and desktop clippy is clean. `python3 scripts/check_docs.py` verifies the counts quoted here against what the repository actually runs, so these numbers cannot silently go stale.
 - [x] Structured LLM analysis: paragraph chunking, prompt p2/schema, validation, exact/normalized/fuzzy span resolution, dedupe, and 20-suggestion cap.
 - [x] LLM-cache bridge into the inherited card and a floating Harper-style widget with live count and an **AI** action over IPC.
 - [x] Analyze Field (**⌥⌘A**), Auto Analyze (opt-in, debounced, deduplicated), and one-shot undo (**⌥⌘Z**).
@@ -105,6 +105,18 @@ These landed after the M0 matrix and are not part of the three-of-five overlay r
 - [x] Voice v0: local style card from 300+ word samples, opt-in accepted-edit feedback, and rewrite guidance.
 - [x] Tone presets and word-level rewrite diff preview in Settings.
 - [ ] Manual UI verification after these additions is pending: the machine was locked while automation was attempted. Specifically verify widget AI/click, undo restoration, provider switching, voice learning, and the diff preview before treating them as gate evidence.
+
+## Post-M0 additions (2026-10-20, second pass)
+
+These landed after the first post-M0 pass and are covered by the automated suite.
+
+- [x] The default model no longer sends a `temperature`. Claude Haiku 5.5 rejects any value other than `1` with an HTTP 400, and the request body simply omits the key.
+- [x] The provider layer is a real abstraction: two adapters share one canonical request type, the 13-kind error taxonomy is live code, a curated model catalog backs the picker, and the SSE decoder is tested.
+- [x] The clipboard is restored at the item level, so images and files survive a rewrite instead of being destroyed.
+- [x] The paste read-back is a structural check, not a substring test: a paste that landed the wrong text is rejected.
+- [x] The voice profile learns from accepted, dismissed, and edited-after-accept edits, and a copy guard refuses any rewrite that repeats the writer's own samples.
+- [x] Tone detection, a merge-and-rank pass, a golden-set harness, a suggestion event log, a block list, a cost cap, and a live-mode throttle all landed with tests.
+- [ ] The fingerprint set grows with the sample size, so a very large upload would make the style card large. This needs a decision before M3 uploads ship.
 
 ## Known issues and next actions
 

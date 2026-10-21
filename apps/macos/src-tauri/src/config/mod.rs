@@ -39,12 +39,24 @@ pub struct Config {
     pub auto_analyze: bool,
     /// Optional spending limit in USD for local usage warnings.
     pub budget_usd: Option<f64>,
+    /// The hard ceiling for a single analysis or rewrite, in USD.
+    ///
+    /// A request whose estimated cost would exceed this is refused before it
+    /// is sent. This is the "cost cap" the plan asks for; the softer
+    /// `budget_usd` setting only warns after the money is already spent.
+    pub cost_cap_usd: Option<f64>,
     /// Whether accepted suggestions may update the local voice profile.
     pub learn_from_edits: bool,
     /// Requested rewrite tone.
     pub rewrite_tone: crate::openrouter::RewriteTone,
     /// When true, no text may leave the Mac for a provider.
     pub local_only: bool,
+    /// Apps Elocutio must never read, even when they are enabled for suggestions.
+    ///
+    /// A blocklist entry is stronger than a disabled integration: it wins even
+    /// when automatic enablement would otherwise turn the app on. This is the
+    /// control the privacy docs promise for "apps you exclude".
+    pub blocklist: Vec<String>,
 }
 
 impl Config {
@@ -66,9 +78,11 @@ impl Config {
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
             budget_usd: None,
+            cost_cap_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             local_only: false,
+            blocklist: Vec::new(),
         }
     }
 
@@ -85,6 +99,37 @@ impl Config {
             .any(|integration| integration.bundle_id == bundle_id && integration.enabled)
     }
 
+    /// Whether the app is on the blocklist.
+    ///
+    /// A blocklisted app is never read, never linted, and never sent to a
+    /// provider, even if it is also enabled as an integration.
+    pub fn is_blocked(&self, bundle_id: &str) -> bool {
+        self.blocklist.iter().any(|blocked| blocked == bundle_id)
+    }
+
+    /// Add an app to the blocklist and disable it as an integration.
+    ///
+    /// Blocking an app must also stop it being enabled, otherwise the two
+    /// settings would contradict each other in the UI.
+    pub fn block_app(&mut self, bundle_id: &str) {
+        let bundle_id = bundle_id.trim();
+        if bundle_id.is_empty() {
+            return;
+        }
+        if !self.blocklist.iter().any(|blocked| blocked == bundle_id) {
+            self.blocklist.push(bundle_id.to_string());
+            self.blocklist.sort();
+        }
+        self.set_integration_enabled(bundle_id, false);
+    }
+
+    /// Remove an app from the blocklist.
+    ///
+    /// The app stays disabled; the user re-enables it deliberately.
+    pub fn unblock_app(&mut self, bundle_id: &str) {
+        self.blocklist.retain(|blocked| blocked != bundle_id);
+    }
+
     /// Resolves an app's enabled state, registering unknown apps when automatic enablement is on.
     /// Existing disabled entries are never re-enabled; removed entries can be discovered again.
     /// Elocutio itself is excluded from discovery, but explicitly configured entries are respected.
@@ -92,6 +137,10 @@ impl Config {
     pub fn resolve_integration(&mut self, bundle_id: &str) -> bool {
         let bundle_id = bundle_id.trim();
         if bundle_id.is_empty() {
+            return false;
+        }
+        // A blocklisted app is never auto-enabled and never read.
+        if self.is_blocked(bundle_id) {
             return false;
         }
         if let Some(integration) = self
@@ -243,9 +292,11 @@ impl Config {
             "provider_model": self.provider_model,
             "auto_analyze": self.auto_analyze,
             "budget_usd": self.budget_usd,
+            "cost_cap_usd": self.cost_cap_usd,
             "learn_from_edits": self.learn_from_edits,
             "rewrite_tone": self.rewrite_tone,
             "local_only": self.local_only,
+            "blocklist": self.blocklist,
         }))
     }
 
@@ -286,10 +337,12 @@ impl Config {
                 .unwrap_or_else(|| crate::openrouter::DEFAULT_MODEL.to_string()),
             auto_analyze: deserialize_optional_field(object, "auto_analyze")?.unwrap_or(false),
             budget_usd: deserialize_optional_field(object, "budget_usd")?.unwrap_or(None),
+            cost_cap_usd: deserialize_optional_field(object, "cost_cap_usd")?.unwrap_or(None),
             learn_from_edits: deserialize_optional_field(object, "learn_from_edits")?
                 .unwrap_or(false),
             rewrite_tone: deserialize_optional_field(object, "rewrite_tone")?.unwrap_or_default(),
             local_only: deserialize_optional_field(object, "local_only")?.unwrap_or(false),
+            blocklist: deserialize_optional_field(object, "blocklist")?.unwrap_or_default(),
         })
     }
 }

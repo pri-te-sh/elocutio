@@ -232,6 +232,9 @@ fn build_suggestion(
         severity: edit.severity,
         explanation: edit.explanation.clone(),
         resolution,
+        // The resolver's own confidence, derived from the matching strategy
+        // that succeeded. Never a model-reported value.
+        confidence: resolution.confidence(),
     })
 }
 

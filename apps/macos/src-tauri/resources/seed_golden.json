@@ -1,0 +1,777 @@
+{
+  "version": "seed-1",
+  "items": [
+    {
+      "id": "g-gram-01",
+      "text": "Their going to the conference.",
+      "expected": [
+        {
+          "original": "Their",
+          "replacement": "They're",
+          "utf16_start": 0,
+          "utf16_end": 5,
+          "error_type": "grammar",
+          "required": true
+        }
+      ],
+      "error_type": "grammar",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-gram-02",
+      "text": "We was told the deadline is Friday.",
+      "expected": [
+        {
+          "original": "was",
+          "replacement": "were",
+          "utf16_start": 3,
+          "utf16_end": 6,
+          "error_type": "grammar",
+          "required": true
+        }
+      ],
+      "error_type": "grammar",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-gram-03",
+      "text": "The team have decided to ship on Monday.",
+      "expected": [
+        {
+          "original": "have",
+          "replacement": "has",
+          "utf16_start": 9,
+          "utf16_end": 13,
+          "error_type": "grammar",
+          "required": true
+        }
+      ],
+      "error_type": "grammar",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-gram-04",
+      "text": "He don't want to go there.",
+      "expected": [
+        {
+          "original": "don't",
+          "replacement": "doesn't",
+          "utf16_start": 3,
+          "utf16_end": 8,
+          "error_type": "grammar",
+          "required": true
+        }
+      ],
+      "error_type": "grammar",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-gram-05",
+      "text": "There are many reasons to ship early.",
+      "expected": [
+        {
+          "original": "There are",
+          "replacement": "There are",
+          "utf16_start": 0,
+          "utf16_end": 9,
+          "error_type": "grammar",
+          "required": true
+        }
+      ],
+      "error_type": "grammar",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-gram-06",
+      "text": "She have the report and she will send it tomorrow.",
+      "expected": [
+        {
+          "original": "have",
+          "replacement": "has",
+          "utf16_start": 4,
+          "utf16_end": 8,
+          "error_type": "grammar",
+          "required": true
+        }
+      ],
+      "error_type": "grammar",
+      "length": "medium",
+      "source": "bug_report",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-gram-07",
+      "text": "Neither of the options are correct for this use case.",
+      "expected": [
+        {
+          "original": "are",
+          "replacement": "is",
+          "utf16_start": 23,
+          "utf16_end": 26,
+          "error_type": "grammar",
+          "required": true
+        }
+      ],
+      "error_type": "grammar",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "hard",
+      "notes": ""
+    },
+    {
+      "id": "g-gram-08",
+      "text": "The data were collected over a three year period.",
+      "expected": [
+        {
+          "original": "were",
+          "replacement": "was",
+          "utf16_start": 9,
+          "utf16_end": 13,
+          "error_type": "grammar",
+          "required": true
+        }
+      ],
+      "error_type": "grammar",
+      "length": "medium",
+      "source": "corpus",
+      "difficulty": "hard",
+      "notes": ""
+    },
+    {
+      "id": "g-spell-01",
+      "text": "Their is a typo in tehre sentence.",
+      "expected": [
+        {
+          "original": "tehre",
+          "replacement": "their",
+          "utf16_start": 19,
+          "utf16_end": 24,
+          "error_type": "spelling",
+          "required": true
+        }
+      ],
+      "error_type": "spelling",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-spell-02",
+      "text": "I recieved your email yesterday.",
+      "expected": [
+        {
+          "original": "recieved",
+          "replacement": "received",
+          "utf16_start": 2,
+          "utf16_end": 10,
+          "error_type": "spelling",
+          "required": true
+        }
+      ],
+      "error_type": "spelling",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-spell-03",
+      "text": "The enviroment is changing quickly.",
+      "expected": [
+        {
+          "original": "enviroment",
+          "replacement": "environment",
+          "utf16_start": 4,
+          "utf16_end": 14,
+          "error_type": "spelling",
+          "required": true
+        }
+      ],
+      "error_type": "spelling",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-spell-04",
+      "text": "Please seperate the two invoices.",
+      "expected": [
+        {
+          "original": "seperate",
+          "replacement": "separate",
+          "utf16_start": 7,
+          "utf16_end": 15,
+          "error_type": "spelling",
+          "required": true
+        }
+      ],
+      "error_type": "spelling",
+      "length": "short",
+      "source": "bug_report",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-spell-05",
+      "text": "Definately worth the effort.",
+      "expected": [
+        {
+          "original": "Definately",
+          "replacement": "Definitely",
+          "utf16_start": 0,
+          "utf16_end": 10,
+          "error_type": "spelling",
+          "required": true
+        }
+      ],
+      "error_type": "spelling",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-spell-06",
+      "text": "Occured on the third attempt.",
+      "expected": [
+        {
+          "original": "Occured",
+          "replacement": "Occurred",
+          "utf16_start": 0,
+          "utf16_end": 7,
+          "error_type": "spelling",
+          "required": true
+        }
+      ],
+      "error_type": "spelling",
+      "length": "short",
+      "source": "corpus",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-punct-01",
+      "text": "Hello world",
+      "expected": [
+        {
+          "original": "world",
+          "replacement": "world.",
+          "utf16_start": 6,
+          "utf16_end": 11,
+          "error_type": "punctuation",
+          "required": true
+        }
+      ],
+      "error_type": "punctuation",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-punct-02",
+      "text": "Wait, what did you say?",
+      "expected": [
+        {
+          "original": "say?",
+          "replacement": "say?",
+          "utf16_start": 19,
+          "utf16_end": 23,
+          "error_type": "punctuation",
+          "required": true
+        }
+      ],
+      "error_type": "punctuation",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-punct-03",
+      "text": "The meeting is at 3pm sharp.",
+      "expected": [
+        {
+          "original": "3pm",
+          "replacement": "3 p.m.",
+          "utf16_start": 18,
+          "utf16_end": 21,
+          "error_type": "punctuation",
+          "required": true
+        }
+      ],
+      "error_type": "punctuation",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-punct-04",
+      "text": "He said \"it is fine\" and left.",
+      "expected": [
+        {
+          "original": "\"it is fine\"",
+          "replacement": "“it is fine”",
+          "utf16_start": 8,
+          "utf16_end": 20,
+          "error_type": "punctuation",
+          "required": true
+        }
+      ],
+      "error_type": "punctuation",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-cap-01",
+      "text": "the meeting starts at nine.",
+      "expected": [
+        {
+          "original": "the",
+          "replacement": "The",
+          "utf16_start": 0,
+          "utf16_end": 3,
+          "error_type": "capitalization",
+          "required": true
+        }
+      ],
+      "error_type": "capitalization",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-cap-02",
+      "text": "Apple announced a new product in September.",
+      "expected": [
+        {
+          "original": "Apple",
+          "replacement": "Apple",
+          "utf16_start": 0,
+          "utf16_end": 5,
+          "error_type": "capitalization",
+          "required": true
+        }
+      ],
+      "error_type": "capitalization",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-cap-03",
+      "text": "i think this is fine.",
+      "expected": [
+        {
+          "original": "i think",
+          "replacement": "I think",
+          "utf16_start": 0,
+          "utf16_end": 7,
+          "error_type": "capitalization",
+          "required": true
+        }
+      ],
+      "error_type": "capitalization",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-cap-04",
+      "text": "our team ships fast.",
+      "expected": [
+        {
+          "original": "our",
+          "replacement": "Our",
+          "utf16_start": 0,
+          "utf16_end": 3,
+          "error_type": "capitalization",
+          "required": true
+        }
+      ],
+      "error_type": "capitalization",
+      "length": "short",
+      "source": "bug_report",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-clar-01",
+      "text": "Due to the fact that it rained, we cancelled the event.",
+      "expected": [
+        {
+          "original": "Due to the fact that",
+          "replacement": "Because",
+          "utf16_start": 0,
+          "utf16_end": 20,
+          "error_type": "clarity",
+          "required": true
+        }
+      ],
+      "error_type": "clarity",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-clar-02",
+      "text": "In the event that the server fails, retry the request.",
+      "expected": [
+        {
+          "original": "In the event that",
+          "replacement": "If",
+          "utf16_start": 0,
+          "utf16_end": 17,
+          "error_type": "clarity",
+          "required": true
+        }
+      ],
+      "error_type": "clarity",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-clar-03",
+      "text": "The report was written in order to explain the results.",
+      "expected": [
+        {
+          "original": "was written in order to",
+          "replacement": "was written to",
+          "utf16_start": 11,
+          "utf16_end": 34,
+          "error_type": "clarity",
+          "required": true
+        }
+      ],
+      "error_type": "clarity",
+      "length": "medium",
+      "source": "corpus",
+      "difficulty": "hard",
+      "notes": ""
+    },
+    {
+      "id": "g-word-01",
+      "text": "We will utilize the new tool.",
+      "expected": [
+        {
+          "original": "utilize",
+          "replacement": "use",
+          "utf16_start": 8,
+          "utf16_end": 15,
+          "error_type": "word_choice",
+          "required": true
+        }
+      ],
+      "error_type": "word_choice",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-word-02",
+      "text": "Please kindly revert back to the previous version.",
+      "expected": [
+        {
+          "original": "kindly",
+          "replacement": "",
+          "utf16_start": 7,
+          "utf16_end": 13,
+          "error_type": "word_choice",
+          "required": true
+        }
+      ],
+      "error_type": "word_choice",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "hard",
+      "notes": ""
+    },
+    {
+      "id": "g-word-03",
+      "text": "We need to think outside of the box here.",
+      "expected": [
+        {
+          "original": "think outside of the box",
+          "replacement": "think laterally",
+          "utf16_start": 11,
+          "utf16_end": 35,
+          "error_type": "word_choice",
+          "required": true
+        }
+      ],
+      "error_type": "word_choice",
+      "length": "short",
+      "source": "corpus",
+      "difficulty": "hard",
+      "notes": ""
+    },
+    {
+      "id": "g-conc-01",
+      "text": "We are in the process of reviewing the proposal.",
+      "expected": [
+        {
+          "original": "are in the process of reviewing",
+          "replacement": "are reviewing",
+          "utf16_start": 3,
+          "utf16_end": 34,
+          "error_type": "conciseness",
+          "required": true
+        }
+      ],
+      "error_type": "conciseness",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-conc-02",
+      "text": "Due to the circumstances, it was not possible.",
+      "expected": [
+        {
+          "original": "Due to the circumstances",
+          "replacement": "Because",
+          "utf16_start": 0,
+          "utf16_end": 24,
+          "error_type": "conciseness",
+          "required": true
+        }
+      ],
+      "error_type": "conciseness",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-conc-03",
+      "text": "It is important to note that the result was positive.",
+      "expected": [
+        {
+          "original": "It is important to note that",
+          "replacement": "Note that",
+          "utf16_start": 0,
+          "utf16_end": 28,
+          "error_type": "conciseness",
+          "required": true
+        }
+      ],
+      "error_type": "conciseness",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-cons-01",
+      "text": "We use colour in the UK and color in the US.",
+      "expected": [
+        {
+          "original": "color",
+          "replacement": "colour",
+          "utf16_start": 28,
+          "utf16_end": 33,
+          "error_type": "consistency",
+          "required": true
+        }
+      ],
+      "error_type": "consistency",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "hard",
+      "notes": ""
+    },
+    {
+      "id": "g-cons-02",
+      "text": "The team meets on Monday and monday.",
+      "expected": [
+        {
+          "original": "monday",
+          "replacement": "Monday",
+          "utf16_start": 29,
+          "utf16_end": 35,
+          "error_type": "consistency",
+          "required": true
+        }
+      ],
+      "error_type": "consistency",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-tone-01",
+      "text": "Hey, just wanted to say thanks for helping out!",
+      "expected": [
+        {
+          "original": ",",
+          "replacement": "",
+          "utf16_start": 3,
+          "utf16_end": 4,
+          "error_type": "tone",
+          "required": true
+        }
+      ],
+      "error_type": "tone",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-style-01",
+      "text": "The very best approach is to start early.",
+      "expected": [
+        {
+          "original": "very best",
+          "replacement": "best",
+          "utf16_start": 4,
+          "utf16_end": 13,
+          "error_type": "style",
+          "required": true
+        }
+      ],
+      "error_type": "style",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-mixed-01",
+      "text": "Their going to sent the invoice tommorow.",
+      "expected": [
+        {
+          "original": "Their",
+          "replacement": "They're",
+          "utf16_start": 0,
+          "utf16_end": 5,
+          "error_type": "mixed",
+          "required": true
+        },
+        {
+          "original": "tommorow",
+          "replacement": "tomorrow",
+          "utf16_start": 32,
+          "utf16_end": 40,
+          "error_type": "mixed",
+          "required": true
+        }
+      ],
+      "error_type": "mixed",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "id": "g-none-01",
+      "text": "The weather is fine today.",
+      "expected": [],
+      "error_type": "none",
+      "length": "short",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-none-02",
+      "text": "We shipped the release on Tuesday and it went smoothly.",
+      "expected": [],
+      "error_type": "none",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-none-03",
+      "text": "The team reviewed the proposal and approved the budget.",
+      "expected": [],
+      "error_type": "none",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-none-04",
+      "text": "Please submit your request to the compliance office before Friday.",
+      "expected": [],
+      "error_type": "none",
+      "length": "medium",
+      "source": "corpus",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-none-05",
+      "text": "The quick brown fox jumps over the lazy dog.",
+      "expected": [],
+      "error_type": "none",
+      "length": "short",
+      "source": "corpus",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-none-06",
+      "text": "He said the report would be ready by end of day.",
+      "expected": [],
+      "error_type": "none",
+      "length": "medium",
+      "source": "curated",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-none-07",
+      "text": "Unicode text with an emoji 🎉 and a quote: “hello”.",
+      "expected": [],
+      "error_type": "none",
+      "length": "short",
+      "source": "synthetic",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "id": "g-none-08",
+      "text": "Line one\nLine two\n\nA second paragraph with nothing wrong.",
+      "expected": [],
+      "error_type": "none",
+      "length": "medium",
+      "source": "synthetic",
+      "difficulty": "easy",
+      "notes": ""
+    }
+  ]
+}

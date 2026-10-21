@@ -34,7 +34,7 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
         ));
     }
 
-    let (provider, model, tone) = {
+    let (provider, model, tone, cost_cap) = {
         let state = app.state::<std::sync::Arc<tokio::sync::Mutex<crate::config::Config>>>();
         let config = state.lock().await;
         if config.local_only {
@@ -47,8 +47,15 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
             },
             config.provider_model.clone(),
             config.rewrite_tone,
+            config.cost_cap_usd,
         )
     };
+    openrouter::check_cost_cap(
+        &model,
+        text.chars().count(),
+        openrouter::REWRITE_MAX_TOKENS,
+        cost_cap,
+    )?;
     let result = openrouter::rewrite_with(
         &provider,
         &text,

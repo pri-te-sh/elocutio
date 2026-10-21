@@ -8,6 +8,8 @@ description = "Local voice profiles and style cards for Elocutio"
 
 [dependencies]
 serde = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true }
 serde_json = { workspace = true }

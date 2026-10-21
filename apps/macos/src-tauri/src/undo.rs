@@ -87,15 +87,31 @@ pub async fn undo_last_edit<R: Runtime>(app: &AppHandle<R>) -> Result<String, St
     }
 
     let before = record.before;
-    let restored = main_thread::run(app, move |app| {
-        let state = app.state::<RwLock<PlatformBroker>>();
-        let mut broker = state
-            .write()
-            .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
-        broker.replace_focused_text(&before)
+    let after = record.after;
+    let restored = main_thread::run(app, {
+        let before = before.clone();
+        move |app| {
+            let state = app.state::<RwLock<PlatformBroker>>();
+            let mut broker = state
+                .write()
+                .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
+            broker.replace_focused_text(&before)
+        }
     })??;
 
     if restored {
+        // Undoing an accepted suggestion is the strongest preference signal
+        // there is: the writer disagreed with the proposed wording. The voice
+        // profile learns from it, so the same edit is not proposed again.
+        if let Err(error) = crate::voice::record_edited_after_accept(
+            &before,
+            &after,
+            &before,
+            "edited_after_accept",
+        ) {
+            eprintln!("Could not record the edited-after-accept event: {error}");
+        }
+
         Ok("Reverted the last Elocutio edit.".to_string())
     } else {
         Err("Could not restore the previous field text.".into())

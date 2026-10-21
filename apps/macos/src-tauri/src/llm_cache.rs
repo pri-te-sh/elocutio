@@ -65,6 +65,28 @@ pub fn write(cache: &CachedAnalysis) -> Result<(), String> {
         .map_err(|error| format!("Could not publish the suggestion cache: {error}"))
 }
 
+/// How long a cached analysis stays valid.
+///
+/// The suggestions in the cache were computed for one specific text, and the
+/// cache is keyed by that text's hash, so a stale entry can never be shown
+/// against different text. The TTL matters for a different reason: the file
+/// holds the user's text-derived suggestions on disk, and it should not sit
+/// there indefinitely.
+const CACHE_TTL_SECONDS: u64 = 24 * 60 * 60;
+
+/// Whether a cached analysis is still within its time to live.
+pub fn is_fresh(cache: &CachedAnalysis, now: u64) -> bool {
+    now.saturating_sub(cache.created_at) < CACHE_TTL_SECONDS
+}
+
+/// The current unix time in seconds.
+pub fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
 pub fn read() -> Result<Option<CachedAnalysis>, String> {
     let path = cache_path()?;
     let bytes = match std::fs::read(&path) {
@@ -72,9 +94,17 @@ pub fn read() -> Result<Option<CachedAnalysis>, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(format!("Could not read the suggestion cache: {error}")),
     };
-    serde_json::from_slice(&bytes)
-        .map(Some)
-        .map_err(|error| format!("Invalid suggestion cache: {error}"))
+    let cache: CachedAnalysis = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("Invalid suggestion cache: {error}"))?;
+
+    if !is_fresh(&cache, now_seconds()) {
+        // The cache is stale, so drop it rather than keeping the user's
+        // derived text on disk.
+        let _ = std::fs::remove_file(&path);
+        return Ok(None);
+    }
+
+    Ok(Some(cache))
 }
 
 #[cfg(test)]
@@ -85,5 +115,33 @@ mod tests {
     fn hash_changes_with_text() {
         assert_ne!(text_hash("hello"), text_hash("Hello"));
         assert_eq!(text_hash("same"), text_hash("same"));
+    }
+
+    #[test]
+    fn a_fresh_cache_is_fresh() {
+        let cache = CachedAnalysis {
+            pid: 1,
+            bundle_id: "com.example.Editor".to_string(),
+            text_hash: 1,
+            model: "model".to_string(),
+            created_at: 1_000,
+            suggestions: Vec::new(),
+        };
+        assert!(is_fresh(&cache, 1_000));
+        assert!(is_fresh(&cache, 1_000 + CACHE_TTL_SECONDS - 1));
+    }
+
+    #[test]
+    fn an_old_cache_is_stale() {
+        let cache = CachedAnalysis {
+            pid: 1,
+            bundle_id: "com.example.Editor".to_string(),
+            text_hash: 1,
+            model: "model".to_string(),
+            created_at: 1_000,
+            suggestions: Vec::new(),
+        };
+        assert!(!is_fresh(&cache, 1_000 + CACHE_TTL_SECONDS));
+        assert!(!is_fresh(&cache, 1_000 + CACHE_TTL_SECONDS * 10));
     }
 }

@@ -76,6 +76,7 @@ mod tests {
             severity: Severity::High,
             explanation: "Misspelling.".into(),
             resolution: Resolution::Exact,
+            confidence: 1.0,
         };
         let message = BridgeMessage::Result {
             id: "r1".into(),

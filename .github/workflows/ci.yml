@@ -1,9 +1,14 @@
 name: CI
 
-# Routine CI intentionally runs on Linux only. GitHub Free charges macOS
-# runners at 10x the Linux minute rate, so the full Tauri app check lives in
-# `.github/workflows/macos-app.yml` and runs only on demand, on a PR label, or
-# on a release tag. Run `just macos-check` locally before opening a macOS PR.
+# Routine CI runs on Linux. The macOS app lives in its own workspace
+# (`apps/macos/src-tauri` is excluded from the root cargo workspace) and needs
+# a macOS runner to compile, so the app checks live in
+# `.github/workflows/macos-app.yml`.
+#
+# That workflow is NOT label-only any more: it also runs automatically on every
+# push and pull request that touches the app, so the 11k lines of Rust that
+# make up the product are inside an automatic gate. The `paths` filter keeps
+# the expensive macOS job off unrelated doc-only changes.
 
 on:
   push:
@@ -75,3 +80,17 @@ jobs:
         run: pnpm --filter @elocutio/macos check
       - name: Frontend build
         run: pnpm --filter @elocutio/macos build
+
+  security:
+    name: Security (dependency audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Audit the macOS app dependency tree
+        run: cargo audit --file apps/macos/src-tauri/Cargo.lock

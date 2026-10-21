@@ -6,14 +6,24 @@
 
 ## 1. Test pyramid
 
-| Layer | What | Tooling | Runs |
-| --- | --- | --- | --- |
-| Unit | Resolver, chunker, schema, adapters, cost, merge, keychain | `cargo test`, `proptest`, `insta` | Every commit |
-| Integration | Analyze → accept → verify; IPC; bridge; updater | `axum` fake provider, temp SQLite | Every PR |
-| UI | Onboarding, settings, assistant, card | Playwright (webviews), manual AppKit | Nightly / release |
-| Manual matrix | Real apps, displays, permissions | Checklist | Every release |
-| Quality eval | Golden set, LLM judge, regression | `tools/eval` | Prompt/model changes |
-| Security | Key handling, bridge auth, injection | Targeted tests + review | Release |
+This table describes the **current** test setup. Rows marked *planned* are
+described in the plan but do not exist yet; they are listed so the gap is
+visible, not to imply coverage that is not there.
+
+| Layer | What | Tooling | Runs | Status |
+| --- | --- | --- | --- | --- |
+| Unit | Resolver, chunker, schema, adapters, cost, merge, keychain, tone, voice | `cargo test`, `proptest` | Every commit | **Implemented** |
+| Property | Resolver round-trips, Unicode, CRLF, ambiguity, determinism | `proptest` (15 properties) | Every commit | **Implemented** |
+| Quality eval | Golden set metrics and the F0.5/resolution regression gate | `elocutio-analysis::golden` | Every commit | **Implemented** (44-item seed set) |
+| Docs and ledger | Links, phase-table agreement, quoted counts, tracker schema | `scripts/check_docs.py`, `scripts/progress.py` | Every commit | **Implemented** |
+| Integration | Analyze → accept → verify; IPC; bridge; updater | `axum` fake provider, temp SQLite | Every PR | **Planned** — no fake provider exists yet |
+| UI | Onboarding, settings, assistant, card | Playwright (webviews), manual AppKit | Nightly / release | **Planned** |
+| Manual matrix | Real apps, displays, permissions | Checklist | Every release | **Manual only** — see `docs/M0-VERIFICATION.md` |
+| Security | Key handling, bridge auth, injection | Targeted tests + review | Release | **Planned** — the inherited-code review is still open |
+
+The unit, property, and quality layers run in CI. The Linux job covers the
+shared crates; the macOS job covers the desktop app, the frontend, and the app
+bundle.
 
 ---
 
@@ -81,6 +91,10 @@
 
 ## 3. Integration tests
 
+**Planned.** The scenarios below describe the fake provider the plan calls for
+(`tools/fake-provider`, an axum server). That directory does not exist yet, so
+there are no integration tests in CI today.
+
 ### Fake provider
 
 `tools/fake-provider` (axum) scenarios:
@@ -93,6 +107,10 @@
 - `unresolved` — quotes that do not exist in the text.
 - `partial-stream` — SSE chunks, then error.
 - `empty` — no suggestions.
+
+The provider request body and the streaming frame parser already have unit
+coverage in `crates/elocutio-llm`, so the fake provider will exercise the
+transport rather than the protocol.
 
 ### End-to-end
 
@@ -225,13 +243,24 @@ Fail CI if:
 
 ## 7. Security tests
 
+**Implemented today:**
+
+- Dependency audit: `cargo audit` runs in CI over both the workspace and the
+  macOS app lockfile (`rustsec/audit-check` plus an explicit app-tree run).
+- Injection: secure field guard (`IsSecureEventInputEnabled` and
+  `AXSecureTextField`), clipboard restore, and the paste read-back check all
+  have unit coverage.
+- The highlighter process has no provider configuration or keys: the key lives
+  in the Keychain in the main process, and the LLM cache carries suggestions
+  only.
+
+**Planned:**
+
 - Grep CI for accidental key/text logging.
 - Assert `Authorization` headers are redacted in diagnostics.
-- Assert the highlighter process has no provider config/keys.
 - Bridge: token, Origin, loopback, rate limit, close-on-quit.
 - Update: signature verification with a tampered payload.
-- Injection: secure field guard; `IsSecureEventInputEnabled`; clipboard restore.
-- Dependency audit: `cargo audit`, `pnpm audit`, license check.
+- `pnpm audit` and a license check.
 
 ---
 

@@ -8,9 +8,9 @@ status, evidence, and the live dashboard live in
 | Phase | Status | Outcome |
 | --- | --- | --- |
 | **Planning** | ✅ Done | Audit, plan, architecture, feature matrix, ADRs, prompt library, voice design |
-| **M0 — Fork & spike** | 🚧 In progress | Rebranded app builds; TextEdit/Notes/Safari pass; OpenRouter key works. Chrome/Mail and system-wide AI rewrite remain. |
-| **M1 — LLM MVP** | Planned | Local + LLM suggestions, card, accept/dismiss, tone detection, onboarding, Keychain, usage log |
-| **M2 — Inline + voice v0** | Planned | Widget, underlines, tone/paragraph rewrites, cache, blocklist; voice profile from feedback |
+| **M0 — Fork & spike** | 🚧 Partial | Rebranded app builds; TextEdit/Notes/Safari pass the overlay; OpenRouter key works; the system-wide rewrite works in TextEdit, Safari, and Chrome. The Chrome/Mail overlay and the inherited security audit remain. |
+| **M1 — LLM MVP** | 🚧 In progress | Local + LLM suggestions, card, accept/dismiss, onboarding, Keychain, usage log. Tone detection, the provider abstraction, and the golden-set harness are landing now. |
+| **M2 — Inline + voice v0** | 🚧 Started | Widget count/AI action, tone presets, style card, accepted-edit learning; live mode, diff rewrite, the voice copy guard, and the 10-app matrix remain. |
 | **M3 — Everywhere + uploads** | Planned | Chrome/Edge extension, assistant panel, compose/reply/summarize, multi-provider; voice sample uploads |
 | **M4 — Personal + voice v2** | Planned | Style guide, brand voice, glossary, snippets, provenance, history; per-context voices |
 | **M5 — v1.0** | Planned | Notarized DMG, signed updates, Homebrew, docs, security review |

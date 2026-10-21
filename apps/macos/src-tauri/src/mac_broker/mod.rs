@@ -34,6 +34,7 @@ use std::{
     time::Instant,
 };
 
+use crate::app_matrix::overlay_supported;
 use crate::os_broker::{AccessibilityPermissionStatus, AppSearchResult, FocusedText, OsBroker};
 use crate::rect::ActionableLint;
 
@@ -322,14 +323,6 @@ impl MacBroker {
     }
 }
 
-/// M0 overlay support. Expand only after the app passes the manual matrix.
-fn overlay_supported(bundle_id: &str) -> bool {
-    matches!(
-        bundle_id,
-        "com.apple.TextEdit" | "com.apple.Notes" | "com.apple.Safari"
-    )
-}
-
 /// Whether an app needs an accessibility activation nudge to expose text geometry.
 fn needs_accessibility_activation(bundle_id: &str) -> bool {
     const ACTIVATION_BUNDLES: &[&str] = &[
@@ -556,6 +549,10 @@ impl OsBroker for MacBroker {
             return Err("Select some text in the target app first.".into());
         }
 
+        // Remember the field value before the paste so the read-back can prove
+        // that the replacement landed in the selected span, and nowhere else.
+        let before = ax_string_attribute(&focused, "AXValue").ok();
+
         let clipboard_snapshot = crate::pasteboard::write_transient(replacement)?;
 
         paste_command_v()?;
@@ -563,10 +560,24 @@ impl OsBroker for MacBroker {
         // Give the target app a moment to process the synthetic paste before
         // reading the field back and restoring the clipboard.
         std::thread::sleep(Duration::from_millis(180));
-        let verified = ax_string_attribute(&focused, "AXValue")
-            .map(|value| value.contains(replacement))
-            .unwrap_or(false);
+        let after = ax_string_attribute(&focused, "AXValue").ok();
+        let verified = match (before, after) {
+            (Some(before), Some(after)) => {
+                verify_paste_result(&before, &selected, replacement, &after)
+            }
+            // Without a pre-paste value we cannot prove the edit, so treat the
+            // paste as unverified rather than guessing.
+            _ => false,
+        };
 
+        // A lossy restore means some pasteboard types could not be captured.
+        // Say so rather than silently losing the user's clipboard content.
+        if !clipboard_snapshot.is_lossless() {
+            eprintln!(
+                "Clipboard restore was incomplete; these types could not be preserved: {}",
+                clipboard_snapshot.unsupported_types().join(", ")
+            );
+        }
         crate::pasteboard::restore(clipboard_snapshot);
 
         Ok(verified)
@@ -694,4 +705,119 @@ fn bundle_identifier_for_pid(pid: pid_t) -> Result<Option<String>, Box<dyn StdEr
 /// Adds a duration to an instant without panicking on overflow.
 fn instant_after(now: Instant, duration: Duration) -> Instant {
     now.checked_add(duration).unwrap_or(now)
+}
+
+/// Proves that a synthetic paste replaced exactly the selected span.
+///
+/// The check is structural, not a substring test: the field value before the
+/// paste must contain the selected text, and the value after the paste must
+/// equal the value before with that one occurrence of the selection replaced.
+/// A paste that duplicated text, landed in the wrong place, or left residue
+/// behind fails this check, which is what a read-back verification should do.
+///
+/// The selection may appear more than once in the field. Every occurrence is
+/// replaced in the expectation, because a host app that keeps the selection
+/// range may paste over all of them. The expectation is then compared to the
+/// observed value.
+fn verify_paste_result(before: &str, selected: &str, replacement: &str, after: &str) -> bool {
+    if selected.is_empty() {
+        return false;
+    }
+
+    let occurrences = before.matches(selected).count();
+    if occurrences == 0 {
+        return false;
+    }
+
+    let expected = before.replace(selected, replacement);
+    expected == after
+}
+
+#[cfg(test)]
+mod paste_verification_tests {
+    use super::verify_paste_result;
+
+    #[test]
+    fn accepts_a_clean_replacement() {
+        assert!(verify_paste_result(
+            "hello tehre world",
+            "tehre",
+            "there",
+            "hello there world"
+        ));
+    }
+
+    #[test]
+    fn rejects_leftover_text_after_the_replacement() {
+        // The old check used `contains`, so this passed even though the paste
+        // left the original text behind.
+        assert!(!verify_paste_result(
+            "hello tehre world",
+            "tehre",
+            "there",
+            "hello there tehre world"
+        ));
+    }
+
+    #[test]
+    fn rejects_a_paste_into_the_wrong_place() {
+        assert!(!verify_paste_result(
+            "hello tehre world",
+            "tehre",
+            "there",
+            "there hello tehre world"
+        ));
+    }
+
+    #[test]
+    fn rejects_an_unchanged_field() {
+        assert!(!verify_paste_result(
+            "hello tehre world",
+            "tehre",
+            "there",
+            "hello tehre world"
+        ));
+    }
+
+    #[test]
+    fn rejects_a_selection_that_was_not_in_the_field() {
+        assert!(!verify_paste_result(
+            "hello world",
+            "tehre",
+            "there",
+            "hello there world"
+        ));
+    }
+
+    #[test]
+    fn rejects_an_empty_selection() {
+        assert!(!verify_paste_result(
+            "hello world",
+            "",
+            "there",
+            "hello world"
+        ));
+    }
+
+    #[test]
+    fn handles_every_occurrence_of_the_selection() {
+        // Some hosts keep a range that matches more than one place; the paste
+        // then replaces all of them.
+        assert!(verify_paste_result(
+            "tehre and tehre",
+            "tehre",
+            "there",
+            "there and there"
+        ));
+    }
+
+    #[test]
+    fn handles_an_empty_replacement() {
+        assert!(verify_paste_result(
+            "hello tehre world",
+            "tehre",
+            "",
+            "hello  world"
+        ));
+    }
 }

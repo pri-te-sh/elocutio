@@ -8,22 +8,32 @@ Elocutio is a desktop app, not a service. There is no Elocutio account, no Elocu
 
 ## Data flows
 
+This table describes **what the current build does**, not a target state. Every
+row names a file you can find in
+`~/Library/Application Support/elocutio/`.
+
 | Data | Where it goes | When | User control |
 | --- | --- | --- | --- |
-| Text being checked | Your chosen provider (or nowhere in local-only mode) | When you trigger analysis, enable live mode, or opt into Analyze as I write | Per-app mode, block list, local-only toggle, request preview |
-| Selected text / context | Your chosen provider | When you use rewrite, compose, reply, summarize, chat | Context chips; remove before sending |
-| API keys | macOS Data Protection Keychain | On entry | Delete/replace; optional biometric gate |
-| Usage (tokens, cost, model) | Local SQLite | After each request | View/export/clear |
-| Request log (host, model, status, cost) | Local SQLite | After each request | View/export/clear; no text |
-| Accepted/dismissed suggestions | Local SQLite | When you act on a suggestion | Off by default; clear |
-| Provenance events (hashes, not text) | Local SQLite | Opt-in | Off by default; export/clear |
-| Documents (Docs editor) | Local SQLite | When you create one | Delete |
+| Text being checked | Your chosen provider (or nowhere in local-only mode) | When you trigger analysis or opt into Analyze as I write | Per-app mode, block list, local-only toggle |
+| Selected text / context | Your chosen provider | When you use Rewrite Selection | Tone preset, voice toggle, local-only mode |
+| API keys | macOS Keychain (`app.elocutio.provider.*`) | On entry | Delete/replace in Settings |
+| Usage (tokens, cost, model) | `usage.jsonl` | After each request | View in Settings; delete the file |
+| Suggestion events (rule, category, edit size) | `suggestion-events.jsonl` | When you act on a suggestion, if enabled | Off by default; delete in Settings |
 | Voice samples (uploads/pastes) | Never stored; analyzed in memory | When you add them | Delete the profile |
-| Voice style card + exemplars | Local SQLite; sent to your provider on voice-aware tasks | When you use "Use my voice" | Preview, strength, style-card-only mode |
-| Voice feedback (accept/dismiss/rate) | Local SQLite | Only when voice learning is on | Disable learning; clear |
+| Voice style card | `voice-profile.json`; sent to your provider on voice-aware tasks | When you use "Use my voice" | Preview the exact payload, strength, style-card-only mode |
+| Voice feedback (accepted edits) | `voice-feedback.jsonl` | Only when voice learning is on | Disable learning; clear |
+| Undo snapshot (before/after field text) | `last-edit-undo.json` | When a suggestion is applied | Deleted after one undo |
+| LLM suggestion cache | `llm-cache.json` | After an analysis | Overwritten on the next analysis |
 | Crash reports | Nowhere by default | Opt-in only | Toggle |
 
-**Not collected:** analytics, device identifiers, advertising IDs, location, contacts, calendar, screen contents, or keystrokes.
+**Not collected:** analytics, device identifiers, advertising IDs, location,
+contacts, calendar, screen contents, or keystrokes.
+
+**Still to build:** a request log, a network log, request preview, provenance
+events, a documents editor, and exemplar sending are **not implemented yet**.
+They are listed in the plan as M2–M4 work. The `elocutio-store` crate reserves
+the SQLite schema and file name, but the current build stores everything in
+the plain files listed above.
 
 ---
 
@@ -32,15 +42,15 @@ Elocutio is a desktop app, not a service. There is no Elocutio account, no Elocu
 Voice learning is **off by default**. When you enable it:
 
 - **Samples stay on your Mac during analysis and are then discarded.** v0 stores only the aggregate style card as a local JSON file; it is not encrypted at rest yet. Encryption at rest and a features-only mode remain roadmap work.
-- **Only the style card and 2–4 user-reviewable excerpts** are sent to your provider, and only when a voice-aware rewrite/compose/reply runs. "Style card only" mode sends no excerpts.
+- **Only the style card is sent to your provider**, and only when a voice-aware rewrite runs. The current build sends no excerpts: exemplar retrieval is M3 work. Every rewrite is checked against a **copy guard** before it is applied, so a response that repeats your samples back at you is refused.
 - **You can preview the exact payload** before the first voice-aware request.
-- **You can delete any sample**, which removes its exemplars and its contribution to the profile.
-- **You can delete the profile**, which removes all samples, exemplars, feedback, and derived traits.
+- **You can delete the profile**, which removes the style card, the feedback log, and the learned traits.
 - **We never fine-tune a cloud model on your writing.** The profile is a local style card plus retrieval, not training.
 - **Optional enrichment:** if you ask Elocutio to analyze humor/empathy nuances with a model, only the selected samples are sent, with a preview and cost estimate. On-device Apple FM/Ollama is preferred; cloud enrichment is off by default.
 - **We never infer sensitive attributes** (gender, age, ethnicity, personality) from writing.
-- **We never learn from secure fields, terminals, password managers, or apps/sites you exclude.**
-- **AI-generated text you accept unchanged is down-weighted** so the profile does not converge on the model's voice.
+- **We never learn from secure fields or password managers**, and never from apps on your block list.
+- **AI-generated text you accept unchanged is down-weighted** so the profile does not converge on the model's voice. A model-authored edit carries one tenth the weight of your own.
+- **Dismissing a suggestion is a negative signal.** Five dismissals in one category suppress that category's edits.
 
 Voice is intended for your own writing or a brand you are authorized to represent. Uploading someone else's writing to impersonate them is prohibited by the acceptable-use policy.
 
@@ -48,10 +58,13 @@ Voice is intended for your own writing or a brand you are authorized to represen
 
 | Data | Default | Configurable |
 | --- | --- | --- |
-| Raw samples | Never stored | Delete the profile |
-| Style card / traits | Until profile deleted | Reset learned values |
-| Exemplars | Not stored in v0 | — |
-| Feedback events | 180-day half-life weighting; rows until cleared | Clear |
+| Raw samples | Never stored; only 8-gram hashes are kept | Delete the profile |
+| Style card / traits | Until profile deleted | Reset learned values, override any trait |
+| Exemplars | Not stored, not sent | — |
+| Voice feedback (`voice-feedback.jsonl`) | Your edits' text, truncated to 240 characters; kept 365 days and weighted with a 180-day half-life | Disable learning; clear |
+| Voice events (`voice-events.jsonl`) | Rating, tone choice, or override key; no text | Clear |
+| Suggestion events (`suggestion-events.jsonl`) | Rule, category, and edit size only; no text | Delete in Settings |
+| Undo snapshot (`last-edit-undo.json`) | The field's before/after text, until the next edit | Deleted after one undo |
 | Usage metadata (`usage.jsonl`) | timestamp, model, token counts, provider-reported cost; no text | Delete the file from Application Support |
 
 ## Cross-device
@@ -75,11 +88,11 @@ Elocutio never reads password fields, secure input, or terminals. It disables it
 
 ## Keys
 
-- Stored with the macOS Data Protection Keychain (`kSecUseDataProtectionKeychain`), `WhenUnlockedThisDeviceOnly`, non-synchronizable.
-- Never written to logs, crash reports, diagnostics, or the database.
+- Stored in the macOS Keychain under `app.elocutio.provider.openrouter` (or `app.elocutio.provider.openai_compatible`), account `api_key`.
+- Never written to logs, crash reports, diagnostics, or the config file.
 - Passed only to the provider you configured, in the `Authorization` header over HTTPS.
 - The highlighter subprocess and the browser extension never receive keys.
-- Deleting a provider deletes its keychain item.
+- Switching provider kind leaves the previous provider's key in place, so you can switch back. Clear the key in Settings to remove it.
 
 ---
 
@@ -87,7 +100,7 @@ Elocutio never reads password fields, secure input, or terminals. It disables it
 
 When you use a cloud provider, your text is processed under that provider's terms and data-retention policy. Elocutio cannot change those policies, but it can help you choose:
 
-- OpenRouter: set `provider.data_collection: "deny"` and optionally `zdr: true` by default; note that ZDR does not cover plugins/tools (we do not use them in analysis).
+- OpenRouter: the default. Set `provider.data_collection: "deny"` and optionally `zdr: true`; note that ZDR does not cover plugins/tools (we do not use them in analysis).
 - Direct providers: link to the provider's privacy policy in Settings.
 - Local: Ollama, LM Studio, or Apple's on-device model; no network request leaves the Mac.
 - Local-only mode: disables all cloud providers; local rules and a local model only.
@@ -98,7 +111,15 @@ When you use a cloud provider, your text is processed under that provider's term
 
 **Analyze as I write** is off by default. When enabled, it waits for a typing pause and analyzes each distinct focused-field text once; turn it off to return to explicitly triggered analysis only.
 
-The app shows a **preview of the exact request** (redacted key) before sending, and a **network log** of every host contacted.
+**Block list.** An app on the block list is never read, never linted, and never
+sent to a provider, even if it is also enabled as an integration. Blocking an
+app also disables it as an integration, so the two settings cannot contradict
+each other.
+
+**Still to build:** a preview of the exact request and a network log of every
+host contacted are planned but not implemented. The current build shows the
+voice payload that would be sent, and the usage log records the provider and
+model for every request.
 
 ---
 

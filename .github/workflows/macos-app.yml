@@ -1,22 +1,36 @@
 name: macOS app
 
-# The full Tauri check compiles a large Rust dependency graph on a macOS
-# runner, which GitHub Free bills at 10x the Linux rate. It is deliberately not
-# part of routine CI.
+# The macOS app is a separate cargo workspace (`apps/macos/src-tauri` is
+# excluded from the root workspace), so it needs its own job. It used to run
+# only on demand, which left the product outside every automatic gate; it now
+# also runs automatically whenever the app, the shared crates, or the toolchain
+# change. The `paths` filter keeps it off unrelated doc-only changes, because
+# GitHub Free bills macOS runners at 10x the Linux rate.
 #
 # Run it by:
-#   - adding the `macos-app` label to a pull request, or
 #   - Actions → macOS app → Run workflow, or
+#   - adding the `macos-app` label to a pull request, or
 #   - pushing a `v*` release tag.
-#
-# Before opening a macOS PR, run `just macos-check` locally.
 
 on:
-  workflow_dispatch:
   push:
+    branches: [main]
     tags: ["v*"]
+    paths:
+      - "apps/macos/**"
+      - "crates/**"
+      - "vendor/harper/**"
+      - ".github/workflows/macos-app.yml"
+      - "rust-toolchain.toml"
   pull_request:
-    types: [labeled]
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - "apps/macos/**"
+      - "crates/**"
+      - "vendor/harper/**"
+      - ".github/workflows/macos-app.yml"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,18 +45,19 @@ env:
 
 jobs:
   macos-app:
-    name: macOS app (check, frontend, tests)
+    name: macOS app (check, frontend, tests, bundle)
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
       github.event.label.name == 'macos-app'
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -60,7 +75,14 @@ jobs:
         run: pnpm --filter @elocutio/macos build
       - name: Rust format
         run: cargo fmt --manifest-path apps/macos/src-tauri/Cargo.toml -- --check
+      - name: Rust clippy
+        run: cargo clippy --manifest-path apps/macos/src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Rust check
         run: cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
       - name: Rust tests
         run: cargo test --manifest-path apps/macos/src-tauri/Cargo.toml
+      - name: Build the app bundle
+        # The bundle config, icons, Info.plist, and bundle identifier are only
+        # exercised by a real `tauri build`. Without this step a broken
+        # `tauri.conf.json` would ship.
+        run: cd apps/macos && pnpm exec tauri build --debug --bundles app

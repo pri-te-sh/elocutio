@@ -481,8 +481,8 @@ elocutio/
 │   ├── PRIVACY.md
 │   ├── TESTING.md
 │   └── MAINTAINING.md
-├── harper-core/                 # vendored (English rules)
-├── harper-*/                    # vendored dependencies
+├── vendor/
+│   └── harper/                    # vendored subset (English rules)
 ├── apps/
 │   ├── macos/                    # forked from harper-desktop
 │   │   ├── src-tauri/
@@ -491,7 +491,10 @@ elocutio/
 │   │   │   │   ├── highlighter/  # inherited; extended
 │   │   │   │   ├── tray.rs
 │   │   │   │   ├── config/
-│   │   │   │   └── llm/          # new: orchestration, commands
+│   │   │   │   ├── llm/          # new: provider adapters, streaming
+│   │   │   │   ├── openrouter.rs # new: provider client
+│   │   │   │   ├── voice.rs      # new: local voice profile storage
+│   │   │   │   └── events.rs     # new: suggestion event log
 │   │   │   └── tauri.conf.json   # rebranded
 │   │   └── src/                  # Svelte UI (new design)
 │   ├── windows/                  # post-v1: Tauri + UIA
@@ -499,25 +502,28 @@ elocutio/
 │   └── android/                  # planned: Compose + IME/accessibility
 ├── crates/
 │   ├── elocutio-core/
-│   ├── elocutio-analysis/
-│   ├── elocutio-llm/
+│   ├── elocutio-analysis/        # chunk, prompt, resolve, merge, tone, golden
+│   ├── elocutio-llm/             # provider types, adapters, catalog, streaming
 │   ├── elocutio-voice/           # samples, traits, style card, feedback learning
-│   ├── elocutio-store/
+│   ├── elocutio-store/            # schema constants (repositories land in M1+)
 │   ├── elocutio-bridge/
 │   └── elocutio-platform/        # shared platform traits (M0/M1)
 ├── extensions/
-│   ├── chrome/
+│   ├── chrome/                   # M3
 │   ├── safari/                   # later
 │   └── firefox/                  # later
-├── tools/
-│   ├── fake-provider/
-│   └── eval/
+├── tools/                        # planned: fake-provider, eval harness
 └── scripts/
-    ├── dev.sh
-    ├── sign.sh
-    ├── notarize.sh
-    └── release.sh
+    ├── build-assets.py
+    ├── check_docs.py
+    ├── progress.py
+    ├── dev-sign.sh
+    └── fetch-upstream.sh
 ```
+
+The vendored Harper crates live under `vendor/harper/` rather than at the
+repository root, and `apps/macos/src-tauri` is a **separate cargo workspace** so
+the shared crates can be tested on Linux CI while the app needs macOS.
 
 If vendoring the entire monorepo proves unwieldy, extract `apps/macos` + the required `harper-*` crates into a smaller workspace and pin `harper-core` by git tag. Decide in M0 after measuring build times.
 

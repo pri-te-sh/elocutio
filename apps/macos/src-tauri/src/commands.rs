@@ -10,6 +10,7 @@ use crate::os_broker::{AccessibilityPermissionStatus, AppSearchResult, OsBroker}
 use crate::usage::{self, UsageSummary};
 use crate::{IntegrationView, PlatformBroker};
 use base64::{Engine as _, engine::general_purpose};
+use elocutio_analysis::{GoldenReport, MergeResult, Suggestion, Tone, ToneSignal};
 use harper_core::{
     Dialect, DictWordMetadata, IgnoredLints,
     linting::FlatConfig,
@@ -40,6 +41,8 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         rewrite_preview,
         get_provider_model,
         set_provider_model,
+        list_provider_models,
+        get_default_model,
         get_auto_analyze,
         set_auto_analyze,
         get_rewrite_tone,
@@ -48,6 +51,8 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_local_only,
         get_budget,
         set_budget,
+        get_cost_cap,
+        set_cost_cap,
         get_usage_summary,
         analyze_text,
         get_onboarding_completed,
@@ -61,6 +66,8 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_integrations,
         get_auto_enable_new_apps,
         set_auto_enable_new_apps,
+        get_blocklist,
+        set_blocked,
         add_integration,
         remove_integration,
         set_integration_enabled,
@@ -74,9 +81,29 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_voice_enabled,
         clear_voice_profile,
         get_voice_guidance,
+        rate_voice_rewrite,
+        set_voice_trait_override,
+        clear_voice_trait_override,
+        get_voice_traits,
+        get_voice_trait_overrides,
+        get_voice_event_count,
+        get_copy_guard_report,
+        get_voice_profile_summary,
+        get_voice_trait_list,
+        record_voice_rating,
+        get_feedback_fingerprint_count,
+        set_voice_trait_value,
         get_learn_from_edits,
         set_learn_from_edits,
         get_voice_feedback_count,
+        get_suggestion_events_enabled,
+        set_suggestion_events_enabled,
+        get_suggestion_event_summary,
+        clear_suggestion_events,
+        detect_text_tone,
+        merge_suggestions,
+        evaluate_golden_set,
+        run_resolver_quality_check,
         start_highlighter_service,
         stop_highlighter_service,
         launch_app,
@@ -240,7 +267,7 @@ async fn rewrite_text(
     model: Option<String>,
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<RewriteResult, String> {
-    let (provider, model, tone) = {
+    let (provider, model, tone, cost_cap) = {
         let config = config.lock().await;
         if config.local_only {
             return Err("Local-only mode is on. Turn it off to use a provider.".into());
@@ -255,8 +282,15 @@ async fn rewrite_text(
                 None => config.provider_model.clone(),
             },
             config.rewrite_tone,
+            config.cost_cap_usd,
         )
     };
+    openrouter::check_cost_cap(
+        &model,
+        text.chars().count(),
+        openrouter::REWRITE_MAX_TOKENS,
+        cost_cap,
+    )?;
     let result = openrouter::rewrite_with(
         &provider,
         &text,
@@ -288,7 +322,7 @@ async fn rewrite_preview(
     model: Option<String>,
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<RewritePreview, String> {
-    let (provider, model, tone) = {
+    let (provider, model, tone, cost_cap) = {
         let config = config.lock().await;
         if config.local_only {
             return Err("Local-only mode is on. Turn it off to use a provider.".into());
@@ -303,8 +337,15 @@ async fn rewrite_preview(
                 None => config.provider_model.clone(),
             },
             config.rewrite_tone,
+            config.cost_cap_usd,
         )
     };
+    openrouter::check_cost_cap(
+        &model,
+        text.chars().count(),
+        openrouter::REWRITE_MAX_TOKENS,
+        cost_cap,
+    )?;
     let result = openrouter::rewrite_with(
         &provider,
         &text,
@@ -330,6 +371,32 @@ async fn rewrite_preview(
 #[tauri::command]
 async fn get_provider_model(config: State<'_, Arc<Mutex<Config>>>) -> Result<String, String> {
     Ok(config.lock().await.provider_model.clone())
+}
+
+/// The models the configured provider can serve.
+///
+/// The catalog is curated and local, so the picker works offline and does not
+/// need a provider round trip.
+#[tauri::command]
+async fn list_provider_models(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<Vec<crate::openrouter::llm::ModelOption>, String> {
+    let config = config.lock().await;
+    Ok(crate::openrouter::list_models(
+        &crate::openrouter::ProviderConfig {
+            kind: config.provider_kind,
+            base_url: config.provider_base_url.clone(),
+        },
+    ))
+}
+
+/// The default model id for the configured provider.
+#[tauri::command]
+async fn get_default_model(config: State<'_, Arc<Mutex<Config>>>) -> Result<String, String> {
+    let config = config.lock().await;
+    Ok(crate::openrouter::llm::default_model_id(
+        config.provider_kind,
+    ))
 }
 
 #[tauri::command]
@@ -387,6 +454,15 @@ async fn set_rewrite_tone(
         .save_to_system()
         .await
         .map_err(|error| error.to_string())?;
+
+    // Choosing a tone is a preference, so the voice profile learns it.
+    if let Err(error) = crate::voice::record_tone_selected(
+        &format!("{:?}", config.rewrite_tone).to_lowercase(),
+        None,
+    ) {
+        eprintln!("Could not record the tone selection: {error}");
+    }
+
     Ok(config.rewrite_tone)
 }
 
@@ -434,6 +510,34 @@ async fn set_budget(
     Ok(config.budget_usd)
 }
 
+/// The hard cost ceiling for a single request, in USD.
+///
+/// Unlike the budget warning, this refuses a request before it is sent.
+#[tauri::command]
+async fn get_cost_cap(config: State<'_, Arc<Mutex<Config>>>) -> Result<Option<f64>, String> {
+    Ok(config.lock().await.cost_cap_usd)
+}
+
+#[tauri::command]
+async fn set_cost_cap(
+    cost_cap_usd: Option<f64>,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<Option<f64>, String> {
+    if let Some(value) = cost_cap_usd
+        && (!value.is_finite() || value < 0.0)
+    {
+        return Err("Enter a non-negative USD cap, or leave it blank.".into());
+    }
+
+    let mut config = config.lock().await;
+    config.cost_cap_usd = cost_cap_usd;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.cost_cap_usd)
+}
+
 #[tauri::command]
 fn get_usage_summary(limit: Option<usize>) -> Result<UsageSummary, String> {
     usage::summary(limit.unwrap_or(10).min(100))
@@ -460,7 +564,7 @@ async fn analyze_text(
         return Err("Enter some text to analyze first.".into());
     }
 
-    let (provider, model) = {
+    let (provider, model, cost_cap) = {
         let config = config.lock().await;
         if config.local_only {
             return Err("Local-only mode is on. Turn it off to use a provider.".into());
@@ -471,12 +575,26 @@ async fn analyze_text(
                 base_url: config.provider_base_url.clone(),
             },
             config.provider_model.clone(),
+            config.cost_cap_usd,
         )
     };
     let paragraphs = elocutio_analysis::chunk_paragraphs(text);
     if paragraphs.is_empty() {
         return Err("No paragraphs found.".into());
     }
+
+    // The cap covers the whole analysis, which sends up to three paragraphs.
+    let analyzed_chars: usize = paragraphs
+        .iter()
+        .take(3)
+        .map(|paragraph| paragraph.text.chars().count())
+        .sum();
+    openrouter::check_cost_cap(
+        &model,
+        analyzed_chars,
+        openrouter::ANALYSIS_MAX_TOKENS * 3,
+        cost_cap,
+    )?;
 
     let mut suggestions = Vec::new();
     let mut rejected = Vec::new();
@@ -525,8 +643,23 @@ async fn analyze_text(
         }
     }
 
+    // Rank and cap the suggestions with the shared merge module, so the
+    // analysis panel and the overlay agree on what is shown and why.
+    let merge = elocutio_analysis::merge_with_limit(
+        &[],
+        &suggestions,
+        elocutio_analysis::DEFAULT_SUGGESTION_LIMIT,
+    );
+    for dropped in &merge.report.dropped {
+        rejected.push(elocutio_analysis::RejectedEdit {
+            paragraph_id: String::new(),
+            original: dropped.suggestion.original.clone(),
+            reason: format!("{} ({})", dropped.reason.explanation(), dropped.detail),
+        });
+    }
+
     Ok(AnalyzeResponse {
-        suggestions,
+        suggestions: merge.suggestions,
         rejected,
         paragraphs: paragraphs.into_iter().take(3).collect(),
         model: response_model,
@@ -689,6 +822,30 @@ async fn get_auto_enable_new_apps(config: State<'_, Arc<Mutex<Config>>>) -> Resu
 }
 
 #[tauri::command]
+async fn get_blocklist(config: State<'_, Arc<Mutex<Config>>>) -> Result<Vec<String>, String> {
+    Ok(config.lock().await.blocklist.clone())
+}
+
+#[tauri::command]
+async fn set_blocked(
+    bundle_id: String,
+    blocked: bool,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<Vec<String>, String> {
+    let mut config = config.lock().await;
+    if blocked {
+        config.block_app(&bundle_id);
+    } else {
+        config.unblock_app(&bundle_id);
+    }
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.blocklist.clone())
+}
+
+#[tauri::command]
 async fn set_auto_enable_new_apps(
     auto_enable_new_apps: bool,
     config: State<'_, Arc<Mutex<Config>>>,
@@ -837,6 +994,137 @@ fn get_voice_guidance() -> Result<Option<String>, String> {
     Ok(crate::voice::guidance())
 }
 
+/// Rate a rewrite: "sounds like me" or "does not sound like me".
+///
+/// The rating feeds back into the profile's confidence, so the app learns
+/// whether the voice it applied was right.
+#[tauri::command]
+fn rate_voice_rewrite(rating: String) -> Result<Option<elocutio_voice::VoiceProfile>, String> {
+    crate::voice::rate_rewrite_by_name(&rating)
+}
+
+/// Set a trait the user chose by hand. Overrides always win over learned values.
+#[tauri::command]
+fn set_voice_trait_override(
+    key: String,
+    value: crate::voice::TraitValueJson,
+) -> Result<Option<elocutio_voice::VoiceProfile>, String> {
+    crate::voice::set_trait_override_json(&key, value)
+}
+
+/// Remove a user override so the learned value shows again.
+#[tauri::command]
+fn clear_voice_trait_override(key: String) -> Result<Option<elocutio_voice::VoiceProfile>, String> {
+    crate::voice::clear_trait_override(&key)
+}
+
+/// The learned traits, with their confidence and whether the user set them.
+#[tauri::command]
+fn get_voice_traits() -> Vec<crate::voice::TraitView> {
+    crate::voice::traits_for_ui()
+}
+
+/// The traits the user set by hand.
+#[tauri::command]
+fn get_voice_trait_overrides() -> Vec<(String, elocutio_voice::TraitValue)> {
+    crate::voice::trait_overrides()
+}
+
+/// How many voice events are stored locally.
+#[tauri::command]
+fn get_voice_event_count() -> usize {
+    crate::voice::voice_event_count()
+}
+
+/// The copy-guard report for a candidate rewrite.
+///
+/// This is the diagnostic behind the guard: it says which sample n-grams a
+/// candidate shares, without revealing the sample text.
+#[tauri::command]
+fn get_copy_guard_report(
+    candidate: String,
+) -> Result<Option<crate::voice::CopyGuardReport>, String> {
+    Ok(crate::voice::copy_guard_report(&candidate))
+}
+
+/// A summary of the stored voice profile for the Settings UI.
+#[tauri::command]
+fn get_voice_profile_summary() -> Option<crate::voice::VoiceProfileSummary> {
+    crate::voice::profile_summary()
+}
+
+/// The traits of the profile, with their confidence and override state.
+#[tauri::command]
+fn get_voice_trait_list() -> Vec<crate::voice::TraitOverride> {
+    crate::voice::trait_overrides_for_ui()
+}
+
+/// Record a rating without folding it into the profile yet.
+///
+/// Used when the user rates something other than the last rewrite.
+#[tauri::command]
+fn record_voice_rating(rating: String, context: Option<String>) -> Result<(), String> {
+    crate::voice::record_rating_by_name(&rating, context)
+}
+
+/// The fingerprints of the writer's own edits, for the copy guard.
+#[tauri::command]
+fn get_feedback_fingerprint_count() -> usize {
+    crate::voice::feedback_fingerprint_set().len()
+}
+
+/// Set a trait from a plain value, choosing the right trait type.
+///
+/// The UI sends a number, a boolean, or a string; the trait type follows the
+/// value, so the user does not have to pick a type as well as a value.
+#[tauri::command]
+fn set_voice_trait_value(
+    key: String,
+    value: serde_json::Value,
+) -> Result<Option<elocutio_voice::VoiceProfile>, String> {
+    let trait_value = match value {
+        serde_json::Value::Number(number) => {
+            crate::voice::numeric_trait(number.as_f64().unwrap_or_default())
+        }
+        serde_json::Value::Bool(flag) => crate::voice::boolean_trait(flag),
+        serde_json::Value::String(text) => crate::voice::text_trait(&text),
+        other => {
+            return Err(format!(
+                "A trait value must be a number, a boolean, or text, not {}.",
+                match other {
+                    serde_json::Value::Null => "null",
+                    serde_json::Value::Array(_) => "a list",
+                    serde_json::Value::Object(_) => "an object",
+                    _ => "an unsupported value",
+                }
+            ));
+        }
+    };
+    crate::voice::set_trait_override(&key, trait_value)
+}
+
+#[tauri::command]
+fn get_suggestion_events_enabled() -> bool {
+    crate::events::is_enabled()
+}
+
+#[tauri::command]
+fn set_suggestion_events_enabled(enabled: bool) -> Result<bool, String> {
+    crate::events::set_enabled(enabled)?;
+    Ok(crate::events::is_enabled())
+}
+
+#[tauri::command]
+fn get_suggestion_event_summary() -> Result<crate::events::EventSummary, String> {
+    crate::events::summarize()
+}
+
+#[tauri::command]
+fn clear_suggestion_events() -> Result<crate::events::EventSummary, String> {
+    crate::events::clear()?;
+    crate::events::summarize()
+}
+
 #[tauri::command]
 async fn get_learn_from_edits(config: State<'_, Arc<Mutex<Config>>>) -> Result<bool, String> {
     Ok(config.lock().await.learn_from_edits)
@@ -913,6 +1201,138 @@ pub(crate) async fn stop_highlighter_service(
     }
 
     Ok(highlighter_service.stop())
+}
+
+/// The detected tone of a passage, with the evidence behind it.
+#[derive(serde::Serialize, Clone)]
+struct ToneResponse {
+    tone: Tone,
+    label: String,
+    confidence: f64,
+    evidence: Vec<String>,
+    guidance: Option<String>,
+}
+
+/// A suggestion that did not make it into the merged list, and why.
+#[derive(serde::Serialize, Clone)]
+struct DroppedEntry {
+    id: String,
+    original: String,
+    replacement: String,
+    source: String,
+    reason: String,
+    detail: String,
+    kept_id: Option<String>,
+}
+
+/// Why one suggestion was ranked above another.
+#[derive(serde::Serialize, Clone)]
+struct RankingEntry {
+    id: String,
+    severity: String,
+    resolution: String,
+    interior: bool,
+    reason: String,
+}
+
+/// The merged suggestion list, what it dropped, and how it was ranked.
+#[derive(serde::Serialize, Clone)]
+struct MergeResponse {
+    suggestions: Vec<Suggestion>,
+    dropped: Vec<DroppedEntry>,
+    ranking: Vec<RankingEntry>,
+}
+
+/// Detect the register of a passage without sending it anywhere.
+///
+/// The detector is local and deterministic, so this works in local-only mode
+/// and produces the same answer for the same text every time.
+#[tauri::command]
+fn detect_text_tone(text: String) -> Result<ToneResponse, String> {
+    let signal: ToneSignal = elocutio_analysis::detect_tone(&text);
+    Ok(ToneResponse {
+        tone: signal.tone,
+        label: signal.tone.label().to_string(),
+        confidence: signal.confidence,
+        evidence: signal.evidence,
+        guidance: elocutio_analysis::tone_guidance(signal.tone).map(str::to_string),
+    })
+}
+
+/// Merge local lints with model suggestions and explain the result.
+#[tauri::command]
+fn merge_suggestions(
+    local: Vec<Suggestion>,
+    llm: Vec<Suggestion>,
+) -> Result<MergeResponse, String> {
+    let result: MergeResult = elocutio_analysis::merge_with_limit(
+        &local,
+        &llm,
+        elocutio_analysis::DEFAULT_SUGGESTION_LIMIT,
+    );
+    let document_end = result.suggestions.iter().map(|s| s.span.utf16_end).max();
+
+    let ranking = result
+        .suggestions
+        .iter()
+        .map(|s| {
+            let explanation = elocutio_analysis::merge::explain_rank(s, document_end);
+            RankingEntry {
+                id: s.id.clone(),
+                severity: format!("{:?}", s.severity).to_lowercase(),
+                resolution: format!("{:?}", s.resolution).to_lowercase(),
+                interior: explanation.interior,
+                reason: explanation.reason,
+            }
+        })
+        .collect();
+
+    let dropped = result
+        .report
+        .dropped
+        .iter()
+        .map(|entry| DroppedEntry {
+            id: entry.suggestion.id.clone(),
+            original: entry.suggestion.original.clone(),
+            replacement: entry.suggestion.replacement.clone(),
+            source: entry.source.label().to_string(),
+            reason: entry.reason.explanation().to_string(),
+            detail: entry.detail.clone(),
+            kept_id: entry.kept_id.clone(),
+        })
+        .collect();
+
+    Ok(MergeResponse {
+        suggestions: result.suggestions,
+        dropped,
+        ranking,
+    })
+}
+
+/// Score a run against the labelled golden set.
+///
+/// The harness is pure, so this is the same code the tests use. The seed set
+/// ships with the app so the metrics can be reproduced on demand.
+#[tauri::command]
+fn evaluate_golden_set(
+    golden_json: String,
+    predictions_json: String,
+) -> Result<GoldenReport, String> {
+    let set = elocutio_analysis::load_from_json(&golden_json)?;
+    let predictions: Vec<elocutio_analysis::golden::Prediction> =
+        serde_json::from_str(&predictions_json)
+            .map_err(|error| format!("Invalid predictions JSON: {error}"))?;
+    Ok(elocutio_analysis::evaluate(&set, &predictions))
+}
+
+/// Run the resolver against the golden set that ships with the app.
+///
+/// This measures the component that decides where an edit lands, which is the
+/// part of the pipeline that has to be right for an accepted suggestion to be
+/// safe.
+#[tauri::command]
+fn run_resolver_quality_check() -> Result<crate::quality::ResolverQuality, String> {
+    crate::quality::run_resolver_check()
 }
 
 #[tauri::command]

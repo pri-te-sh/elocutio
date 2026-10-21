@@ -5,54 +5,50 @@
 //! A profile is an explainable style card, not a fine-tuned model. It is built
 //! from uploaded samples and feedback, stored locally, and injected into
 //! rewrite/compose prompts. See `docs/VOICE-LEARNING.md` for the design.
+//!
+//! The crate covers four concerns:
+//!
+//! * [`copy_guard`] — 8-gram overlap detection, so a rewrite never repeats
+//!   the writer's sample content.
+//! * [`profile`] — the profile itself, trait overrides, and the learning
+//!   rules.
+//! * [`feedback`] — the event model, weights, and 180-day decay.
+//! * [`guidance`] — the short style card that is sent to a provider.
 
-use std::collections::BTreeMap;
+pub mod copy_guard;
+pub mod features;
+pub mod feedback;
+pub mod guidance;
+pub mod profile;
+pub mod retention;
 
-use serde::{Deserialize, Serialize};
-
-/// How strongly a voice profile influences a task.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VoiceStrength {
-    Off,
-    Light,
-    #[default]
-    Balanced,
-    Strong,
-}
-
-/// The writing context a profile belongs to.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VoiceContext {
-    Email,
-    Chat,
-    Document,
-    Social,
-    Support,
-    #[default]
-    General,
-}
-
-/// A single measured trait.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum TraitValue {
-    Number(f64),
-    Bool(bool),
-    Text(String),
-}
-
-/// A learned trait with confidence and evidence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VoiceTrait {
-    pub value: TraitValue,
-    pub confidence: f64,
-    pub evidence: Vec<String>,
-}
+pub use copy_guard::{
+    CopyError, CopyGuardReport, DEFAULT_NGRAM_SIZE, OverlappingSpan, assert_no_copy,
+    assert_no_copy_against_fingerprints, assert_no_copy_against_fingerprints_with_size,
+    assert_no_copy_with_size, copy_guard, copy_guard_against_fingerprints, fingerprint_ngram,
+    ngram_fingerprints, sample_fingerprints,
+};
+pub use features::{analyze_samples, contractions_count, round1, sentence_spans, word_tokens};
+pub use feedback::{
+    CATEGORY_SUPPRESSION_THRESHOLD, EditOrigin, FEEDBACK_HALF_LIFE_DAYS, FeedbackSummary, Rating,
+    SuggestionEvent, SuggestionEventKind, TERM_PREFERENCE_THRESHOLD, TermPreference, VoiceEvent,
+    VoiceEventKind, WeightedTally, category_weight, decay_factor, event_weight, has_contraction,
+    infer_term_preferences, summarize_suggestions, suppressed_categories,
+};
+pub use guidance::voice_prompt_guidance;
+pub use profile::{
+    LearnedTrait, TraitSource, TraitValue, VoiceContext, VoiceProfile, VoiceStrength, VoiceTrait,
+    accepted_edit_weight, add_sample_guards, apply_rating, apply_voice_events,
+    clear_trait_override, default_fingerprint_size, learn_from_suggestions, remove_sample_guards,
+    set_trait_override,
+};
+pub use retention::{
+    FEEDBACK_RETENTION_DAYS, MAX_STORED_TEXT_CHARS, StoredSuggestionEvent, feedback_fingerprints,
+    is_within_retention, prune_events, truncate,
+};
 
 /// Confidence bands shown in the UI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfidenceBand {
     Low,
@@ -69,307 +65,6 @@ pub fn confidence_band(sample_words: u64) -> ConfidenceBand {
         1_500..=4_999 => ConfidenceBand::High,
         _ => ConfidenceBand::VeryHigh,
     }
-}
-
-/// An explainable, local voice profile.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VoiceProfile {
-    pub id: String,
-    pub name: String,
-    pub context: VoiceContext,
-    pub language: String,
-    pub strength: VoiceStrength,
-    pub confidence: f64,
-    pub summary: String,
-    /// Trait key -> learned value, e.g. "avg_sentence_words".
-    pub traits: BTreeMap<String, VoiceTrait>,
-}
-
-impl VoiceProfile {
-    pub fn new(id: impl Into<String>, name: impl Into<String>, context: VoiceContext) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-            context,
-            language: "en".into(),
-            strength: VoiceStrength::Off,
-            confidence: 0.0,
-            summary: String::new(),
-            traits: BTreeMap::new(),
-        }
-    }
-
-    /// A profile needs enough signal to be worth injecting.
-    pub fn is_usable(&self) -> bool {
-        self.confidence >= 0.3 && !self.traits.is_empty()
-    }
-
-    pub fn trait_value(&self, key: &str) -> Option<&TraitValue> {
-        self.traits.get(key).map(|item| &item.value)
-    }
-}
-
-/// Build an explainable style card from uploaded writing samples.
-///
-/// Only aggregate traits are retained; the samples themselves are not stored.
-pub fn analyze_samples(
-    id: impl Into<String>,
-    name: impl Into<String>,
-    context: VoiceContext,
-    samples: &[String],
-) -> VoiceProfile {
-    let text = samples.join("\n\n");
-    let tokens = word_tokens(&text);
-    let sentences = sentence_spans(&text);
-    let word_count = tokens.len();
-    let sentence_count = sentences.len().max(1);
-    let paragraph_count = text
-        .split("\n\n")
-        .filter(|paragraph| !paragraph.trim().is_empty())
-        .count()
-        .max(1);
-
-    let mut profile = VoiceProfile::new(id, name, context);
-    if word_count == 0 {
-        return profile;
-    }
-
-    let sentence_lengths: Vec<f64> = sentences
-        .iter()
-        .map(|sentence| word_tokens(sentence).len() as f64)
-        .collect();
-    let mean_sentence = sentence_lengths.iter().sum::<f64>() / sentence_count as f64;
-    let variance = sentence_lengths
-        .iter()
-        .map(|length| (length - mean_sentence).powi(2))
-        .sum::<f64>()
-        / sentence_count as f64;
-
-    let lower = text.to_lowercase();
-    let contractions = contractions_count(&lower);
-    let first_person = tokens
-        .iter()
-        .filter(|word| matches!(word.as_str(), "i" | "me" | "my" | "we" | "us" | "our"))
-        .count();
-    let second_person = tokens
-        .iter()
-        .filter(|word| matches!(word.as_str(), "you" | "your" | "yours"))
-        .count();
-    let unique_words = tokens
-        .iter()
-        .map(|word| word.to_lowercase())
-        .collect::<std::collections::BTreeSet<_>>()
-        .len();
-    let average_word_length = tokens
-        .iter()
-        .map(|word| word.chars().count())
-        .sum::<usize>() as f64
-        / word_count as f64;
-
-    let confidence = ((word_count as f64 / 600.0).clamp(0.0, 1.0) * 0.85
-        + (samples.len() as f64 * 0.03).min(0.1))
-    .min(0.95);
-    profile.confidence = confidence;
-
-    let mut insert = |key: &str, value: TraitValue, evidence: String| {
-        profile.traits.insert(
-            key.to_string(),
-            VoiceTrait {
-                value,
-                confidence,
-                evidence: vec![evidence],
-            },
-        );
-    };
-
-    insert(
-        "avg_sentence_words",
-        TraitValue::Number(round1(mean_sentence)),
-        format!("{sentence_count} sentences"),
-    );
-    insert(
-        "sentence_length_variation",
-        TraitValue::Number(round1(variance.sqrt())),
-        "standard deviation".into(),
-    );
-    insert(
-        "contractions_per_100_words",
-        TraitValue::Number(round1(contractions as f64 / word_count as f64 * 100.0)),
-        format!("{contractions} contractions"),
-    );
-    insert(
-        "first_person_per_100_words",
-        TraitValue::Number(round1(first_person as f64 / word_count as f64 * 100.0)),
-        format!("{first_person} first-person tokens"),
-    );
-    insert(
-        "second_person_per_100_words",
-        TraitValue::Number(round1(second_person as f64 / word_count as f64 * 100.0)),
-        format!("{second_person} second-person tokens"),
-    );
-    insert(
-        "exclamations_per_1000_words",
-        TraitValue::Number(round1(
-            text.matches('!').count() as f64 / word_count as f64 * 1000.0,
-        )),
-        "exclamation marks".into(),
-    );
-    insert(
-        "questions_per_1000_words",
-        TraitValue::Number(round1(
-            text.matches('?').count() as f64 / word_count as f64 * 1000.0,
-        )),
-        "question marks".into(),
-    );
-    insert(
-        "semicolons_per_1000_words",
-        TraitValue::Number(round1(
-            text.matches(';').count() as f64 / word_count as f64 * 1000.0,
-        )),
-        "semicolons".into(),
-    );
-    insert(
-        "em_dashes_per_1000_words",
-        TraitValue::Number(round1(
-            (text.matches('—').count() + text.matches(" - ").count()) as f64 / word_count as f64
-                * 1000.0,
-        )),
-        "em dashes".into(),
-    );
-    insert(
-        "lexical_diversity",
-        TraitValue::Number(round1(unique_words as f64 / word_count as f64)),
-        format!("{unique_words} unique words"),
-    );
-    insert(
-        "avg_word_length",
-        TraitValue::Number(round1(average_word_length)),
-        "characters per word".into(),
-    );
-    insert(
-        "avg_sentences_per_paragraph",
-        TraitValue::Number(round1(sentence_count as f64 / paragraph_count as f64)),
-        format!("{paragraph_count} paragraphs"),
-    );
-    insert(
-        "uses_contractions",
-        TraitValue::Bool(contractions * 100 >= word_count / 2),
-        format!("{contractions} contractions"),
-    );
-
-    profile.summary = format!(
-        "About {:.0} words per sentence, {:.1} contractions per 100 words, {:.0}% first-person, {:.0}% unique words.",
-        mean_sentence,
-        contractions as f64 / word_count as f64 * 100.0,
-        first_person as f64 / word_count as f64 * 100.0,
-        unique_words as f64 / word_count as f64 * 100.0
-    );
-
-    profile
-}
-
-/// Compact prompt guidance derived only from confident profile traits.
-pub fn voice_prompt_guidance(profile: &VoiceProfile) -> Option<String> {
-    if !profile.is_usable() || profile.strength == VoiceStrength::Off {
-        return None;
-    }
-
-    let mut lines = Vec::new();
-    if let Some(TraitValue::Number(value)) = profile.trait_value("avg_sentence_words") {
-        lines.push(format!(
-            "Keep sentences around {value:.0} words on average."
-        ));
-    }
-    if let Some(TraitValue::Number(value)) = profile.trait_value("contractions_per_100_words") {
-        if *value >= 1.0 {
-            lines.push("Use contractions naturally.".to_string());
-        } else {
-            lines.push("Avoid contractions unless they are already natural.".to_string());
-        }
-    }
-    if let Some(TraitValue::Number(value)) = profile.trait_value("first_person_per_100_words")
-        && *value >= 2.0
-    {
-        lines.push("First person is part of this voice.".to_string());
-    }
-    if let Some(TraitValue::Number(value)) = profile.trait_value("questions_per_1000_words")
-        && *value >= 15.0
-    {
-        lines.push("Occasional rhetorical questions fit this voice.".to_string());
-    }
-    if let Some(TraitValue::Number(value)) = profile.trait_value("avg_word_length")
-        && *value < 4.2
-    {
-        lines.push("Prefer short, plain words.".to_string());
-    }
-    if let Some(TraitValue::Bool(value)) = profile.trait_value("prefers_concise")
-        && *value
-    {
-        lines.push("Prefer concise phrasing; trim filler.".to_string());
-    }
-    if let Some(TraitValue::Bool(value)) = profile.trait_value("prefers_contractions") {
-        if *value {
-            lines.push("Use contractions where natural.".to_string());
-        } else {
-            lines.push("Avoid contractions unless already present.".to_string());
-        }
-    }
-
-    if lines.is_empty() {
-        return None;
-    }
-
-    Some(format!(
-        "Match the writer's voice. Do not copy their content or mention this guidance.\n{}",
-        lines.join("\n")
-    ))
-}
-
-fn word_tokens(text: &str) -> Vec<String> {
-    text.split_whitespace()
-        .map(|word| {
-            word.trim_matches(|character: char| {
-                !character.is_alphabetic() && character != '\'' && character != '-'
-            })
-            .to_lowercase()
-        })
-        .filter(|word| !word.is_empty())
-        .collect()
-}
-
-fn sentence_spans(text: &str) -> Vec<&str> {
-    let mut sentences = Vec::new();
-    let mut start = 0;
-    for (index, character) in text.char_indices() {
-        if matches!(character, '.' | '!' | '?') {
-            let end = index + character.len_utf8();
-            if !text[start..end].trim().is_empty() {
-                sentences.push(&text[start..end]);
-            }
-            start = end;
-        }
-    }
-    if start < text.len() && !text[start..].trim().is_empty() {
-        sentences.push(&text[start..]);
-    }
-    sentences
-}
-
-fn contractions_count(lower: &str) -> usize {
-    lower
-        .split_whitespace()
-        .filter(|word| {
-            let word = word
-                .trim_matches(|character: char| !character.is_alphabetic() && character != '\'');
-            ["n't", "'ll", "'re", "'ve", "'m", "'d", "'s"]
-                .iter()
-                .any(|suffix| word.ends_with(suffix))
-        })
-        .count()
-}
-
-fn round1(value: f64) -> f64 {
-    (value * 10.0).round() / 10.0
 }
 
 #[cfg(test)]
@@ -399,11 +94,11 @@ mod tests {
         profile.confidence = 0.82;
         profile.traits.insert(
             "contractions".into(),
-            VoiceTrait {
-                value: TraitValue::Text("frequent".into()),
-                confidence: 0.9,
-                evidence: vec!["12 emails".into()],
-            },
+            VoiceTrait::learned(
+                TraitValue::Text("frequent".into()),
+                0.9,
+                vec!["12 emails".into()],
+            ),
         );
         let json = serde_json::to_string(&profile).unwrap();
         let decoded: VoiceProfile = serde_json::from_str(&json).unwrap();
@@ -427,6 +122,17 @@ mod tests {
     }
 
     #[test]
+    fn the_analyzer_never_stores_the_sample_text() {
+        let samples = vec![
+            "This is a very distinctive sentence that should never appear in the profile."
+                .to_string(),
+        ];
+        let profile = analyze_samples("vp1", "Work", VoiceContext::Email, &samples);
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(!json.contains("distinctive sentence"));
+    }
+
+    #[test]
     fn guidance_is_only_emitted_for_usable_profiles() {
         let mut profile = VoiceProfile::new("vp1", "Work", VoiceContext::Email);
         assert!(voice_prompt_guidance(&profile).is_none());
@@ -434,11 +140,7 @@ mod tests {
         profile.strength = VoiceStrength::Balanced;
         profile.traits.insert(
             "avg_sentence_words".into(),
-            VoiceTrait {
-                value: TraitValue::Number(14.0),
-                confidence: 0.8,
-                evidence: vec![],
-            },
+            VoiceTrait::learned(TraitValue::Number(14.0), 0.8, vec![]),
         );
         let guidance = voice_prompt_guidance(&profile).unwrap();
         assert!(guidance.contains("14 words"));
@@ -451,11 +153,7 @@ mod tests {
         assert!(!profile.is_usable());
         profile.traits.insert(
             "formality".into(),
-            VoiceTrait {
-                value: TraitValue::Number(3.2),
-                confidence: 0.7,
-                evidence: vec![],
-            },
+            VoiceTrait::learned(TraitValue::Number(3.2), 0.7, vec![]),
         );
         assert!(profile.is_usable());
     }

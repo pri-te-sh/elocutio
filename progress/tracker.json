@@ -231,18 +231,29 @@
           "priority": "P0",
           "estimateDays": 1.5,
           "status": "in_progress",
-          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay; Chrome and Mail are excluded from AX probing for M0 stability (Chrome needs the M3 extension, Mail needs a text-bounds fallback). Rewrite Selection works in TextEdit, Safari, and Chrome.",
+          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay; Chrome and Mail are excluded from AX probing for M0 stability (Chrome needs the M3 extension, Mail needs a text-bounds fallback). Rewrite Selection works in TextEdit, Safari, and Chrome. The app support matrix is tracked in apps/macos/src-tauri/src/app_matrix.json and a test keeps it in step with the Rust allowlist.",
           "dependsOn": [
             "m0-fork"
           ],
           "evidence": [
             {
-              "type": "glob",
-              "pattern": "apps/macos/src-tauri/src/**/*.rs"
+              "type": "path",
+              "path": "apps/macos/src-tauri/src/app_matrix.json"
             },
             {
-              "type": "path",
-              "path": "docs/M0-VERIFICATION.md"
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/app_matrix.json",
+              "contains": "\"com.apple.mail\""
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/app_matrix.json",
+              "contains": "\"com.google.Chrome\""
+            },
+            {
+              "type": "text",
+              "path": "docs/M0-VERIFICATION.md",
+              "contains": "Overlay matrix"
             }
           ]
         },
@@ -274,16 +285,33 @@
           "area": "build",
           "priority": "P0",
           "estimateDays": 1,
-          "notes": "System-wide Rewrite Selection works via \u2325\u2318E or the tray menu using a transient/concealed pasteboard string, \u2318V, read-back verification, and text clipboard restore in TextEdit, Safari, and Chrome. The overlay uses the AX fast path for local lints.",
+          "notes": "System-wide Rewrite Selection works via ⌥⌘E or the tray menu using a transient/concealed pasteboard string, ⌘V, read-back verification, and text clipboard restore in TextEdit, Safari, and Chrome. The overlay uses the AX fast path for local lints.",
           "dependsOn": [
             "m0-build",
             "m0-llm"
           ],
-          "status": "done"
+          "status": "done",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/rewrite.rs",
+              "contains": "MAX_SELECTION_CHARS"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/mac_broker/mod.rs",
+              "contains": "replace_selection_via_paste"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/pasteboard.rs",
+              "contains": "org.nspasteboard.TransientType"
+            }
+          ]
         },
         {
           "id": "m0-ipc",
-          "title": "Decide IPC ownership and document the main \u2194 highlighter protocol",
+          "title": "Decide IPC ownership and document the main ↔ highlighter protocol",
           "area": "build",
           "priority": "P0",
           "estimateDays": 0,
@@ -329,7 +357,7 @@
           "accepted": true
         },
         {
-          "text": "A rewrite replaces the selection correctly via pasteboard + \u2318V, with AX fast path where settable",
+          "text": "A rewrite replaces the selection correctly via pasteboard + ⌘V, with AX fast path where settable",
           "accepted": true
         },
         {
@@ -366,8 +394,15 @@
           "dependsOn": [
             "m0-llm"
           ],
-          "status": "in_progress",
-          "notes": "OpenRouter remains the default. OpenAI-compatible Chat Completions endpoints are supported with a custom base URL and optional Keychain key; auth/quota/model/rate/offline errors are explicit and transient failures retry with backoff. Streaming remains."
+          "status": "done",
+          "notes": "OpenRouter and OpenAI-compatible adapters share one canonical request type. The error taxonomy (13 kinds) is live code, the model catalog is a local curated table, the SSE stream decoder is tested, and the default model no longer sends a temperature the Claude 5 family rejects. Streaming is implemented and tested but not yet wired to a command.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "crates/elocutio-llm/src/lib.rs",
+              "contains": "impl Provider"
+            }
+          ]
         },
         {
           "id": "m1-pipeline",
@@ -376,7 +411,24 @@
           "priority": "P0",
           "estimateDays": 2,
           "notes": "Paragraph chunking, prompt p1, JSON schema s1, payload validation, exact/normalized/fuzzy span resolution, dedupe, and rejected-edit reporting are implemented in elocutio-analysis with 18 tests and wired to an in-app Analyze card.",
-          "status": "done"
+          "status": "done",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "crates/elocutio-analysis/src/prompt.rs",
+              "contains": "PROMPT_VERSION"
+            },
+            {
+              "type": "text",
+              "path": "crates/elocutio-analysis/src/parse.rs",
+              "contains": "parse_response"
+            },
+            {
+              "type": "text",
+              "path": "crates/elocutio-analysis/src/resolve.rs",
+              "contains": "resolve_fuzzy"
+            }
+          ]
         },
         {
           "id": "m1-merge",
@@ -389,7 +441,14 @@
             "m1-providers"
           ],
           "status": "done",
-          "notes": "Local lints take precedence on overlapping spans; LLM suggestions fill gaps. The merged list is sorted by screen position and severity (high before medium before low)."
+          "notes": "Local lints take precedence on overlapping spans; LLM suggestions fill gaps. The merged list is sorted by screen position and severity (high before medium before low).",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "crates/elocutio-analysis/src/merge.rs",
+              "contains": "pub fn merge"
+            }
+          ]
         },
         {
           "id": "m1-card",
@@ -401,7 +460,19 @@
             "m0-build"
           ],
           "status": "done",
-          "notes": "The inherited card renders local + cached LLM suggestions with accept/dismiss/explain. A compact white widget on every supported focused field shows the count, opens the card, and triggers analysis via an AI action over IPC."
+          "notes": "The inherited card renders local + cached LLM suggestions with accept/dismiss/explain. A compact white widget on every supported focused field shows the count, opens the card, and triggers analysis via an AI action over IPC.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/highlighter/render_state/render_lint_card.rs",
+              "contains": "LintCardAction"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/mac_broker/accessibility_text.rs",
+              "contains": "cached_lint"
+            }
+          ]
         },
         {
           "id": "m1-onboarding",
@@ -410,7 +481,19 @@
           "priority": "P0",
           "estimateDays": 1,
           "status": "done",
-          "notes": "Onboarding checklist checks Accessibility, Keychain provider key, and \u2325\u2318E; completion persists so setup opens once."
+          "notes": "Onboarding checklist checks Accessibility, Keychain provider key, and ⌥⌘E; completion persists so setup opens once.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src/App.svelte",
+              "contains": "Welcome to Elocutio"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/commands.rs",
+              "contains": "set_onboarding_completed"
+            }
+          ]
         },
         {
           "id": "m1-settings",
@@ -428,21 +511,51 @@
           "priority": "P0",
           "estimateDays": 0.5,
           "status": "done",
-          "notes": "Provider key lives in Keychain; usage log records metadata only; Settings supports an optional USD budget warning from the log."
+          "notes": "Provider key lives in Keychain; usage log records metadata only; Settings supports an optional USD budget warning from the log.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/openrouter.rs",
+              "contains": "keychain_service"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/usage.rs",
+              "contains": "usage.jsonl"
+            }
+          ]
         },
         {
           "id": "m1-events",
           "title": "Record accept, dismiss, and edit-after-accept events locally (opt-in) for voice v0",
           "area": "voice",
           "priority": "P1",
-          "estimateDays": 0.5
+          "estimateDays": 0.5,
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/events.rs",
+              "contains": "pub fn record_event"
+            }
+          ],
+          "status": "done",
+          "notes": "Suggestion events are recorded locally: rule, category, and edit size, never the text. The log is opt-in, bounded, and deletable from Settings."
         },
         {
           "id": "m1-golden",
           "title": "Golden-set harness v0: false-positive rate and span-accuracy metrics",
           "area": "qa",
           "priority": "P1",
-          "estimateDays": 1
+          "estimateDays": 1,
+          "evidence": [
+            {
+              "type": "text",
+              "path": "crates/elocutio-analysis/src/golden.rs",
+              "contains": "pub fn evaluate"
+            }
+          ],
+          "status": "done",
+          "notes": "A golden-set harness with span precision/recall/F0.5, exact-match, over-edit, schema-failure, and resolution metrics, plus the plan's regression gate. The seed set has 44 items with 8 no-error controls; the plan wants 200-500, so the data still needs to grow."
         },
         {
           "id": "m1-gate",
@@ -510,12 +623,13 @@
           ],
           "evidence": [
             {
-              "type": "glob",
-              "pattern": "apps/macos/src/**/widget*"
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/highlighter/render_state/mod.rs",
+              "contains": "elocutio-suggestion-widget"
             }
           ],
           "status": "in_progress",
-          "notes": "The floating Harper-style widget shows the live count, opens the inherited card, triggers AI analysis, and anchors to the first underline or screen corner. Per-app positioning, tone badge, and drag behavior remain."
+          "notes": "The floating widget shows the live count, opens the inherited card, triggers AI analysis, and anchors to the first underline or the screen corner. Per-app positioning, a tone badge, and drag behavior remain."
         },
         {
           "id": "m2-live",
@@ -525,7 +639,16 @@
           "estimateDays": 2,
           "dependsOn": [
             "m1-providers"
-          ]
+          ],
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/auto_analyze.rs",
+              "contains": "STABLE_DELAY"
+            }
+          ],
+          "status": "in_progress",
+          "notes": "The live watcher debounces, deduplicates, throttles per app, and discards a stale result. Only the changed paragraphs are sent, so a long document costs the same as a short one."
         },
         {
           "id": "m2-tone",
@@ -534,7 +657,14 @@
           "priority": "P1",
           "estimateDays": 2,
           "status": "in_progress",
-          "notes": "Tone rewrite presets (neutral/confident/friendly/concise/formal) are wired into the provider prompt and Settings. Local tone detection and custom instructions remain."
+          "notes": "Tone detection is local, deterministic, and explainable: it measures contractions, hedges, intensifiers, pronouns, imperatives, passive voice, and sentence length, and shows the evidence. Tone presets feed the provider prompt. Custom instructions are sanitized but not yet exposed in the UI.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "crates/elocutio-analysis/src/tone.rs",
+              "contains": "pub fn detect_tone"
+            }
+          ]
         },
         {
           "id": "m2-paragraph",
@@ -543,21 +673,46 @@
           "priority": "P1",
           "estimateDays": 2,
           "status": "in_progress",
-          "notes": "Word-level diff previews render in Settings for provider rewrites. System-wide paragraph replacement with accept/reject from the overlay remains."
+          "notes": "The word-level diff renders in Settings after a rewrite. The system-wide path still replaces the selection immediately, without a preview to accept or reject.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "crates/elocutio-analysis/src/diff.rs",
+              "contains": "pub fn diff_words"
+            }
+          ]
         },
         {
           "id": "m2-cache",
           "title": "Cache, request coalescing, and cost caps",
           "area": "analysis",
           "priority": "P1",
-          "estimateDays": 1
+          "estimateDays": 1,
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/llm_cache.rs",
+              "contains": "text_hash"
+            }
+          ],
+          "status": "in_progress",
+          "notes": "The suggestion cache is keyed by text hash with a 24-hour time to live, and a per-request cost cap refuses a request before it is sent. Request coalescing is not implemented."
         },
         {
           "id": "m2-secure",
           "title": "Secure-field and blocklist hardening",
           "area": "privacy",
           "priority": "P0",
-          "estimateDays": 1
+          "estimateDays": 1,
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/mac_broker/mod.rs",
+              "contains": "IsSecureEventInputEnabled"
+            }
+          ],
+          "status": "in_progress",
+          "notes": "Secure input and secure text fields are refused, and a block list stops an app from being read or sent to a provider even when it is enabled as an integration."
         },
         {
           "id": "m2-matrix",
@@ -578,8 +733,20 @@
           "dependsOn": [
             "m1-events"
           ],
-          "status": "in_progress",
-          "notes": "Uploaded samples build a local style card with confidence; accepted edits feed concise/contraction traits when opted in. Dismissed/edited-after-accept feedback and trait overrides remain."
+          "status": "done",
+          "notes": "The style card holds 12 aggregate traits plus 8-gram sample fingerprints, so the copy guard works without storing raw samples. Feedback covers accepted, dismissed, and edited-after-accept edits, weighted with a 180-day half-life and down-weighting model-authored text.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "crates/elocutio-voice/src/lib.rs",
+              "contains": "analyze_samples"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/voice.rs",
+              "contains": "record_accepted"
+            }
+          ]
         },
         {
           "id": "m2-voice-apply",
@@ -590,8 +757,20 @@
           "dependsOn": [
             "m2-voice-profile"
           ],
-          "status": "in_progress",
-          "notes": "A usable style card is injected into rewrites and can be toggled in Settings. \"Sounds like me\" ratings and manual trait overrides remain."
+          "status": "done",
+          "notes": "The style card is injected into rewrite prompts, and a copy guard refuses output that repeats the writer's samples. The user can rate a rewrite, override any trait by hand, and clear an override to restore the learned value.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "crates/elocutio-voice/src/lib.rs",
+              "contains": "voice_prompt_guidance"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/rewrite.rs",
+              "contains": "crate::voice::guidance()"
+            }
+          ]
         }
       ],
       "acceptance": [
@@ -600,7 +779,7 @@
           "accepted": false
         },
         {
-          "text": "Underlines align within \u00b12 pt",
+          "text": "Underlines align within ±2 pt",
           "accepted": false
         },
         {
@@ -784,7 +963,7 @@
         },
         {
           "id": "m4-brandvoice",
-          "title": "Brand voice from 3\u201310 sample documents (few-shot profile)",
+          "title": "Brand voice from 3–10 sample documents (few-shot profile)",
           "area": "voice",
           "priority": "P1",
           "estimateDays": 2,
@@ -1006,7 +1185,7 @@
     {
       "id": "R4",
       "risk": "Text injection corruption",
-      "mitigation": "Re-read before injecting; pasteboard + \u2318V primary; read-back verify; abort on mismatch; undo; never touch secure fields.",
+      "mitigation": "Re-read before injecting; pasteboard + ⌘V primary; read-back verify; abort on mismatch; undo; never touch secure fields.",
       "severity": "high",
       "area": "build"
     },

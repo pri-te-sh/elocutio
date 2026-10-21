@@ -1,0 +1,17 @@
+{
+  "$comment": "Machine-readable app support matrix. This file is the single source of truth for which apps the overlay draws in, and it is embedded into the app at build time. The tracker evidence rule for m0-build reads this file, so the M0 gate ('overlay works in 5 apps') can only pass when all five target apps are listed in overlaySupported.",
+  "targetOverlayApps": [
+    "com.apple.TextEdit",
+    "com.apple.Notes",
+    "com.apple.mail",
+    "com.apple.Safari",
+    "com.google.Chrome"
+  ],
+  "overlaySupported": ["com.apple.TextEdit", "com.apple.Notes", "com.apple.Safari"],
+  "writeLadderVerified": ["com.apple.TextEdit", "com.apple.Safari", "com.google.Chrome"],
+  "notes": {
+    "com.apple.mail": "Compose exposes a text element but never produces usable text-range bounds, so no overlay.",
+    "com.google.Chrome": "The Chromium overlay needs the M3 extension; the AX path is excluded for stability because probing Chromium AX trees can abort the highlighter.",
+    "verification": "Entries in writeLadderVerified are user-reported interactive checks recorded in docs/M0-VERIFICATION.md."
+  }
+}

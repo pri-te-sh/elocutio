@@ -16,6 +16,19 @@ use crate::os_broker::OsBroker;
 use crate::{PlatformBroker, llm_cache, main_thread, openrouter, rewrite, usage};
 
 pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
+    analyze_focused_field_with(app, None).await
+}
+
+/// Analyze the focused field, optionally sending only what changed.
+///
+/// `previous_text` enables the diff-only behaviour the plan asks for in live
+/// mode: when the caller knows what the field looked like at the last
+/// analysis, only the paragraphs that changed since then are sent. The cost
+/// of a long document then stops growing with its length.
+pub async fn analyze_focused_field_with(
+    app: &AppHandle,
+    previous_text: Option<&str>,
+) -> Result<String, String> {
     let focused = main_thread::run(app, |app| {
         let state = app.state::<RwLock<PlatformBroker>>();
         let mut broker = state
@@ -24,8 +37,7 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
         broker.focused_text()
     })??;
 
-    let focused = focused
-        .ok_or_else(|| "Focus a text field in TextEdit, Notes, or Safari first.".to_string())?;
+    let focused = focused.ok_or_else(|| "Focus a text field in any app first.".to_string())?;
 
     let (provider, model) = {
         let config = app.state::<Arc<Mutex<Config>>>();
@@ -48,6 +60,24 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
     let paragraphs = chunk_paragraphs(&focused.text);
     if paragraphs.is_empty() {
         return Err("The focused field is empty.".into());
+    }
+
+    // In live mode only the changed paragraphs are sent. The offsets are still
+    // resolved against the full text, so a suggestion lands in the right place
+    // even when it came from a partial request.
+    let paragraphs: Vec<_> = match previous_text {
+        Some(previous) => {
+            let changed = crate::auto_analyze::changed_paragraphs(&focused.text, Some(previous));
+            paragraphs
+                .into_iter()
+                .filter(|paragraph| changed.iter().any(|text| text == &paragraph.text))
+                .collect()
+        }
+        None => paragraphs,
+    };
+
+    if paragraphs.is_empty() {
+        return Ok("Nothing changed since the last analysis.".to_string());
     }
 
     let mut suggestions = Vec::new();
@@ -79,7 +109,7 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
                 paragraph_char_start + utf16_to_char(&paragraph.text, suggestion.span.utf16_start);
             let char_end =
                 paragraph_char_start + utf16_to_char(&paragraph.text, suggestion.span.utf16_end);
-            suggestions.push(cache_suggestion(suggestion, char_start, char_end));
+            suggestions.push((char_start, char_end, suggestion));
         }
 
         if let Err(error) = usage::record_parts(
@@ -92,6 +122,10 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
         }
     }
 
+    // Rank and cap with the shared merge module, then convert to the cache's
+    // character offsets. The merge has to compare spans from different
+    // paragraphs, so it works on document-level UTF-16 spans.
+    let suggestions = rank_suggestions(&focused.text, suggestions);
     let count = suggestions.len();
     let cache = CachedAnalysis {
         pid: focused.pid,
@@ -111,6 +145,78 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
     } else {
         Ok(format!("{count} LLM suggestion(s) ready in the overlay."))
     }
+}
+
+/// Rank the model's suggestions with the shared merge module and cap the list.
+///
+/// The merge module is the single place that knows how overlapping edits are
+/// resolved and how the result is ordered, so the overlay and the analysis
+/// panel cannot disagree about what the user sees.
+///
+/// The merge works on the canonical `Suggestion` type, whose spans are UTF-16
+/// offsets into the document. The analysis pipeline resolves spans per
+/// paragraph, so the offsets are shifted to document-level ones before the
+/// merge and converted back to character offsets afterwards.
+pub fn rank_suggestions(
+    document: &str,
+    suggestions: Vec<(usize, usize, Suggestion)>,
+) -> Vec<CachedSuggestion> {
+    // Map a character offset in the document to its UTF-16 offset.
+    let utf16_prefix: Vec<usize> = document
+        .char_indices()
+        .map(|(index, _)| document[..index].encode_utf16().count())
+        .chain(std::iter::once(document.encode_utf16().count()))
+        .collect();
+
+    let char_to_utf16 = |char_offset: usize| -> usize {
+        utf16_prefix
+            .get(char_offset)
+            .copied()
+            .unwrap_or_else(|| document.encode_utf16().count())
+    };
+
+    // The character offsets are authoritative, so the document-level UTF-16
+    // span is rebuilt from them rather than from the paragraph-relative
+    // values the resolver produced.
+    let canonical: Vec<Suggestion> = suggestions
+        .iter()
+        .map(|(char_start, char_end, suggestion)| {
+            let mut shifted = suggestion.clone();
+            shifted.span.utf16_start = char_to_utf16(*char_start);
+            shifted.span.utf16_end = char_to_utf16(*char_end);
+            shifted.span.grapheme_start = *char_start;
+            shifted.span.grapheme_end = *char_end;
+            shifted
+        })
+        .collect();
+
+    let result = elocutio_analysis::merge_with_limit(
+        &[],
+        &canonical,
+        elocutio_analysis::DEFAULT_SUGGESTION_LIMIT,
+    );
+
+    for dropped in &result.report.dropped {
+        eprintln!(
+            "Dropped suggestion {} ({}): {}",
+            dropped.suggestion.id,
+            dropped.reason.explanation(),
+            dropped.detail
+        );
+    }
+
+    // Map the merged suggestions back onto the character offsets the cache
+    // uses, by looking the id up in the original list.
+    result
+        .suggestions
+        .into_iter()
+        .filter_map(|suggestion| {
+            let original = suggestions
+                .iter()
+                .find(|(_, _, candidate)| candidate.id == suggestion.id)?;
+            Some(cache_suggestion(suggestion, original.0, original.1))
+        })
+        .collect()
 }
 
 fn cache_suggestion(

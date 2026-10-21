@@ -43,15 +43,28 @@ Out of scope:
 
 ## Design commitments
 
-- API keys are stored in the macOS Data Protection Keychain, device-only, non-synchronizable.
-- Keys live only in the main process; the highlighter and browser extension never receive them.
-- The local bridge binds to `127.0.0.1`, requires a pairing token, and checks the `Origin`.
-- The app makes network requests only to user-configured provider hosts and the update endpoint.
-- No telemetry or third-party analytics by default.
-- Updates are signed and verified before installation.
-- Secure input fields are never read or modified.
-- Voice samples are encrypted at rest; deleting a sample/profile cascades to derived data.
-- Only the style card and user-reviewed excerpts are sent to providers, with a preview.
+These are the guarantees the project holds itself to. The **Status** column
+says which ones the current build actually provides, so this file never claims
+a protection the code does not have yet.
+
+| Commitment | Status |
+| --- | --- |
+| API keys are stored in the macOS Keychain, never in the config file or logs | **Implemented** |
+| Keys live only in the main process; the highlighter and browser extension never receive them | **Implemented** |
+| The app makes network requests only to user-configured provider hosts | **Implemented** |
+| No telemetry or third-party analytics by default | **Implemented** |
+| Secure input fields are never read or modified | **Implemented** |
+| Apps on the block list are never read or sent to a provider | **Implemented** |
+| The usage log records metadata only, never your text | **Implemented** |
+| The local bridge binds to `127.0.0.1`, requires a pairing token, and checks the `Origin` | **Planned (M3)** — no bridge server exists yet |
+| Updates are signed and verified before installation | **Planned (M5)** — the updater is removed for now, so there is no unsigned-update path |
+| Voice samples are encrypted at rest | **Planned** — the current build stores only the aggregate style card, in a plain local file |
+| Deleting a sample/profile cascades to derived data | **Implemented for the profile**; per-sample deletion arrives with M3 uploads |
+| Only the style card is sent to providers, with a preview | **Implemented** — no excerpts are sent yet |
+
+The inherited Harper code has **not** yet had the security review that
+`docs/PLAN.md` lists as a fork condition. See
+[`docs/M0-VERIFICATION.md`](docs/M0-VERIFICATION.md).
 
 ## Threat model
 

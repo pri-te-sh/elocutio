@@ -80,6 +80,33 @@ to follow [Semantic Versioning](https://semver.org/).
   [`docs/M0-VERIFICATION.md`](docs/M0-VERIFICATION.md).
 - Brand guide v1.1 with **Soft Indigo `#B8BEFF`** for dark-mode accents and
   optional dark-surface logo, plus dark-mode UI tokens.
+- A real provider abstraction: OpenRouter and OpenAI-compatible adapters share
+  one canonical request type, a 13-kind error taxonomy, a curated model
+  catalog, and a tested SSE stream decoder.
+- The default request no longer sends a `temperature`. Claude Haiku 5.5
+  rejects any value other than `1`, so the key is omitted entirely.
+- The clipboard is restored at the item level, so images and files survive a
+  rewrite instead of being destroyed.
+- The paste read-back is a structural check rather than a substring test.
+- A ranked, explained merge for local and model suggestions, with every
+  dropped suggestion reported.
+- Local, deterministic tone detection with the evidence behind each label.
+- A golden-set harness with span precision/recall/F0.5, over-edit rate, and the
+  plan's regression gate, plus a seed set that ships with the app.
+- A suggestion event log that stores the rule, category, and edit size but
+  never the text.
+- Voice learning from accepted, dismissed, and edited-after-accept edits, with
+  a 180-day half-life and down-weighted model-authored text.
+- A voice copy guard: a rewrite that repeats the writer's own samples is
+  refused, using 8-gram fingerprints so the samples themselves stay discarded.
+- Trait overrides, "sounds like me" ratings, and a copy-guard preview.
+- A block list: a blocked app is never read and never sent to a provider.
+- A per-request cost cap that refuses a request before it is sent.
+- Live-mode guards: debounce, per-app throttle, diff-only sending, and a
+  stale-result check.
+- A tracked app support matrix that a test keeps in step with the code.
+- A progress ledger that derives status from evidence, flags unsupported
+  claims, and rejects evidence rules that match nothing.
 
 ### Changed
 
@@ -114,8 +141,12 @@ to follow [Semantic Versioning](https://semver.org/).
 - Chrome and Mail do not show the overlay yet; Chrome needs the M3 extension
   path and Mail needs a text-bounds fallback.
 - The Rewrite Selection shortcut is fixed at ⌥⌘E; it is not configurable yet.
-- LLM suggestions require Analyze Field; there is no automatic analysis yet.
-- Clipboard restore handles text only; non-text pasteboard items are replaced.
+- The word-level diff renders in Settings; the system-wide rewrite still
+  replaces the selection without a preview to accept or reject.
+- Custom rewrite instructions are sanitized but not yet exposed in the UI.
+- The voice fingerprint set grows with the sample size, so a very large upload
+  would make the style card large. This needs a decision before M3.
+- Streaming is implemented and tested but not yet wired to a command.
 - M0 uses an unsigned debug app; no notarized release or updater yet.
 
 ## [0.0.0] - 2026-10-19

@@ -152,9 +152,10 @@ def _is_relative_selector(value: str) -> bool:
     return ".." not in Path(text).parts
 
 
-def validate_tracker(tracker: dict) -> list[str]:
+def validate_tracker(tracker: dict, root: Path | None = None) -> list[str]:
     """Return a list of human-readable schema and consistency errors."""
     errors: list[str] = []
+    repo_root = root if root is not None else REPO_ROOT
 
     if tracker.get("schemaVersion") != SCHEMA_VERSION:
         errors.append(f"schemaVersion must be {SCHEMA_VERSION}")
@@ -299,6 +300,21 @@ def validate_tracker(tracker: dict) -> list[str]:
                     rule.get("name" if rule["type"] == "git-remote" else "pattern"), str
                 ):
                     errors.append(f"{tid}: {rule['type']} evidence is missing its selector")
+                if rule["type"] == "glob" and isinstance(rule.get("pattern"), str):
+                    # A glob that matches nothing can never pass, so it is not a
+                    # check — it is a typo. Catch it in `validate` instead of
+                    # letting it sit silently in the dashboard forever.
+                    pattern = rule["pattern"]
+                    if _is_relative_selector(pattern):
+                        matches = [
+                            candidate
+                            for candidate in repo_root.glob(pattern)
+                            if candidate.is_file()
+                        ]
+                        if not matches:
+                            errors.append(
+                                f"{tid}: glob evidence pattern matches no file: {pattern}"
+                            )
             depends_on = task.get("dependsOn", [])
             if not isinstance(depends_on, list) or any(not isinstance(dep, str) for dep in depends_on):
                 errors.append(f"{tid}: dependsOn must be a list of task ids")
@@ -554,6 +570,17 @@ def task_payload(
     status = manual if manual in STATUS_VALUES else suggested
     source = "manual" if manual in STATUS_VALUES else ("evidence" if evidence else "none")
     drift = bool(manual in STATUS_VALUES and manual != suggested and suggested == "done")
+    # Drift only catches a manual status that lags behind the evidence. A manual
+    # status that runs *ahead* of the evidence is the more dangerous case: a task
+    # marked done with no evidence at all, or with failing evidence. It has to be
+    # visible too, otherwise the dashboard green-lights exactly the claims that
+    # nothing verifies.
+    unsupported = bool(
+        manual in STATUS_VALUES
+        and manual in ("done", "blocked")
+        and suggested != manual
+    )
+    unverified = bool(manual in STATUS_VALUES and manual == "done" and not evidence)
 
     payload = {
         "id": task["id"],
@@ -568,6 +595,8 @@ def task_payload(
         "source": source,
         "suggestedStatus": suggested,
         "drift": drift,
+        "unsupported": unsupported,
+        "unverified": unverified,
         "manualStatus": manual if manual in STATUS_VALUES else None,
         "evidence": evidence,
         "evidencePassed": sum(1 for item in evidence if item["ok"]),
@@ -624,7 +653,7 @@ def build_payload(
     refresh_seconds: int = DEFAULT_REFRESH_SECONDS,
 ) -> dict:
     """Compute the complete dashboard payload."""
-    errors = validate_tracker(tracker)
+    errors = validate_tracker(tracker, root)
     if errors:
         raise ProgressError("tracker is invalid:\n  - " + "\n  - ".join(errors))
 
@@ -676,9 +705,30 @@ def build_payload(
                 )
             )
 
-        done_estimate = sum(task["estimateDays"] for task in tasks if task["status"] == "done")
+        # Progress counts a finished task in full and a started task in part.
+        # Counting only finished work made a milestone with six tasks in
+        # progress read as 0%, which is the opposite of what the number is for.
+        #
+        # A started task earns credit from its evidence coverage, and a task
+        # whose evidence all passes but which is still marked in progress earns
+        # only half — the evidence shows the code landed, not that the work is
+        # finished. Without that discount a task whose acceptance criteria are
+        # still open would read as nearly complete.
+        weighted_estimate = 0.0
+        for task in tasks:
+            estimate = task["estimateDays"]
+            status = task["status"]
+            if status == "done":
+                weighted_estimate += estimate
+            elif status == "in_progress":
+                evidence = evidence_by_task.get(task["id"], [])
+                if evidence:
+                    passed = sum(1 for item in evidence if item["ok"])
+                    weighted_estimate += estimate * (passed / len(evidence)) * 0.5
+                else:
+                    weighted_estimate += estimate * 0.25
         total_estimate = sum(task["estimateDays"] for task in tasks) or 1.0
-        progress = clamp(done_estimate / total_estimate, 0.0, 1.0)
+        progress = clamp(weighted_estimate / total_estimate, 0.0, 1.0)
         status = milestone_status(progress, tasks, milestone.get("status"))
         counts = {key: 0 for key in ("done", "in_progress", "planned", "blocked")}
         for task in tasks:
@@ -1042,7 +1092,7 @@ def serve(
 ) -> int:
     """Serve the live dashboard until interrupted."""
     tracker = load_tracker(root)
-    errors = validate_tracker(tracker)
+    errors = validate_tracker(tracker, root)
     if errors:
         raise ProgressError("tracker is invalid:\n  - " + "\n  - ".join(errors))
     template = load_template(root)
@@ -1146,7 +1196,7 @@ def command_serve(args: argparse.Namespace) -> int:
 def command_validate(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     tracker = load_tracker(root)
-    errors = validate_tracker(tracker)
+    errors = validate_tracker(tracker, root)
     for error in errors:
         print(f"progress/tracker.json: {error}")
     if errors:

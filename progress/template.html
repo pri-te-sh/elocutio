@@ -1017,6 +1017,11 @@
         font-weight: 600;
       }
 
+      .flag-warn {
+        background: var(--bad-soft);
+        color: var(--bad);
+      }
+
       .task-meta {
         display: flex;
         flex-wrap: wrap;
@@ -2100,6 +2105,13 @@
         const drift = task.drift
           ? `<span class="flag" title="Repository evidence now satisfies this item; consider marking it done.">evidence → done</span>`
           : "";
+        // The mirror image of drift: a manual status that claims more than the
+        // repository can prove. This is the direction that hides bad claims.
+        const unsupported = task.unsupported
+          ? task.unverified
+            ? `<span class="flag flag-warn" title="Marked ${esc(task.manualStatus || "")} with no evidence rule. Add a rule or choose Auto so the status reflects what the repository can prove.">no evidence</span>`
+            : `<span class="flag flag-warn" title="Marked ${esc(task.manualStatus || "")} but the evidence does not support it (evidence suggests ${esc(task.suggestedStatus)}).">unsupported</span>`
+          : "";
         const options = [
           `<option value="auto" ${task.manualStatus ? "" : "selected"}>Auto (${esc(statusMeta(task.suggestedStatus).label)})</option>`,
           ...["planned", "in_progress", "done", "blocked"].map(
@@ -2122,6 +2134,7 @@
                 ${esc(task.title)}
                 <span class="prio" title="${esc(task.priorityLabel)}">${esc(task.priority)}</span>
                 ${drift}
+                ${unsupported}
               </p>
               <p class="task-meta">${meta.join(" · ")}</p>
               ${task.notes ? `<p class="task-note">${esc(task.notes)}</p>` : ""}

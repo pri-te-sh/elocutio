@@ -1,33 +1,69 @@
-//! Transient, concealed NSPasteboard writes with text restore.
+//! Transient, concealed NSPasteboard writes with faithful restore.
 //!
 //! Rewrite Selection must not pollute clipboard history or destroy the user's
-//! clipboard. We snapshot the current plain text, write the rewrite with the
-//! `org.nspasteboard.TransientType` and `…ConcealedType` markers, then restore
-//! the text if no one else changed the pasteboard meanwhile.
+//! clipboard. We snapshot the current pasteboard **items** (every type and its
+//! bytes), write the rewrite with the `org.nspasteboard.TransientType` and
+//! `…ConcealedType` markers, then restore the snapshot if no one else changed
+//! the pasteboard meanwhile.
 //!
-//! Rich pasteboard items are deliberately not restored yet; item-level restore
-//! needs a safer reconstruction path than writing back stale NSPasteboardItem
-//! objects.
+//! Restoring at the item level preserves rich content: images, file promises,
+//! and custom types survive a rewrite. Only the pasteboard's *change count*
+//! is used to detect an intervening change by another app, so a user copy that
+//! lands mid-rewrite is never clobbered.
+//!
+//! Items that cannot be round-tripped are reported rather than silently
+//! dropped; see [`PasteboardSnapshot::unsupported_types`].
 
-use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-use objc2_foundation::{NSArray, NSInteger, NSString};
+use objc2::rc::Retained;
+use objc2::runtime::ProtocolObject;
+use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSPasteboardTypeString, NSPasteboardWriting};
+use objc2_foundation::{NSArray, NSData, NSInteger, NSString};
 
+/// The bytes of one pasteboard type.
+type Bytes = Vec<u8>;
+
+/// One pasteboard type and its raw bytes.
+struct SnapshotItem {
+    data: Bytes,
+    pasteboard_type: String,
+}
+
+/// A restorable snapshot of the general pasteboard.
 pub struct PasteboardSnapshot {
-    original_text: Option<String>,
+    items: Vec<SnapshotItem>,
+    /// Types present on the pasteboard that could not be captured as bytes.
+    unsupported_types: Vec<String>,
+    /// The change count right after our own write, used to detect interference.
     own_change_count: NSInteger,
 }
 
-/// Writes `text` as a transient, concealed string and returns a restore token.
+impl PasteboardSnapshot {
+    /// Types that were on the pasteboard but could not be captured.
+    ///
+    /// Non-empty means the restore will be lossy for those types. The caller
+    /// may surface this instead of silently losing the user's data.
+    pub fn unsupported_types(&self) -> &[String] {
+        &self.unsupported_types
+    }
+
+    /// Whether the snapshot captured every type that was present.
+    pub fn is_lossless(&self) -> bool {
+        self.unsupported_types.is_empty()
+    }
+}
+
+/// Captures the current pasteboard contents, then writes `text` as a transient,
+/// concealed string.
 pub fn write_transient(text: &str) -> Result<PasteboardSnapshot, String> {
     let pasteboard = NSPasteboard::generalPasteboard();
+
+    let (items, unsupported_types) = snapshot_items(&pasteboard);
+
     let text = NSString::from_str(text);
     let transient = NSString::from_str("org.nspasteboard.TransientType");
     let concealed = NSString::from_str("org.nspasteboard.ConcealedType");
     let empty = NSString::from_str("");
     let string_type = unsafe { NSPasteboardTypeString };
-    let original_text = pasteboard
-        .stringForType(string_type)
-        .map(|value| value.to_string());
     let types = NSArray::from_slice(&[string_type, &transient, &concealed]);
 
     pasteboard.clearContents();
@@ -43,12 +79,17 @@ pub fn write_transient(text: &str) -> Result<PasteboardSnapshot, String> {
     pasteboard.setString_forType(&empty, &concealed);
 
     Ok(PasteboardSnapshot {
-        original_text,
+        items,
+        unsupported_types,
         own_change_count: pasteboard.changeCount(),
     })
 }
 
 /// Restores the snapshot if the pasteboard has not changed since our write.
+///
+/// The restore rebuilds every captured item with its original types, so rich
+/// content survives. If the user copied something else in the meantime the
+/// change count differs and their content is left alone.
 pub fn restore(snapshot: PasteboardSnapshot) {
     let pasteboard = NSPasteboard::generalPasteboard();
     if pasteboard.changeCount() != snapshot.own_change_count {
@@ -57,8 +98,112 @@ pub fn restore(snapshot: PasteboardSnapshot) {
     }
 
     pasteboard.clearContents();
-    if let Some(original_text) = snapshot.original_text {
-        let text = NSString::from_str(&original_text);
-        pasteboard.setString_forType(&text, unsafe { NSPasteboardTypeString });
+
+    if snapshot.items.is_empty() {
+        return;
+    }
+
+    let items: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> = snapshot
+        .items
+        .iter()
+        .map(|item| {
+            let pasteboard_item = NSPasteboardItem::new();
+            let data = NSData::with_bytes(&item.data);
+            for pasteboard_type in item
+                .pasteboard_type
+                .split('\u{1}') // a single item can declare several types
+                .filter(|value| !value.is_empty())
+            {
+                let type_string = NSString::from_str(pasteboard_type);
+                pasteboard_item.setData_forType(&data, &type_string);
+            }
+            ProtocolObject::from_retained(pasteboard_item)
+        })
+        .collect();
+
+    let array = NSArray::from_retained_slice(&items);
+    pasteboard.writeObjects(&array);
+}
+
+/// Reads every pasteboard item and its bytes.
+///
+/// Returns the captured items plus the types that could not be read.
+fn snapshot_items(pasteboard: &NSPasteboard) -> (Vec<SnapshotItem>, Vec<String>) {
+    let mut items = Vec::new();
+    let mut unsupported = Vec::new();
+
+    let Some(pasteboard_items) = pasteboard.pasteboardItems() else {
+        return (items, unsupported);
+    };
+
+    for pasteboard_item in pasteboard_items.iter() {
+        let types = pasteboard_item.types();
+        if types.is_empty() {
+            continue;
+        }
+
+        // The first readable type carries the bytes; the full type list is
+        // kept so the item is restored with the same shape it had.
+        let mut captured: Option<SnapshotItem> = None;
+        let mut type_names: Vec<String> = Vec::new();
+
+        for pasteboard_type in types.iter() {
+            let name = pasteboard_type.to_string();
+            type_names.push(name.clone());
+            if captured.is_some() {
+                continue;
+            }
+            if let Some(data) = pasteboard_item.dataForType(&pasteboard_type) {
+                captured = Some(SnapshotItem {
+                    data: data.to_vec(),
+                    pasteboard_type: name,
+                });
+            }
+        }
+
+        match captured {
+            Some(mut item) => {
+                item.pasteboard_type = type_names.join("\u{1}");
+                items.push(item);
+            }
+            None => {
+                // The item declared types but none of them could be read.
+                // Record them so the caller can report a lossy restore.
+                for name in type_names {
+                    if !unsupported.contains(&name) {
+                        unsupported.push(name);
+                    }
+                }
+            }
+        }
+    }
+
+    (items, unsupported)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_reports_lossless_when_nothing_was_captured() {
+        let snapshot = PasteboardSnapshot {
+            items: Vec::new(),
+            unsupported_types: Vec::new(),
+            own_change_count: 0,
+        };
+        assert!(snapshot.is_lossless());
+        assert!(snapshot.unsupported_types().is_empty());
+    }
+
+    #[test]
+    fn unsupported_types_are_reported() {
+        let snapshot = PasteboardSnapshot {
+            items: Vec::new(),
+            unsupported_types: vec!["public.file-url".to_string()],
+            own_change_count: 0,
+        };
+        assert!(!snapshot.is_lossless());
+        assert_eq!(snapshot.unsupported_types().len(), 1);
     }
 }

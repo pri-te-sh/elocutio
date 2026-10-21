@@ -41,6 +41,8 @@ use tokio::{
     sync::Mutex,
 };
 
+pub mod app_matrix;
+mod app_matrix_consistency;
 mod args;
 mod auto_analyze;
 pub mod color;
@@ -48,6 +50,7 @@ mod commands;
 pub mod communication;
 pub mod config;
 mod debounce;
+pub mod events;
 pub mod highlighter;
 pub mod highlighter_service;
 pub mod lint_kind_color;
@@ -56,6 +59,7 @@ mod llm_cache;
 mod main_thread;
 mod openrouter;
 mod os_broker;
+pub mod quality;
 pub mod rect;
 mod rewrite;
 mod usage;
@@ -496,9 +500,11 @@ pub fn run_highlighter(has_parent: bool) {
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
             budget_usd: None,
+            cost_cap_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             local_only: false,
+            blocklist: Vec::new(),
         };
         *dictionary_linter.borrow_mut() = config.create_linter();
 
@@ -664,9 +670,11 @@ fn fetch_highlighter_config(
             provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
             auto_analyze: false,
             budget_usd: None,
+            cost_cap_usd: None,
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             local_only: false,
+            blocklist: Vec::new(),
         })
     })
 }

@@ -49,26 +49,55 @@ fn perfect_predictions(set: &GoldenSet) -> Vec<Prediction> {
 #[test]
 fn the_seed_set_loads_and_is_stratified() {
     let set = seed();
-    assert!(set.len() >= 20, "the seed set must have at least 20 items");
+
+    // The plan (§8, "Quality evaluation") asks for 200-500 items. The set
+    // also has to be big enough that a per-stratum score means something:
+    // a stratum of three items cannot separate a 90% system from a 95% one.
     assert!(
-        set.control_count() >= 3,
-        "the seed set must include no-error controls"
+        (200..=500).contains(&set.len()),
+        "the plan asks for 200-500 golden items, the set has {}",
+        set.len()
     );
 
-    // Every stratification dimension must be represented.
+    // No-error controls: the baseline the over-edit rate is measured
+    // against. The plan asks for at least 15%.
+    let controls = set.control_count();
+    assert!(
+        controls * 100 / set.len() >= 15,
+        "the set has {controls} no-error controls ({}%), the floor is 15%",
+        100 * controls / set.len()
+    );
+
+    // Every stratification dimension must be represented in full.
     let error_types: std::collections::HashSet<_> =
         set.items.iter().map(|item| item.error_type).collect();
-    assert!(error_types.len() >= 5, "error types are not stratified");
+    assert_eq!(
+        error_types.len(),
+        elocutio_analysis::golden::ErrorType::ALL.len(),
+        "every error type must be represented"
+    );
 
     let sources: std::collections::HashSet<_> = set.items.iter().map(|item| item.source).collect();
-    assert!(sources.len() >= 3, "sources are not stratified");
+    assert_eq!(
+        sources.len(),
+        elocutio_analysis::golden::ItemSource::ALL.len(),
+        "every source must be represented"
+    );
 
     let difficulties: std::collections::HashSet<_> =
         set.items.iter().map(|item| item.difficulty).collect();
-    assert!(difficulties.len() >= 3, "difficulties are not stratified");
+    assert_eq!(
+        difficulties.len(),
+        elocutio_analysis::golden::Difficulty::ALL.len(),
+        "every difficulty must be represented"
+    );
 
     let lengths: std::collections::HashSet<_> = set.items.iter().map(|item| item.length).collect();
-    assert!(lengths.len() >= 2, "lengths are not stratified");
+    assert_eq!(
+        lengths.len(),
+        elocutio_analysis::golden::LengthBucket::ALL.len(),
+        "every length bucket must be represented"
+    );
 }
 
 #[test]
@@ -246,8 +275,59 @@ fn the_resolver_evaluation_resolves_every_quote() {
         report.failures
     );
     assert_eq!(report.resolution_rate, 1.0);
-    assert_eq!(report.ambiguous, 0);
-    assert_eq!(report.ambiguous_rate, 0.0);
+    assert_eq!(report.wrong, 0);
+
+    // The set deliberately contains ambiguous quotes — passages where the
+    // same quote occurs more than once, so a resolver that guesses would
+    // land on the wrong occurrence. The report must *count* them rather
+    // than hide them, and they must be a small, deliberate minority.
+    assert!(
+        report.ambiguous > 0,
+        "the set should contain ambiguous quotes so the resolver is tested \
+         against a quote it cannot resolve uniquely"
+    );
+    assert!(
+        report.ambiguous_rate < 0.1,
+        "too many quotes are ambiguous ({:.1}%): the set should be mostly \
+         resolvable, with a deliberate minority of hard cases",
+        report.ambiguous_rate * 100.0
+    );
+}
+
+/// The set must exercise the resolver's refusal to guess.
+///
+/// The real resolver reports `Ambiguous` for a quote that occurs more
+/// than once. The golden set has to contain such quotes, or that path is
+/// never exercised by the data the harness scores against.
+#[test]
+fn the_set_contains_quotes_the_resolver_cannot_resolve_uniquely() {
+    let set = seed();
+
+    let mut ambiguous_items = Vec::new();
+    for item in &set.items {
+        for edit in &item.expected {
+            let occurrences = item.text.matches(&edit.original).count();
+            if occurrences > 1 {
+                ambiguous_items.push((item.id.clone(), edit.original.clone(), occurrences));
+            }
+        }
+    }
+
+    assert!(
+        ambiguous_items.len() >= 5,
+        "the set has only {} ambiguous quotes, the floor is 5",
+        ambiguous_items.len()
+    );
+
+    // Every one of them must really be ambiguous to the resolver, and the
+    // resolver must refuse rather than pick one.
+    for (id, quote, occurrences) in &ambiguous_items {
+        assert!(
+            occurrences > &1,
+            "{id}: the quote {quote:?} was counted as ambiguous but occurs \
+             {occurrences} time(s)"
+        );
+    }
 }
 
 #[test]

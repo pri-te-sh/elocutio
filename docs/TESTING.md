@@ -14,7 +14,7 @@ visible, not to imply coverage that is not there.
 | --- | --- | --- | --- | --- |
 | Unit | Resolver, chunker, schema, adapters, cost, merge, keychain, tone, voice | `cargo test`, `proptest` | Every commit | **Implemented** |
 | Property | Resolver round-trips, Unicode, CRLF, ambiguity, determinism | `proptest` (15 properties) | Every commit | **Implemented** |
-| Quality eval | Golden set metrics and the F0.5/resolution regression gate | `elocutio-analysis::golden` | Every commit | **Implemented** (44-item seed set) |
+| Quality eval | Golden set metrics and the F0.5/resolution regression gate | `elocutio-analysis::golden` | Every commit | **Implemented** (500-item set) |
 | Docs and ledger | Links, phase-table agreement, quoted counts, tracker schema | `scripts/check_docs.py`, `scripts/progress.py` | Every commit | **Implemented** |
 | Integration | Analyze → accept → verify; IPC; bridge; updater | `axum` fake provider, temp SQLite | Every PR | **Planned** — no fake provider exists yet |
 | UI | Onboarding, settings, assistant, card | Playwright (webviews), manual AppKit | Nightly / release | **Planned** |
@@ -24,6 +24,23 @@ visible, not to imply coverage that is not there.
 The unit, property, and quality layers run in CI. The Linux job covers the
 shared crates; the macOS job covers the desktop app, the frontend, and the app
 bundle.
+
+### The golden set
+
+The set has **500 items** and **444 expected edits**, with **100 no-error
+controls** (20%), so the over-edit rate is measured against a real baseline.
+Every one of the 13 error types has at least 20 items, and all four
+stratification axes are populated: three length buckets, four sources, and
+three difficulty levels.
+
+The set includes the hard cases a copy editor actually runs into: quotes that
+occur more than once (ambiguous, and correctly refused by the resolver),
+repeated words, edits that only change punctuation, and contractions.
+
+A validator test re-derives every expected offset from its quote and the
+item text, so a wrong offset cannot be committed. The offsets were also
+verified with a second, independent implementation that slices the UTF-16
+buffer rather than recomputing byte offsets.
 
 ---
 

@@ -119,6 +119,9 @@ to follow [Semantic Versioning](https://semver.org/).
   calls", and it records no text.
 - A request preview: the host, the model, the estimated cost, and the text
   exactly as it will be sent, with the API key redacted.
+- The golden set grows from 44 items to 500, with 100 no-error controls, every
+  error type covered, and a validator that re-derives every expected offset
+  so a wrong one cannot be committed.
 
 ### Changed
 

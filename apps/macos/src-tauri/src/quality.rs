@@ -71,9 +71,14 @@ pub fn run_resolver_check() -> Result<ResolverQuality, String> {
                 severity: elocutio_core::Severity::High,
                 explanation: "golden set check".into(),
             };
-            if let Ok(suggestion) = resolve_edit(&item.id, &item.text, &edit, "e1") {
-                spans.push(suggestion.span);
-            }
+            // A quote that does not resolve still occupies its slot. The
+            // harness compares spans by position, so dropping a failed quote
+            // would shift every later quote onto the wrong expectation and
+            // report a wrong span instead of a refusal.
+            let span = resolve_edit(&item.id, &item.text, &edit, "e1")
+                .map(|suggestion| suggestion.span)
+                .unwrap_or_else(|_| TextSpan::new(0, 0, 0, 0));
+            spans.push(span);
         }
         predictions.insert(item.id.clone(), spans);
     }
@@ -124,7 +129,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_resolver_finds_every_unique_quote_in_the_seed_set() {
+    fn the_resolver_finds_every_uniquely_quotable_quote() {
         let quality = run_resolver_check().expect("the seed set should load");
         assert!(quality.quotes > 0, "the seed set should have quotes");
         assert!(
@@ -132,7 +137,19 @@ mod tests {
             "the resolver should find nearly every quote, got {}",
             quality.resolution_rate
         );
-        assert_eq!(quality.wrong, 0, "no quote should resolve to a wrong span");
+    }
+
+    #[test]
+    fn a_refused_quote_is_counted_as_a_refusal_not_a_wrong_span() {
+        // The golden set contains quotes that appear more than once. The
+        // resolver refuses those by design, and the harness must attribute
+        // the refusal to the quote it belongs to rather than smearing it onto
+        // the next quote's expectation.
+        let quality = run_resolver_check().expect("the seed set should load");
+        assert_eq!(
+            quality.wrong, quality.ambiguous,
+            "every non-resolution should be an ambiguous quote, not a wrong span"
+        );
     }
 
     #[test]

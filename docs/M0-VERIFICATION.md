@@ -150,6 +150,8 @@ inline experience, and the voice. What is implemented, and what is not:
 | Widget position pinned per app | Implemented | `widget_anchor.rs`; stored as an anchor, not as pixels |
 | Keyboard model for the card | Implemented | `⌃⌥G` focus, `⌃⌥N`/`⌃⌥B` navigate, `⌃⌥A` accept, `⌃⌥D` dismiss, `⌃⌥K` close |
 | Suggestion count in the menu bar | Implemented | The highlighter reports the card's state back to the main process |
+| Card diff preview and Accept button | Implemented | The original struck through, the replacement highlighted, and an Accept button that applies what is shown |
+| Card overflow menu (`⋯`) | Implemented | "Turn off this category" and "Preview the request" |
 | Drag-to-anchor | **Not implemented** | The widget can be pinned from Settings, not dragged |
 | Local tone detection with evidence | Implemented | `elocutio-analysis::tone` |
 | Custom instruction, sanitized | Implemented | `elocutio-analysis::custom_instruction` |

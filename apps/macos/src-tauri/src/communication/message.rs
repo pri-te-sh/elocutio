@@ -55,6 +55,8 @@ pub enum Request {
     GetWidgetAnchor {
         bundle_id: String,
     },
+    /// Show the request that would be sent.
+    Preview,
     /// Ask for a pending card command.
     ///
     /// The card is polled for this often, so it has to be a small exchange.

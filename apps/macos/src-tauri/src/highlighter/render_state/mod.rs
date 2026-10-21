@@ -15,7 +15,7 @@ use self::{
         sidebar_target,
     },
 };
-use super::{AddToDictionary, AnalyzeField, DisableRule, IgnoreLint, OpenSettings};
+use super::{AddToDictionary, AnalyzeField, DisableRule, IgnoreLint, OpenSettings, PreviewRequest};
 use crate::{
     lint_kind_color::lint_kind_color,
     rect::{ActionableLint, Rect},
@@ -83,6 +83,8 @@ pub struct RenderState {
 
     /// Called when the user disables the rule that produced the selected lint.
     disable_rule: DisableRule,
+    /// Called when the user asks to see the request that would be sent.
+    preview_request: PreviewRequest,
 
     open_settings: OpenSettings,
     analyze_field: AnalyzeField,
@@ -96,6 +98,7 @@ impl RenderState {
         ignore_lint: IgnoreLint,
         add_to_dictionary: AddToDictionary,
         disable_rule: DisableRule,
+        preview_request: PreviewRequest,
         open_settings: OpenSettings,
         analyze_field: AnalyzeField,
     ) -> Self {
@@ -114,6 +117,7 @@ impl RenderState {
             ignore_lint,
             add_to_dictionary,
             disable_rule,
+            preview_request,
             open_settings,
             analyze_field,
         };
@@ -142,6 +146,11 @@ impl RenderState {
         self.shown_suggestion = self
             .shown_suggestion
             .filter(|index| row_count.is_some_and(|row_count| *index < row_count));
+    }
+
+    /// Show the request that would be sent for the current suggestion.
+    pub fn request_preview(&mut self) {
+        (self.preview_request)();
     }
 
     pub fn set_field_active(&mut self, active: bool) {
@@ -500,6 +509,12 @@ impl RenderState {
 
                     self.close_popup();
                 }
+                Some(LintCardAction::PreviewRequest) => {
+                    // The user asked what would be sent, so the request is
+                    // shown rather than applied.
+                    self.request_preview();
+                    self.close_popup();
+                }
                 Some(LintCardAction::DisableRule) => {
                     if let Some(rule_name) = self
                         .lints()
@@ -732,6 +747,7 @@ mod card_command_tests {
             Box::new(|_, _| {}),
             Box::new(|_| {}),
             Box::new(|_| {}),
+            Box::new(|| {}),
             Box::new(|| {}),
             Box::new(|| {}),
         )

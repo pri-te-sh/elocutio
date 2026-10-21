@@ -112,6 +112,11 @@ where
         }
     }
 
+    /// Asks the main process to show the request preview.
+    pub async fn preview_request(&mut self) -> Result<(), ProtocolError> {
+        self.send_ack_request(Request::Preview).await
+    }
+
     /// Asks for a pending card command.
     pub async fn get_card_command(
         &mut self,

@@ -498,6 +498,7 @@ pub fn popup_debug() {
         || {},
         || {},
         || {},
+        || {},
         |_| None,
         || None,
         || None,
@@ -597,6 +598,8 @@ pub fn run_highlighter(has_parent: bool) {
     let settings_runtime = sync_runtime.clone();
     let analyze_client = client.clone();
     let analyze_runtime = sync_runtime.clone();
+    let preview_client = client.clone();
+    let preview_runtime = sync_runtime.clone();
 
     let refresh_client = client.clone();
     // The card command the main process asked for, waiting to be applied.
@@ -703,6 +706,23 @@ pub fn run_highlighter(has_parent: bool) {
     ) {
         Ok(config) => disable_linter.borrow_mut().config = config,
         Err(error) => eprintln!("failed to disable rule {rule_name}: {error}"),
+    };
+
+    // The user asked what would be sent, so the request preview is shown in
+    // the settings window. The highlighter cannot open a window itself, so
+    // the request goes through the parent process.
+    let preview_request = move || {
+        if !has_parent {
+            return;
+        }
+        if let Err(error) = preview_runtime.block_on(
+            preview_client
+                .lock()
+                .expect("IPC client lock poisoned")
+                .preview_request(),
+        ) {
+            eprintln!("failed to request the request preview: {error}");
+        }
     };
 
     let analyze_field = move || {
@@ -821,6 +841,7 @@ pub fn run_highlighter(has_parent: bool) {
         ignore_lint,
         add_to_dictionary,
         disable_rule,
+        preview_request,
         refresh_config,
         open_settings,
         analyze_field,

@@ -41,6 +41,9 @@ const TEXT_COLOR: egui::Color32 = egui::Color32::from_rgb(0x1f, 0x23, 0x28);
 const MUTED_TEXT_COLOR: egui::Color32 = egui::Color32::from_rgb(0x57, 0x60, 0x6a);
 const SUBTLE_TEXT_COLOR: egui::Color32 = egui::Color32::from_rgb(0x8b, 0x94, 0x9e);
 const DISMISS_BACKGROUND: egui::Color32 = egui::Color32::from_rgb(0xe5, 0xe5, 0xe5);
+
+/// The Accept button's background: a soft green that reads as "go".
+const ACCEPT_BACKGROUND: egui::Color32 = egui::Color32::from_rgb(0xdc, 0xf0, 0xdc);
 const BUTTON_BACKGROUND: egui::Color32 = egui::Color32::from_rgb(0xef, 0xef, 0xef);
 const BUTTON_TEXT_COLOR: egui::Color32 = egui::Color32::from_rgb(0x00, 0x00, 0x00);
 
@@ -58,6 +61,8 @@ pub enum LintCardAction {
     IgnoreLint,
     AddToDictionary,
     DisableRule,
+    /// Show the request that would be sent for this suggestion.
+    PreviewRequest,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -94,6 +99,12 @@ pub fn render_lint_card(
     let problem_text = problem_text(lint, source_text);
     let span = (lint.span.start, lint.span.end);
 
+    // The suggestion the user is looking at, which the diff preview and the
+    // Accept button act on.
+    let shown = shown_suggestion
+        .and_then(|index| lint.suggestions.get(index))
+        .or_else(|| lint.suggestions.first());
+
     let list_action = show_card(ui.ctx(), "harper-lint-card-list", span, layout.list, |ui| {
         let mut action = None;
         render_suggestion_list(
@@ -113,7 +124,7 @@ pub fn render_lint_card(
         layout.flyout,
         |ui| {
             let mut action = None;
-            render_flyout(ui, lint, markdown_cache, &mut action);
+            render_flyout(ui, lint, &problem_text, shown, markdown_cache, &mut action);
             action
         },
     );
@@ -372,9 +383,12 @@ fn render_list_footer(ui: &mut egui::Ui, action: &mut Option<LintCardAction>) {
 fn render_flyout(
     ui: &mut egui::Ui,
     lint: &Lint,
+    problem_text: &str,
+    shown_suggestion: Option<&Suggestion>,
     markdown_cache: &mut CommonMarkCache,
     action: &mut Option<LintCardAction>,
 ) {
+    let mut overflow_open = false;
     render_kind_header(ui, lint.lint_kind);
 
     egui::Frame::new()
@@ -383,6 +397,23 @@ fn render_flyout(
             ui.set_width(FLYOUT_WIDTH - 20.0);
             render_lint_message(ui, markdown_cache, &lint.message, lint.lint_kind);
         });
+
+    // The diff preview: the original struck through, the replacement
+    // highlighted. The plan calls for this, and it is what lets a user see
+    // what they are about to accept without leaving the card.
+    if let Some(suggestion) = shown_suggestion {
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 10,
+                right: 10,
+                top: 0,
+                bottom: 6,
+            })
+            .show(ui, |ui| {
+                ui.set_width(FLYOUT_WIDTH - 20.0);
+                render_diff_preview(ui, problem_text, suggestion);
+            });
+    }
 
     egui::Frame::new()
         .inner_margin(egui::Margin {
@@ -395,6 +426,19 @@ fn render_flyout(
             ui.set_width(FLYOUT_WIDTH - 20.0);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+
+                // Accept applies the replacement the user is looking at.
+                if let Some(suggestion) = shown_suggestion
+                    && flyout_button(
+                        ui,
+                        ButtonContent::Text("Accept"),
+                        ACCEPT_BACKGROUND,
+                        "Apply this suggestion",
+                    )
+                    .clicked()
+                {
+                    *action = Some(LintCardAction::ApplySuggestion(suggestion.clone()));
+                }
 
                 if flyout_button(
                     ui,
@@ -418,12 +462,109 @@ fn render_flyout(
                 {
                     *action = Some(LintCardAction::AddToDictionary);
                 }
+
+                // The "⋯" button, which holds the secondary actions.
+                if flyout_button(
+                    ui,
+                    ButtonContent::Text("⋯"),
+                    BUTTON_BACKGROUND,
+                    "More actions",
+                )
+                .clicked()
+                {
+                    overflow_open = true;
+                }
             });
         });
 
     if disable_rule_row(ui).clicked() {
         *action = Some(LintCardAction::DisableRule);
     }
+
+    if overflow_open {
+        render_overflow_menu(ui, action);
+    }
+}
+
+/// The secondary actions, behind the card's "⋯" button.
+///
+/// The plan's card is:
+///
+/// ```text
+///   [ Accept ]  [ Dismiss ]  [ ⋯ ]
+/// ```
+///
+/// where "⋯" holds "Explain more, Ignore this rule, Add to dictionary, Turn off
+/// category, Preview request". The first three are already on the card as
+/// their own controls, so this menu holds the ones that are not: the rule
+/// toggle and the request preview.
+fn render_overflow_menu(ui: &mut egui::Ui, action: &mut Option<LintCardAction>) {
+    let response = flyout_button(
+        ui,
+        ButtonContent::Text("⋯"),
+        BUTTON_BACKGROUND,
+        "More actions",
+    );
+
+    if !response.clicked() {
+        return;
+    }
+
+    // The menu opens under the button. The card is a non-activating panel, so
+    // the menu is drawn inside the overlay rather than as a native menu.
+    egui::Popup::menu(&response).show(|ui| {
+        ui.set_width(180.0);
+        for (label, menu_action) in [
+            ("Turn off this category", LintCardAction::DisableRule),
+            ("Preview the request", LintCardAction::PreviewRequest),
+        ] {
+            if ui.button(label).clicked() {
+                *action = Some(menu_action);
+                ui.close();
+            }
+        }
+    });
+}
+
+/// Renders the diff preview: the original struck through, the replacement
+/// highlighted.
+///
+/// This is the card's answer to "what will happen if I accept this".
+fn render_diff_preview(ui: &mut egui::Ui, problem_text: &str, suggestion: &Suggestion) {
+    let original = problem_text.to_string();
+    let replacement = match suggestion {
+        Suggestion::ReplaceWith(chars) => chars.iter().collect::<String>(),
+        Suggestion::InsertAfter(chars) => {
+            format!("{} + {}", problem_text, chars.iter().collect::<String>())
+        }
+        Suggestion::Remove => String::new(),
+    };
+
+    // The original, struck through.
+    let original_label = single_line_galley(ui, &original, 12.0, FLYOUT_WIDTH - 20.0);
+    ui.painter().line_segment(
+        [
+            egui::pos2(original_label.rect.left(), original_label.rect.center().y),
+            egui::pos2(original_label.rect.right(), original_label.rect.center().y),
+        ],
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 60, 60)),
+    );
+
+    ui.add_space(2.0);
+
+    // The replacement, highlighted.
+    let replacement_label = single_line_galley(ui, &replacement, 12.0, FLYOUT_WIDTH - 20.0);
+    ui.painter().rect_filled(
+        egui::Rect::from_min_size(
+            replacement_label.rect.min,
+            egui::vec2(
+                replacement_label.rect.width(),
+                replacement_label.rect.height(),
+            ),
+        ),
+        2.0,
+        egui::Color32::from_rgb(220, 245, 220),
+    );
 }
 
 /// Renders the lint kind above the explanation, underlined in the lint color.

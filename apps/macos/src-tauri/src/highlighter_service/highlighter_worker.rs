@@ -127,6 +127,16 @@ async fn run_server_until_shutdown<R, W>(
             _ = &mut shutdown_receiver => break,
             request = server.receive_request() => {
                 match request {
+                    Ok(Some(Request::Preview)) => {
+                        // The user asked what would be sent, so the settings
+                        // window opens with the request preview.
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(error) = crate::windows::show_settings_window(&app) {
+                                eprintln!("failed to open the request preview: {error}");
+                            }
+                        });
+                    }
                     Ok(Some(Request::AnalyzeField)) => {
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move {

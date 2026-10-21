@@ -82,6 +82,11 @@ where
     async fn handle_request(&self, request: &Request) -> Response {
         match request {
             Request::OpenSettings | Request::AnalyzeField => Response::Ack,
+            Request::Preview => {
+                // The settings window shows the request preview. The window is
+                // opened by the worker, which holds the app handle.
+                Response::Ack
+            }
             Request::GetLintConfig => Response::GetLintConfig {
                 config: self.config.lock().await.lint_config.clone(),
             },

@@ -17,6 +17,8 @@ use crate::rect::ActionableLint;
 type IgnoreLint = Box<dyn FnMut(&Lint, &Document)>;
 type AddToDictionary = Box<dyn FnMut(&str)>;
 type DisableRule = Box<dyn FnMut(&str)>;
+/// Called when the user asks to see the request that would be sent.
+pub type PreviewRequest = Box<dyn FnMut()>;
 type RefreshConfig = Box<dyn FnMut()>;
 type OpenSettings = Box<dyn FnMut()>;
 pub type AnalyzeField = Box<dyn FnMut()>;
@@ -38,6 +40,7 @@ impl Highlighter {
         ignore_lint: impl FnMut(&Lint, &Document) + 'static,
         add_to_dictionary: impl FnMut(&str) + 'static,
         disable_rule: impl FnMut(&str) + 'static,
+        preview_request: impl FnMut() + 'static,
         refresh_config: impl FnMut() + 'static,
         open_settings: impl FnMut() + 'static,
         analyze_field: impl FnMut() + 'static,
@@ -50,6 +53,7 @@ impl Highlighter {
         let ignore_lint: IgnoreLint = Box::new(ignore_lint);
         let add_to_dictionary: AddToDictionary = Box::new(add_to_dictionary);
         let disable_rule: DisableRule = Box::new(disable_rule);
+        let preview_request: PreviewRequest = Box::new(preview_request);
         let refresh_config: RefreshConfig = Box::new(refresh_config);
         let open_settings: OpenSettings = Box::new(open_settings);
         let analyze_field: AnalyzeField = Box::new(analyze_field);
@@ -62,6 +66,7 @@ impl Highlighter {
                     ignore_lint,
                     add_to_dictionary,
                     disable_rule,
+                    preview_request,
                     refresh_config,
                     open_settings,
                     analyze_field,

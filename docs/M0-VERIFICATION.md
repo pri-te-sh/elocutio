@@ -138,6 +138,28 @@ says so instead of reporting green.
 | `key-survives-restart` | Pass | The key is read from the macOS Keychain on every request. |
 | `clipboard-restore` | Pass | The pasteboard is restored at the item level, so images and files survive. |
 
+## The M2 state
+
+M2 is the phase that makes the product feel like a product: the widget, the
+inline experience, and the voice. What is implemented, and what is not:
+
+| Feature | State | Where |
+| --- | --- | --- |
+| Widget count, AI action, anchors | Implemented | `highlighter/render_state/mod.rs` |
+| Widget tone badge | Implemented | The tone is detected locally while the AX tree is walked |
+| Widget position pinned per app | Implemented | `widget_anchor.rs`; stored as an anchor, not as pixels |
+| Drag-to-anchor | **Not implemented** | The widget can be pinned from Settings, not dragged |
+| Local tone detection with evidence | Implemented | `elocutio-analysis::tone` |
+| Custom instruction, sanitized | Implemented | `elocutio-analysis::custom_instruction` |
+| Style card in rewrite and analysis prompts | Implemented | `openrouter.rs` |
+| Voice copy guard | Implemented | `elocutio-voice::copy_guard`, applied at the rewrite chokepoint |
+| Trait overrides and "sounds like me" ratings | Implemented | `elocutio-voice::profile` |
+| Live mode: debounce, throttle, diff-only, stale guard | Implemented | `auto_analyze.rs` |
+| Request coalescing and a per-request cost cap | Implemented | `coalesce.rs`, `openrouter.rs` |
+| Block list | Implemented | `config::blocklist` |
+| Overlay accept and reject as separate actions | **Not implemented** | The card accepts a suggestion; the rewrite previews before it applies |
+| The 10-app manual matrix | **Needs a human** | The list and the record exist; the checks do not |
+
 ## Known issues and next actions
 
 1. **Mail:** expose usable text-range bounds (or fall back to the static-text collector) before claiming support. Until then, keep Mail out of the supported matrix.

@@ -117,6 +117,8 @@ to follow [Semantic Versioning](https://semver.org/).
 - A local network log: every host the app has contacted, with the model, the
   token counts, and the cost. It is the proof behind "no hidden network
   calls", and it records no text.
+- A request preview: the host, the model, the estimated cost, and the text
+  exactly as it will be sent, with the API key redacted.
 
 ### Changed
 

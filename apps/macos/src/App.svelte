@@ -143,6 +143,14 @@
     cost_usd: number;
     hosts: [string, number][];
   };
+  type RequestPreview = {
+    host: string;
+    provider: string;
+    model: string | null;
+    fields: { name: string; value: string; redacted: boolean }[];
+    text: string;
+    system: string;
+  };
   type WidgetAnchor = { corner: string; offset: number };
   type ModelOption = {
     id: string;
@@ -223,6 +231,9 @@
   let gateReport: GateReport | null = null;
   let widgetAnchors: [string, WidgetAnchor][] = [];
   let networkLog: NetworkEntry[] = [];
+  let requestPreview: RequestPreview | null = null;
+  let previewBusy = false;
+  let previewMessage = "";
   let networkSummary: NetworkSummary | null = null;
   let anchorCorners: string[] = [];
   let customInstruction = "";
@@ -461,6 +472,18 @@
       costCapMessage = String(error);
     } finally {
       costCapBusy = false;
+    }
+  }
+
+  async function previewRequest() {
+    previewBusy = true;
+    previewMessage = "";
+    try {
+      requestPreview = await invoke<RequestPreview>("preview_request", { text: sourceText });
+    } catch (error) {
+      previewMessage = String(error);
+    } finally {
+      previewBusy = false;
     }
   }
 
@@ -1390,6 +1413,34 @@
 
     {#if costCapMessage}
       <p class="message">{costCapMessage}</p>
+    {/if}
+
+    <div class="actions">
+      <button class="ghost" onclick={previewRequest} disabled={previewBusy}>
+        Preview the request
+      </button>
+    </div>
+
+    {#if requestPreview}
+      <div class="tone-result">
+        <p>
+          <span class="badge">{requestPreview.provider}</span>
+          <span class="muted">{requestPreview.host}</span>
+        </p>
+        <ul class="tone-evidence">
+          {#each requestPreview.fields as field (field.name)}
+            <li>
+              <strong>{field.name}</strong>: {field.value}
+            </li>
+          {/each}
+        </ul>
+        <p class="muted">The text that will be sent:</p>
+        <pre class="voice-guidance">{requestPreview.text}</pre>
+      </div>
+    {/if}
+
+    {#if previewMessage}
+      <p class="message">{previewMessage}</p>
     {/if}
 
     <label class="field">

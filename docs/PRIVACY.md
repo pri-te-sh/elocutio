@@ -29,9 +29,8 @@ row names a file you can find in
 **Not collected:** analytics, device identifiers, advertising IDs, location,
 contacts, calendar, screen contents, or keystrokes.
 
-**Still to build:** a request log with per-request detail, a request preview,
-provenance events, a documents editor, and exemplar sending are **not
-implemented yet**. They are listed in the plan as M2–M4 work. The
+**Still to build:** a request log with per-request detail, provenance events, a
+documents editor, and exemplar sending are **not implemented yet**. They are listed in the plan as M2–M4 work. The
 `elocutio-store` crate reserves the SQLite schema and file name, but the
 current build stores everything in the plain files listed above.
 
@@ -121,8 +120,12 @@ each other.
 the token counts, and the cost. It is the proof behind "no telemetry or hidden
 network calls": open Settings → Network log and you can see every request that
 left the Mac, and no others. The log holds metadata only — never the text
-that was sent. A preview of the exact request is still planned and not
-implemented; the current build shows the voice payload that would be sent.
+that was sent.
+
+**The request preview** shows the request the app is about to make: the host,
+the model, the estimated cost, and the text exactly as it will be sent. The
+API key is redacted, because a preview that printed the key would be a key on
+screen. Press **Preview the request** in Settings to see it.
 
 ---
 

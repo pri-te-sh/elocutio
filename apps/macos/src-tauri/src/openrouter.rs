@@ -180,7 +180,7 @@ impl ProviderConfig {
     }
 }
 
-const SYSTEM_PROMPT: &str = "You are Elocutio, a precise copy editor. Rewrite the user's text to be clear, correct, and natural while preserving their voice. Return only the rewritten text, with no preamble, quotation marks, or explanation.";
+pub const SYSTEM_PROMPT: &str = "You are Elocutio, a precise copy editor. Rewrite the user's text to be clear, correct, and natural while preserving their voice. Return only the rewritten text, with no preamble, quotation marks, or explanation.";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct KeyStatus {

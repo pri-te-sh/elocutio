@@ -62,6 +62,7 @@ mod main_thread;
 pub mod network_log;
 mod openrouter;
 mod os_broker;
+pub mod preview;
 pub mod quality;
 pub mod rect;
 mod rewrite;

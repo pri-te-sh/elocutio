@@ -44,6 +44,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         list_provider_models,
         get_widget_anchors,
         get_network_log,
+        preview_request,
         get_network_log_summary,
         clear_network_log,
         preview_rewrite_selection,
@@ -543,6 +544,51 @@ fn discard_pending_rewrite() -> Result<(), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!("Could not discard the rewrite: {error}")),
     }
+}
+
+/// A preview of the request the app is about to send.
+///
+/// The key is redacted and the text is shown exactly as it will be sent, so
+/// the user can check what leaves their Mac without reading the source.
+#[tauri::command]
+async fn preview_request(
+    text: String,
+    model: Option<String>,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<crate::preview::RequestPreview, String> {
+    let (provider, model, system) = {
+        let config = config.lock().await;
+        let model = match model.filter(|value| !value.trim().is_empty()) {
+            Some(model) => model,
+            None => config.provider_model.clone(),
+        };
+        let mut system = crate::openrouter::SYSTEM_PROMPT.to_string();
+        if let Some(guidance) = crate::voice::guidance() {
+            system.push_str("\n\n");
+            system.push_str(&guidance);
+        }
+        (
+            ProviderConfig {
+                kind: config.provider_kind,
+                base_url: config.provider_base_url.clone(),
+            },
+            model,
+            system,
+        )
+    };
+
+    let has_key = crate::openrouter::key_status_for(provider.kind)
+        .map(|status| status.present)
+        .unwrap_or(false);
+
+    Ok(crate::preview::chat_preview(
+        &crate::network_log::host_of(&provider.chat_endpoint()),
+        provider.kind.display_name(),
+        Some(&model),
+        &system,
+        &text,
+        has_key,
+    ))
 }
 
 /// The network log: every host the app has contacted.

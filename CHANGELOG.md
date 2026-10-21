@@ -122,6 +122,18 @@ to follow [Semantic Versioning](https://semver.org/).
 - The golden set grows from 44 items to 500, with 100 no-error controls, every
   error type covered, and a validator that re-derives every expected offset
   so a wrong one cannot be committed.
+- A keyboard model for the suggestion card: ⌃⌥G focuses it, ⌃⌥N and ⌃⌥B
+  move between suggestions, ⌃⌥A accepts, ⌃⌥D dismisses, and ⌃⌥K closes.
+- The card shows a diff preview and has an Accept button, so a user can see
+  what would change before they take it.
+- The underlines use the plan's three colours: red for correctness, blue for
+  style, grey for advisory.
+- The widget collapses to a dot when there is nothing to say, shows the
+  detected tone, and can be pinned to a corner per app.
+- The menu bar shows the suggestion count and carries the card's actions.
+- A settings window that reaches every implemented feature: the writing
+  rules, the voice diagnostics, the request preview, the network log, the
+  quality report, and the app matrix.
 
 ### Changed
 

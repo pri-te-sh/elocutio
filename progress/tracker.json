@@ -481,7 +481,7 @@
             "m0-build"
           ],
           "status": "done",
-          "notes": "The inherited card renders local + cached LLM suggestions with accept/dismiss/explain. A compact white widget on every supported focused field shows the count, opens the card, and triggers analysis via an AI action over IPC.",
+          "notes": "The card renders local and cached LLM suggestions with accept, dismiss, and an overflow menu, and shows a diff preview: the original struck through, the replacement highlighted. The card never takes keyboard focus, so it is driven by global hotkeys: ⌃⌥G focuses it, ⌃⌥N and ⌃⌥B move between suggestions, ⌃⌥A accepts, ⌃⌥D dismisses, and ⌃⌥K closes it.",
           "evidence": [
             {
               "type": "text",
@@ -492,6 +492,11 @@
               "type": "text",
               "path": "apps/macos/src-tauri/src/mac_broker/accessibility_text.rs",
               "contains": "cached_lint"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/highlighter/render_state/render_lint_card.rs",
+              "contains": "render_diff_preview"
             }
           ]
         },
@@ -675,10 +680,15 @@
               "type": "text",
               "path": "apps/macos/src-tauri/src/widget_anchor.rs",
               "contains": "pub fn position"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/highlighter/render_state/mod.rs",
+              "contains": "DOT_RADIUS"
             }
           ],
           "status": "in_progress",
-          "notes": "The floating widget shows the live count, opens the inherited card, triggers AI analysis, anchors to the first underline or the screen corner, shows the detected tone as a badge, and can be pinned to a corner per app. Drag-to-anchor remains."
+          "notes": "The floating widget shows the live count, opens the inherited card, triggers AI analysis, anchors to the first underline or the screen corner, shows the detected tone as a badge, collapses to a dot when there is nothing to say, and can be pinned to a corner per app. Drag-to-anchor remains."
         },
         {
           "id": "m2-live",

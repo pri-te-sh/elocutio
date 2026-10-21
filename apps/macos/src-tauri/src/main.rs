@@ -193,6 +193,93 @@ fn register_shortcuts(app: &tauri::AppHandle) {
     if let Err(error) = undo_result {
         eprintln!("Could not register the Elocutio Undo shortcut: {error}");
     }
+
+    register_card_shortcuts(app);
+}
+
+/// Registers the shortcuts that drive the suggestion card.
+///
+/// The card lives in the highlighter process and its window never takes
+/// keyboard focus — activating it would move the caret and break the paste
+/// that follows (PLAN.md §5.7, "Focus is sacred"). So the keyboard model is
+/// global hotkeys, and the command travels to the card with the
+/// configuration poll.
+///
+/// The modifiers are the plan's own, so the muscle memory is the same:
+/// `⌃⌥G` focuses the card, the arrows navigate, `Return` accepts, and `Esc`
+/// closes.
+fn register_card_shortcuts(app: &tauri::AppHandle) {
+    use crate::config::CardCommand;
+
+    // (shortcut, command, label)
+    let bindings: [(Modifiers, Code, CardCommand, &str); 6] = [
+        (
+            Modifiers::CONTROL | Modifiers::ALT,
+            Code::KeyG,
+            CardCommand::Focus,
+            "focus the card",
+        ),
+        (
+            Modifiers::CONTROL | Modifiers::ALT,
+            Code::KeyN,
+            CardCommand::NextSuggestion,
+            "next suggestion",
+        ),
+        (
+            Modifiers::CONTROL | Modifiers::ALT,
+            Code::KeyP,
+            CardCommand::PreviousSuggestion,
+            "previous suggestion",
+        ),
+        (
+            Modifiers::CONTROL | Modifiers::ALT,
+            Code::KeyA,
+            CardCommand::Accept,
+            "accept the suggestion",
+        ),
+        (
+            Modifiers::CONTROL | Modifiers::ALT,
+            Code::KeyD,
+            CardCommand::Dismiss,
+            "dismiss the suggestion",
+        ),
+        (
+            Modifiers::CONTROL | Modifiers::ALT,
+            Code::KeyK,
+            CardCommand::Close,
+            "close the card",
+        ),
+    ];
+
+    for (modifiers, code, command, label) in bindings {
+        let shortcut = Shortcut::new(Some(modifiers), code);
+        let result = app
+            .global_shortcut()
+            .on_shortcut(shortcut, move |app, _shortcut, event| {
+                if event.state() != ShortcutState::Pressed {
+                    return;
+                }
+                request_card_command(app, command);
+            });
+        if let Err(error) = result {
+            eprintln!("Could not register the shortcut to {label}: {error}");
+        }
+    }
+}
+
+/// Asks the highlighter to run a card command.
+///
+/// The command is held in the shared configuration in memory, and the
+/// highlighter fetches it on its fast poll. It is deliberately not written to
+/// disk: a keypress is not a setting, and the highlighter polls for it every
+/// 40 milliseconds.
+fn request_card_command(app: &tauri::AppHandle, command: crate::config::CardCommand) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<Arc<Mutex<Config>>>();
+        let mut config = state.lock().await;
+        config.card_command = Some(command);
+    });
 }
 
 fn warm_app_search_cache(app: tauri::AppHandle) {
@@ -351,7 +438,9 @@ pub fn run_tauri() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(commands::application_message_handler())
         .setup(move |app| {
-            let highlighter_service = HighlighterService::new(config, app.handle().clone());
+            let suggestion_count = std::sync::Arc::new(crate::config::SuggestionCount::default());
+            let highlighter_service =
+                HighlighterService::new(config, app.handle().clone(), suggestion_count);
             if should_start_highlighter {
                 match highlighter_service.start() {
                     Ok(started) => tracing::info!(started, "highlighter service started"),
@@ -410,6 +499,9 @@ pub fn popup_debug() {
         || {},
         || {},
         |_| None,
+        || None,
+        || None,
+        |_| {},
     )
     .unwrap();
     highlighter.run_window_for_each_monitor().unwrap();
@@ -507,6 +599,8 @@ pub fn run_highlighter(has_parent: bool) {
     let analyze_runtime = sync_runtime.clone();
 
     let refresh_client = client.clone();
+    // The card command the main process asked for, waiting to be applied.
+    let refresh_card_command = Rc::new(RefCell::new(None));
     let refresh_runtime = sync_runtime.clone();
     let refresh_ignored_lints = ignored_lints.clone();
     let refresh_user_dictionary = user_dictionary.clone();
@@ -583,6 +677,8 @@ pub fn run_highlighter(has_parent: bool) {
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             custom_instruction: String::new(),
+            card_command: None,
+            card_suggestion_count: 0,
             widget_anchors: crate::widget_anchor::WidgetAnchors::default(),
             local_only: false,
             blocklist: Vec::new(),
@@ -640,6 +736,7 @@ pub fn run_highlighter(has_parent: bool) {
         }
     };
 
+    let refresh_card_command_for_poll = refresh_card_command.clone();
     let refresh_config = move || {
         if !has_parent {
             return;
@@ -649,15 +746,24 @@ pub fn run_highlighter(has_parent: bool) {
             &mut refresh_client.lock().expect("IPC client lock poisoned"),
             &refresh_runtime,
         ) {
-            Ok(config) => apply_highlighter_config(
-                config,
-                &refresh_ignored_lints,
-                &refresh_user_dictionary,
-                &refresh_dialect,
-                &refresh_integrations,
-                &refresh_debounce_ms,
-                &refresh_linter,
-            ),
+            Ok(config) => {
+                let card_command = config.card_command;
+                apply_highlighter_config(
+                    config,
+                    &refresh_ignored_lints,
+                    &refresh_user_dictionary,
+                    &refresh_dialect,
+                    &refresh_integrations,
+                    &refresh_debounce_ms,
+                    &refresh_linter,
+                );
+                // A card command travels with the configuration poll, because
+                // the card lives in this process and the hotkey lives in the
+                // other one.
+                if let Some(command) = card_command {
+                    refresh_card_command_for_poll.borrow_mut().replace(command);
+                }
+            }
             Err(error) => {
                 eprintln!("failed to refresh highlighter config: {error}");
                 std::process::exit(1);
@@ -671,6 +777,34 @@ pub fn run_highlighter(has_parent: bool) {
     // runtime for exactly this.
     let widget_settings_client = client.clone();
     let widget_settings_runtime = sync_runtime.clone();
+    // The card command travels from the main process to this one, and the
+    // window manager applies it on the next frame.
+    let card_command_cell = refresh_card_command.clone();
+    let card_command = move || card_command_cell.borrow_mut().take();
+
+    // The card is polled for a command on a fast interval, because a
+    // keypress has to feel immediate.
+    let fetch_card_client = client.clone();
+    let fetch_card_runtime = sync_runtime.clone();
+    let fetch_card_command = move || {
+        let mut client = fetch_card_client.lock().expect("IPC client lock poisoned");
+        fetch_card_runtime
+            .block_on(client.get_card_command())
+            .ok()
+            .flatten()
+    };
+
+    // The highlighter reports what the card is showing, so the menu bar and
+    // the settings window can say how many suggestions there are.
+    let report_card_client = client.clone();
+    let report_card_runtime = sync_runtime.clone();
+    let report_card_state = move |suggestions: usize| {
+        let mut client = report_card_client.lock().expect("IPC client lock poisoned");
+        if let Err(error) = report_card_runtime.block_on(client.report_card_state(suggestions)) {
+            eprintln!("Could not report the card state: {error}");
+        }
+    };
+
     let widget_settings = move |bundle_id: &str| {
         let mut client = widget_settings_client
             .lock()
@@ -691,6 +825,9 @@ pub fn run_highlighter(has_parent: bool) {
         open_settings,
         analyze_field,
         widget_settings,
+        card_command,
+        fetch_card_command,
+        report_card_state,
     )
     .and_then(Highlighter::run_window_for_each_monitor)
     {
@@ -772,6 +909,8 @@ fn fetch_highlighter_config(
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             custom_instruction: String::new(),
+            card_command: None,
+            card_suggestion_count: 0,
             widget_anchors: crate::widget_anchor::WidgetAnchors::default(),
             local_only: false,
             blocklist: Vec::new(),

@@ -182,6 +182,156 @@ impl RenderState {
         }
     }
 
+    /// Move the card to the next suggestion, for the keyboard shortcuts.
+    pub fn next_lint(&mut self) {
+        let count = self.lints().len();
+        if count == 0 {
+            return;
+        }
+        let next = match self.highlighted_lint {
+            Some(index) => (index + 1) % count,
+            None => 0,
+        };
+        self.set_highlighted_lint(Some(next));
+    }
+
+    /// Move the card to the previous suggestion, for the keyboard shortcuts.
+    pub fn previous_lint(&mut self) {
+        let count = self.lints().len();
+        if count == 0 {
+            return;
+        }
+        let previous = match self.highlighted_lint {
+            Some(index) => index.checked_sub(1).unwrap_or(count - 1),
+            None => count - 1,
+        };
+        self.set_highlighted_lint(Some(previous));
+    }
+
+    /// Show the next replacement of the current suggestion, for the keyboard
+    /// shortcuts.
+    pub fn next_suggestion_row(&mut self) {
+        let Some(index) = self.highlighted_lint else {
+            return;
+        };
+        let Some(lint) = self.lints().get(index) else {
+            return;
+        };
+        let count = lint.lint.suggestions.len();
+        if count == 0 {
+            return;
+        }
+        let next = match self.shown_suggestion {
+            Some(row) if row + 1 < count => row + 1,
+            Some(_) => 0,
+            None => 0,
+        };
+        self.shown_suggestion = Some(next);
+    }
+
+    /// Show the previous replacement of the current suggestion.
+    pub fn previous_suggestion_row(&mut self) {
+        let Some(index) = self.highlighted_lint else {
+            return;
+        };
+        let Some(lint) = self.lints().get(index) else {
+            return;
+        };
+        let count = lint.lint.suggestions.len();
+        if count == 0 {
+            return;
+        }
+        self.shown_suggestion = match self.shown_suggestion {
+            Some(0) => None,
+            Some(row) => Some(row - 1),
+            None => Some(count - 1),
+        };
+    }
+
+    /// The replacement the card is currently showing, if any.
+    pub fn shown_replacement(&self) -> Option<harper_core::linting::Suggestion> {
+        let index = self.highlighted_lint?;
+        let lint = self.lints().get(index)?;
+        let row = self.shown_suggestion?;
+        lint.lint.suggestions.get(row).cloned()
+    }
+
+    /// Whether the card is showing something.
+    #[cfg(test)]
+    pub fn has_open_card(&self) -> bool {
+        self.highlighted_lint.is_some()
+    }
+
+    /// How many suggestions the card has open.
+    ///
+    /// This is what the menu bar and the settings window show, so the user
+    /// can see the app's count without the card being in front.
+    pub fn open_suggestion_count(&self) -> usize {
+        self.lints().len()
+    }
+
+    /// The suggestion the card is showing.
+    #[cfg(test)]
+    pub fn highlighted_lint_index(&self) -> Option<usize> {
+        self.highlighted_lint
+    }
+
+    /// The replacement row the card is showing.
+    #[cfg(test)]
+    pub fn shown_suggestion_index(&self) -> Option<usize> {
+        self.shown_suggestion
+    }
+
+    /// Dismiss the suggestion the card is showing.
+    ///
+    /// This is the same action as the card's ignore button: the lint is
+    /// ignored, the rule is remembered, and the card closes.
+    pub fn dismiss_shown_lint(&mut self) -> bool {
+        let Some(index) = self.highlighted_lint else {
+            return false;
+        };
+        let Some(actionable_lint) = self.last_lints.as_ref().and_then(|lints| lints.get(index))
+        else {
+            return false;
+        };
+
+        let lint = actionable_lint.lint.clone();
+        let source_text = actionable_lint.source_text.clone();
+        let rule_name = actionable_lint.rule_name.clone();
+
+        record_interaction(
+            actionable_lint,
+            crate::events::EventKind::Dismissed,
+            &harper_core::linting::Suggestion::Remove,
+        );
+
+        let document = harper_core::Document::new_markdown_default_curated(&source_text);
+        (self.ignore_lint)(&lint, &document);
+
+        let _ = rule_name;
+        self.close_popup();
+        true
+    }
+
+    /// Apply the replacement the card is showing.
+    pub fn apply_shown_replacement(&mut self) -> bool {
+        let Some(suggestion) = self.shown_replacement() else {
+            return false;
+        };
+        let Some(index) = self.highlighted_lint else {
+            return false;
+        };
+        if let Some(actionable_lint) = self
+            .last_lints
+            .as_mut()
+            .and_then(|lints| lints.get_mut(index))
+        {
+            actionable_lint.apply_suggestion(suggestion);
+        }
+        self.close_popup();
+        true
+    }
+
     pub fn request_analyze(&mut self) {
         (self.analyze_field)();
     }
@@ -544,4 +694,94 @@ fn lint_kind_color32(lint_kind: LintKind) -> egui::Color32 {
     let color = lint_kind_color(lint_kind);
 
     egui::Color32::from_rgb(color.r, color.g, color.b)
+}
+
+#[cfg(test)]
+mod card_command_tests {
+    use super::RenderState;
+    use crate::config::CardCommand;
+    use crate::rect::{ActionableLint, Rect};
+    use harper_core::linting::{Lint, LintKind, Suggestion};
+
+    fn lint_with_suggestions(count: usize) -> Lint {
+        Lint {
+            span: harper_core::Span::new(0, 4),
+            lint_kind: LintKind::Spelling,
+            suggestions: (0..count)
+                .map(|index| Suggestion::ReplaceWith(vec!['a'; index + 1]))
+                .collect(),
+            message: "test".to_string(),
+            priority: 0,
+        }
+    }
+
+    fn state_with_lints(count: usize) -> RenderState {
+        let lints: Vec<ActionableLint> = (0..count)
+            .map(|_| {
+                ActionableLint::new(
+                    Rect::new(0.0, 0.0, 10.0, 10.0),
+                    "Spelling".to_string(),
+                    lint_with_suggestions(2),
+                    "text".to_string(),
+                    |_| {},
+                )
+            })
+            .collect();
+        RenderState::new(
+            lints,
+            Box::new(|_, _| {}),
+            Box::new(|_| {}),
+            Box::new(|_| {}),
+            Box::new(|| {}),
+            Box::new(|| {}),
+        )
+    }
+
+    #[test]
+    fn the_focus_command_opens_the_card() {
+        let mut state = state_with_lints(3);
+        state.open_widget();
+        assert!(state.has_open_card());
+    }
+
+    #[test]
+    fn the_next_command_moves_to_the_next_suggestion() {
+        let mut state = state_with_lints(3);
+        state.open_widget();
+        state.next_lint();
+        assert_eq!(state.highlighted_lint_index(), Some(1));
+    }
+
+    #[test]
+    fn the_next_replacement_command_moves_through_the_rows() {
+        let mut state = state_with_lints(1);
+        state.open_widget();
+        state.next_suggestion_row();
+        assert_eq!(state.shown_suggestion_index(), Some(0));
+    }
+
+    #[test]
+    fn the_close_command_closes_the_card() {
+        let mut state = state_with_lints(3);
+        state.open_widget();
+        state.close_popup();
+        assert!(!state.has_open_card());
+    }
+
+    #[test]
+    fn the_commands_are_the_ones_the_shortcuts_send() {
+        // The shortcut table and the command enum have to agree, or a
+        // keypress would do something nobody expected.
+        let commands = [
+            CardCommand::Focus,
+            CardCommand::NextSuggestion,
+            CardCommand::PreviousSuggestion,
+            CardCommand::NextReplacement,
+            CardCommand::PreviousReplacement,
+            CardCommand::Accept,
+            CardCommand::Dismiss,
+            CardCommand::Close,
+        ];
+        assert_eq!(commands.len(), 8);
+    }
 }

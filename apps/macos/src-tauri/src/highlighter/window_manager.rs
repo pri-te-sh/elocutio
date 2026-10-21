@@ -19,6 +19,12 @@ use crate::os_broker::{LintText, OsBroker};
 use crate::rect::ActionableLint;
 
 const CONFIG_POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+/// How often the highlighter asks the main process for a card command.
+///
+/// The card is a keyboard-driven surface, so the wait between a keypress and
+/// the card moving has to be imperceptible.
+const CARD_POLL_INTERVAL: Duration = Duration::from_millis(40);
 const RECT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Owns the winit event loop and the overlay windows created for each monitor.
@@ -39,6 +45,12 @@ pub struct WindowManager {
     analyze_field: AnalyzeField,
     /// Reports the widget anchor and tone for the app currently focused.
     widget_settings: WidgetSettings,
+    /// Reports the card command the main process asked for, if any.
+    card_command: CardCommandFn,
+    /// Fetches the pending card command, if there is one.
+    fetch_card_command: FetchCardCommandFn,
+    /// Reports the card's state back to the main process.
+    report_state: ReportStateFn,
 }
 
 pub struct WindowManagerCallbacks {
@@ -51,7 +63,25 @@ pub struct WindowManagerCallbacks {
     pub analyze_field: AnalyzeField,
     /// Reports the widget anchor and tone for the app currently focused.
     pub widget_settings: WidgetSettings,
+    /// Reports the card command the main process asked for, if any.
+    pub card_command: CardCommandFn,
+    /// Fetches the pending card command, if there is one.
+    ///
+    /// This is polled for often when the card is open, so it is a separate,
+    /// cheap channel from the configuration poll.
+    pub fetch_card_command: FetchCardCommandFn,
+    /// Reports the card's state back to the main process.
+    pub report_state: ReportStateFn,
 }
+
+/// Fetches a pending card command from the main process.
+pub type FetchCardCommandFn = Box<dyn FnMut() -> Option<crate::config::CardCommand> + 'static>;
+
+/// Reports the card's state to the main process.
+pub type ReportStateFn = Box<dyn FnMut(usize) + 'static>;
+
+/// The pending card command, if the main process asked for one.
+pub type CardCommandFn = Box<dyn FnMut() -> Option<crate::config::CardCommand> + 'static>;
 
 /// The widget settings for the app currently focused.
 ///
@@ -85,6 +115,9 @@ impl WindowManager {
             open_settings: callbacks.open_settings,
             analyze_field: callbacks.analyze_field,
             widget_settings: callbacks.widget_settings,
+            card_command: callbacks.card_command,
+            fetch_card_command: callbacks.fetch_card_command,
+            report_state: callbacks.report_state,
         })
     }
 
@@ -108,6 +141,9 @@ impl WindowManager {
                 open_settings: self.open_settings,
                 analyze_field: self.analyze_field,
                 widget_settings: self.widget_settings,
+                card_command: self.card_command,
+                fetch_card_command: self.fetch_card_command,
+                report_state: self.report_state,
             },
         );
 
@@ -134,6 +170,10 @@ struct WindowManagerApp {
     cursor_hittest_enabled: bool,
     error: Option<Error>,
     widget_settings: WidgetSettings,
+    card_command: CardCommandFn,
+    fetch_card_command: FetchCardCommandFn,
+    report_state: ReportStateFn,
+    last_card_poll: Instant,
 }
 
 impl WindowManagerApp {
@@ -162,6 +202,10 @@ impl WindowManagerApp {
             cursor_hittest_enabled: false,
             error: None,
             widget_settings: callbacks.widget_settings,
+            card_command: callbacks.card_command,
+            fetch_card_command: callbacks.fetch_card_command,
+            report_state: callbacks.report_state,
+            last_card_poll: Instant::now(),
         }
     }
 
@@ -177,6 +221,12 @@ impl WindowManagerApp {
             None => {
                 self.render_state.set_field_active(false);
             }
+        }
+
+        // A card command from the main process: the keyboard shortcuts live
+        // there, and the card lives here.
+        if let Some(command) = (self.card_command)() {
+            self.apply_card_command(command);
         }
 
         // The pinned position belongs to the focused app and comes from the
@@ -196,6 +246,36 @@ impl WindowManagerApp {
 
     fn refresh_config(&mut self) {
         (self.refresh_config)();
+    }
+
+    /// Applies a command for the suggestion card.
+    fn apply_card_command(&mut self, command: crate::config::CardCommand) {
+        use crate::config::CardCommand;
+
+        match command {
+            CardCommand::Focus => self.render_state.open_widget(),
+            CardCommand::NextSuggestion => self.render_state.next_lint(),
+            CardCommand::PreviousSuggestion => self.render_state.previous_lint(),
+            CardCommand::NextReplacement => self.render_state.next_suggestion_row(),
+            CardCommand::PreviousReplacement => self.render_state.previous_suggestion_row(),
+            CardCommand::Accept => {
+                self.render_state.apply_shown_replacement();
+            }
+            CardCommand::Dismiss => {
+                self.render_state.dismiss_shown_lint();
+            }
+            CardCommand::Close => self.render_state.close_popup(),
+        }
+
+        // The main process shows how many suggestions the card has, so the
+        // state is reported back after every change.
+        self.report_card_state();
+    }
+
+    /// Reports what the card is showing to the main process.
+    fn report_card_state(&mut self) {
+        let suggestions = self.render_state.open_suggestion_count();
+        (self.report_state)(suggestions);
     }
 
     /// Toggles native click-through behavior based on the cursor's current interactive Elocutio target,
@@ -260,6 +340,15 @@ impl ApplicationHandler for WindowManagerApp {
         if now.duration_since(self.last_config_poll) >= CONFIG_POLL_INTERVAL {
             self.refresh_config();
             self.last_config_poll = now;
+        }
+
+        // The card is polled for a command more often than the configuration
+        // is, because a keypress has to feel immediate.
+        if now.duration_since(self.last_card_poll) >= CARD_POLL_INTERVAL {
+            self.last_card_poll = now;
+            if let Some(command) = (self.fetch_card_command)() {
+                self.apply_card_command(command);
+            }
         }
 
         self.update_cursor_hittest(event_loop);

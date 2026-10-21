@@ -24,7 +24,11 @@ pub struct HighlighterWorker {
 
 impl HighlighterWorker {
     /// Spawns a new highlighter process and thread to manage it.
-    pub fn spawn(config: Arc<Mutex<Config>>, app: tauri::AppHandle) -> io::Result<Self> {
+    pub fn spawn(
+        config: Arc<Mutex<Config>>,
+        app: tauri::AppHandle,
+        suggestion_count: Arc<crate::config::SuggestionCount>,
+    ) -> io::Result<Self> {
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let (startup_sender, startup_receiver) = std::sync::mpsc::sync_channel(1);
 
@@ -49,13 +53,14 @@ impl HighlighterWorker {
                         }
                     };
 
-                    let mut server = match highlighter_process.create_server(config) {
-                        Ok(server) => server,
-                        Err(error) => {
-                            let _ = startup_sender.send(Err(error));
-                            return;
-                        }
-                    };
+                    let mut server =
+                        match highlighter_process.create_server(config, suggestion_count) {
+                            Ok(server) => server,
+                            Err(error) => {
+                                let _ = startup_sender.send(Err(error));
+                                return;
+                            }
+                        };
 
                     let _ = startup_sender.send(Ok(()));
                     run_server_until_shutdown(&mut server, shutdown_receiver, &app).await;

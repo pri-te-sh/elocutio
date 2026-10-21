@@ -29,6 +29,7 @@ impl HighlighterProcess {
     pub fn create_server(
         &mut self,
         config: Arc<Mutex<Config>>,
+        suggestion_count: Arc<crate::config::SuggestionCount>,
     ) -> io::Result<Server<ChildStdout, ChildStdin>> {
         let stdout = self.child.stdout.take().ok_or_else(|| {
             io::Error::new(
@@ -43,7 +44,7 @@ impl HighlighterProcess {
             )
         })?;
 
-        Ok(Server::new(stdout, stdin, config))
+        Ok(Server::new(stdout, stdin, config).with_suggestion_count(suggestion_count))
     }
 
     pub async fn terminate(&mut self) {

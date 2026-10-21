@@ -6,13 +6,15 @@ use tokio::sync::Mutex;
 
 use super::error::ProtocolError;
 use super::framing::write_message;
-use super::message::{Request, Response};
+use super::message::{Command, Request, Response};
 
 /// Tauri-side protocol endpoint that owns shared state and responds to highlighter requests.
 pub struct Server<R, W> {
     reader: BufReader<R>,
     writer: W,
     config: Arc<Mutex<Config>>,
+    /// The shared suggestion count, so the menu bar can show it.
+    suggestion_count: Option<Arc<crate::config::SuggestionCount>>,
 }
 
 impl<R, W> Server<R, W>
@@ -25,7 +27,18 @@ where
             reader: BufReader::new(reader),
             writer,
             config,
+            suggestion_count: None,
         }
+    }
+
+    /// Shares the suggestion count with the server, so the menu bar can show
+    /// how many suggestions the card has.
+    pub fn with_suggestion_count(
+        mut self,
+        suggestion_count: Arc<crate::config::SuggestionCount>,
+    ) -> Self {
+        self.suggestion_count = Some(suggestion_count);
+        self
     }
 
     pub async fn receive_request(&mut self) -> Result<Option<Request>, ProtocolError> {
@@ -34,11 +47,36 @@ where
             return Ok(None);
         }
 
+        // The highlighter can send a request, which is answered, or a
+        // command, which is not. Both arrive on the same stream.
+        if let Ok(command) = serde_json::from_str::<Command>(&line) {
+            self.handle_command(&command).await;
+            return Ok(None);
+        }
+
         let request = serde_json::from_str(&line)?;
         let response = self.handle_request(&request).await;
         write_message(&mut self.writer, &response).await?;
 
         Ok(Some(request))
+    }
+
+    /// Handles a command from the highlighter.
+    async fn handle_command(&self, command: &Command) {
+        match command {
+            Command::CardState { suggestions } => {
+                let mut config = self.config.lock().await;
+                config.card_suggestion_count = *suggestions;
+                if let Some(count) = &self.suggestion_count {
+                    count.set(*suggestions);
+                }
+            }
+            Command::Card(card_command) => {
+                // The highlighter asks the main process to drive the card.
+                let mut config = self.config.lock().await;
+                config.card_command = Some(*card_command);
+            }
+        }
     }
 
     async fn handle_request(&self, request: &Request) -> Response {
@@ -72,6 +110,22 @@ where
             Request::GetAutoEnableNewApps => Response::GetAutoEnableNewApps {
                 enabled: self.config.lock().await.auto_enable_new_apps,
             },
+            Request::GetCardState => {
+                // The number of suggestions the card has open.
+                let config = self.config.lock().await;
+                Response::CardState {
+                    open: config.card_suggestion_count > 0,
+                    suggestions: config.card_suggestion_count,
+                }
+            }
+            Request::GetCardCommand => {
+                // The command is taken as it is read, so a keypress is
+                // delivered exactly once.
+                let mut config = self.config.lock().await;
+                Response::CardCommand {
+                    command: config.card_command.take(),
+                }
+            }
             Request::GetWidgetAnchor { bundle_id } => {
                 let config = self.config.lock().await;
                 Response::GetWidgetAnchor {

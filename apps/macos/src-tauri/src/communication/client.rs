@@ -9,7 +9,7 @@ use tokio::{
 
 use super::error::ProtocolError;
 use super::framing::write_message;
-use super::message::{Request, Response};
+use super::message::{Command, Request, Response};
 
 /// Highlighter-side protocol endpoint for requesting state from the Tauri server over async I/O.
 pub struct Client<R, W> {
@@ -112,6 +112,23 @@ where
         }
     }
 
+    /// Asks for a pending card command.
+    pub async fn get_card_command(
+        &mut self,
+    ) -> Result<Option<crate::config::CardCommand>, ProtocolError> {
+        match self.send_request(Request::GetCardCommand).await? {
+            Response::CardCommand { command } => Ok(command),
+            _ => Err(ProtocolError::UnexpectedResponse {
+                expected: "CardCommand",
+            }),
+        }
+    }
+
+    /// Reports how many suggestions the card has open.
+    pub async fn report_card_state(&mut self, suggestions: usize) -> Result<(), ProtocolError> {
+        super::framing::write_message(&mut self.writer, &Command::CardState { suggestions }).await
+    }
+
     /// The widget's pinned position for the focused app.
     pub async fn get_widget_anchor(
         &mut self,
@@ -206,6 +223,14 @@ where
             Response::Ack => Ok(()),
             _ => Err(ProtocolError::UnexpectedResponse { expected: "Ack" }),
         }
+    }
+
+    /// Sends a command without waiting for a reply.
+    ///
+    /// This is what a keypress uses: the user pressed a shortcut and the
+    /// card should move now.
+    pub async fn send_command(&mut self, command: Command) -> Result<(), ProtocolError> {
+        super::framing::write_message(&mut self.writer, &command).await
     }
 
     async fn send_request(&mut self, request: Request) -> Result<Response, ProtocolError> {

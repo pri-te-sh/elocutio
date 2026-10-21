@@ -12,9 +12,34 @@ use tokio::runtime::Runtime as AsyncRuntime;
 use crate::highlighter_service::HighlighterService;
 use crate::windows::{open_issue_report, show_editor_window, show_settings_window};
 
+/// The label the menu shows for the current suggestion count.
+///
+/// The plan's menu is "3 suggestions", so the count is part of the menu rather
+/// than something the user has to infer from the overlay.
+pub fn suggestions_label(count: usize) -> String {
+    match count {
+        0 => "No suggestions".to_string(),
+        1 => "1 suggestion".to_string(),
+        count => format!("{count} suggestions"),
+    }
+}
+
 /// Defines the layout of the tray menu.
 fn tray_menu<R: Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<Menu<R>> {
+    let count = manager
+        .try_state::<HighlighterService>()
+        .map(|state| state.suggestion_count())
+        .unwrap_or(0);
+
     MenuBuilder::new(manager)
+        .text("suggestions", suggestions_label(count))
+        .separator()
+        .text("focus-card", "Show Suggestions")
+        .text("next-suggestion", "Next Suggestion")
+        .text("previous-suggestion", "Previous Suggestion")
+        .text("accept-suggestion", "Accept Suggestion")
+        .text("dismiss-suggestion", "Dismiss Suggestion")
+        .separator()
         .text("toggle-service", "Toggle Service")
         .text("rewrite-selection", "Rewrite Selection")
         .text("analyze-field", "Analyze Field")
@@ -39,6 +64,13 @@ pub fn set_up_tray_menu(app: &AppHandle) -> tauri::Result<()> {
             let event_id = event.id().0.as_str();
 
             match event_id {
+                "focus-card" => request_card(app, crate::config::CardCommand::Focus),
+                "next-suggestion" => request_card(app, crate::config::CardCommand::NextSuggestion),
+                "previous-suggestion" => {
+                    request_card(app, crate::config::CardCommand::PreviousSuggestion)
+                }
+                "accept-suggestion" => request_card(app, crate::config::CardCommand::Accept),
+                "dismiss-suggestion" => request_card(app, crate::config::CardCommand::Dismiss),
                 "toggle-service" => {
                     let service: State<HighlighterService> = app.state();
 
@@ -122,6 +154,19 @@ pub fn set_up_tray_menu(app: &AppHandle) -> tauri::Result<()> {
     });
 
     Ok(())
+}
+
+/// Asks the highlighter to run a card command.
+///
+/// The command travels with the configuration poll, so the tray menu and the
+/// keyboard shortcuts drive the card the same way.
+fn request_card(app: &AppHandle, command: crate::config::CardCommand) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = crate::config::set_card_command(&app, command).await {
+            error!("Could not send the card command: {error}");
+        }
+    });
 }
 
 fn service_status_color(is_running: bool) -> [u8; 4] {

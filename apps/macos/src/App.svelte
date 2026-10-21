@@ -175,6 +175,89 @@
     is_default: boolean;
   };
 
+  // ---- Types for the commands that had no UI caller until now. ----
+
+  /** `get_voice_profile_summary` — the stored profile, counted rather than spelled out. */
+  type VoiceProfileSummary = {
+    id: string;
+    name: string;
+    strength: string;
+    confidence: number;
+    summary: string;
+    trait_count: number;
+    override_count: number;
+    feedback_count: number;
+    sample_guards: number;
+    learning_enabled: boolean;
+  };
+  /**
+   * A trait value in the tagged shape the crate stores: the kind, then the
+   * value. `get_voice_traits` returns the untagged shape instead.
+   */
+  type TaggedTraitValue = {
+    kind: "number" | "bool" | "text";
+    value: number | boolean | string;
+  };
+  /** `get_voice_trait_list` — the traits, with their confidence and override state. */
+  type VoiceTraitEntry = {
+    key: string;
+    value: TaggedTraitValue;
+    confidence: number;
+    is_override: boolean;
+    evidence: string[];
+  };
+  /** `get_voice_trait_overrides` — only the traits the user set by hand. */
+  type VoiceTraitOverride = [string, TaggedTraitValue];
+  /** `get_copy_guard_report` — which sample n-grams a candidate rewrite shares. */
+  type CopyGuardReport = {
+    overlaps: {
+      ngram: string;
+      fingerprint: number;
+      candidate_start: number;
+      candidate_end: number;
+      sample_index?: number;
+    }[];
+    clean: boolean;
+  };
+  /** `rewrite_text` / `rewrite_text_streamed` — the raw provider answer. */
+  type RewriteResult = {
+    text: string;
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number | null;
+  };
+  /** `get_pending_rewrite` and friends — a prepared rewrite, not yet applied. */
+  type PendingRewrite = {
+    original: string;
+    rewritten: string;
+    diff: DiffSegment[];
+    model: string;
+    created_at: number;
+  };
+  /** `run_resolver_quality_check` — the resolver scored against the seed golden set. */
+  type ResolverQuality = {
+    version: string;
+    quotes: number;
+    resolved: number;
+    ambiguous: number;
+    wrong: number;
+    resolution_rate: number;
+    ambiguous_rate: number;
+    failures: string[];
+  };
+  /** `get_app_matrix` — the apps, the conditions, and what is not supported. */
+  type AppMatrix = {
+    tierA: MatrixApp[];
+    tierB: MatrixApp[];
+    unsupported: { bundleId: string; reason: string }[];
+    conditions: MatrixCondition[];
+  };
+  /** The state of one matrix check. */
+  type MatrixState = "pass" | "fail" | "unverified";
+  /** `get_coalescer_state` — how many analyses the coalescer is tracking. */
+  type CoalescerState = { tracked: number; empty: boolean };
+
   let version = "0.1.0";
   let permission: Permission = "Unknown";
   let onboardingCompleted: boolean | null = null;
@@ -252,6 +335,48 @@
   let customInstruction = "";
   let instructionBusy = false;
   let instructionMessage = "";
+
+  // Voice diagnostics: the counts and the guard report behind the voice card.
+  let voiceSummary: VoiceProfileSummary | null = null;
+  let voiceTraitList: VoiceTraitEntry[] = [];
+  let voiceTraitOverrides: VoiceTraitOverride[] = [];
+  let voiceEventCount = 0;
+  let feedbackFingerprintCount = 0;
+  let copyGuardReport: CopyGuardReport | null = null;
+  let copyGuardText = "";
+  let copyGuardBusy = false;
+  let voiceContext = "";
+  let recordedRating: string | null = null;
+
+  // The rewrite flow: the raw provider answer, and the prepared system-wide
+  // rewrite that the ⌥⌘E shortcut leaves behind.
+  let rawRewrite: RewriteResult | null = null;
+  let rawRewriteBusy = false;
+  let streamedRewrite: RewriteResult | null = null;
+  let pendingRewrite: PendingRewrite | null = null;
+  let pendingBusy = false;
+  let pendingMessage = "";
+
+  // The resolver quality check against the seed golden set.
+  let resolverQuality: ResolverQuality | null = null;
+  let qualityBusy = false;
+  let qualityMessage = "";
+
+  // The app matrix: the apps, the conditions, and what has been checked.
+  let matrixTierB: MatrixApp[] = [];
+  let matrixUnsupported: { bundleId: string; reason: string }[] = [];
+  let matrixChecks: Record<string, Record<string, MatrixState>> = {};
+  let matrixBusy = false;
+  let matrixMessage = "";
+  let matrixOpenApp: string | null = null;
+
+  // Diagnostics: the provider's default model and the request coalescer.
+  let defaultModel = "";
+  let coalescerState: CoalescerState | null = null;
+  let coalescerBusy = false;
+
+  // The active section in the table of contents.
+  let activeSection = "general";
 
   let sourceText =
     "Tehre are alot of ways to say this, but I think this one is more better.";

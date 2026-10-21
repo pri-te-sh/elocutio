@@ -16,17 +16,24 @@ pub struct HighlighterService {
     config: Arc<Mutex<Config>>,
     app: tauri::AppHandle,
     worker: StdMutex<Option<HighlighterWorker>>,
+    /// The shared suggestion count, so the menu bar can show it.
+    suggestion_count: Arc<crate::config::SuggestionCount>,
 }
 
 impl HighlighterService {
     /// Create a new highlighter process service, without starting it.
     /// The provided config pointer will be automatically synced to the new process when changes are
     /// made.
-    pub fn new(config: Arc<Mutex<Config>>, app: tauri::AppHandle) -> Self {
+    pub fn new(
+        config: Arc<Mutex<Config>>,
+        app: tauri::AppHandle,
+        suggestion_count: Arc<crate::config::SuggestionCount>,
+    ) -> Self {
         Self {
             config,
             app,
             worker: StdMutex::new(None),
+            suggestion_count,
         }
     }
 
@@ -45,6 +52,7 @@ impl HighlighterService {
         *worker = Some(HighlighterWorker::spawn(
             self.config.clone(),
             self.app.clone(),
+            self.suggestion_count.clone(),
         )?);
 
         Ok(true)
@@ -63,6 +71,11 @@ impl HighlighterService {
         }
 
         false
+    }
+
+    /// How many suggestions the card currently has open.
+    pub fn suggestion_count(&self) -> usize {
+        self.suggestion_count.get()
     }
 
     /// Starts or stops the worker based on the current state.

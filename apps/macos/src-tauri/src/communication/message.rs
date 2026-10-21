@@ -2,6 +2,21 @@ use crate::config::Integration;
 use harper_core::{Dialect, IgnoredLints, linting::FlatConfig};
 use serde::{Deserialize, Serialize};
 
+/// A message the main process sends to the highlighter without waiting for a
+/// reply.
+///
+/// The highlighter's protocol is request/response, which suits configuration
+/// and settings. A keypress is not a question, though: the user pressed a
+/// shortcut and the card should move now, not after a round trip. So a
+/// command is fire-and-forget.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Command {
+    /// A command for the suggestion card.
+    Card(crate::config::CardCommand),
+    /// The highlighter reporting what the card is showing.
+    CardState { suggestions: usize },
+}
+
 /// Canonical client-to-server protocol message sent by the highlighter process.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
@@ -40,6 +55,12 @@ pub enum Request {
     GetWidgetAnchor {
         bundle_id: String,
     },
+    /// Ask for a pending card command.
+    ///
+    /// The card is polled for this often, so it has to be a small exchange.
+    GetCardCommand,
+    /// Ask how many suggestions the card has open.
+    GetCardState,
 }
 
 /// Canonical server-to-client protocol message sent by the Tauri app.
@@ -71,6 +92,15 @@ pub enum Response {
     },
     GetWidgetAnchor {
         anchor: Option<crate::widget_anchor::WidgetAnchor>,
+    },
+    /// The pending card command, if there is one.
+    CardCommand {
+        command: Option<crate::config::CardCommand>,
+    },
+    /// How many suggestions the card has open.
+    CardState {
+        open: bool,
+        suggestions: usize,
     },
     Ack,
 }

@@ -1,4 +1,5 @@
 mod error;
+pub mod keyboard;
 mod render_state;
 mod window;
 mod window_manager;
@@ -41,6 +42,9 @@ impl Highlighter {
         open_settings: impl FnMut() + 'static,
         analyze_field: impl FnMut() + 'static,
         widget_settings: impl FnMut(&str) -> Option<crate::widget_anchor::WidgetAnchor> + 'static,
+        card_command: impl FnMut() -> Option<crate::config::CardCommand> + 'static,
+        fetch_card_command: impl FnMut() -> Option<crate::config::CardCommand> + 'static,
+        report_state: impl FnMut(usize) + 'static,
     ) -> Result<Self, Error> {
         let lint_text: LintText = Box::new(lint_text);
         let ignore_lint: IgnoreLint = Box::new(ignore_lint);
@@ -62,6 +66,9 @@ impl Highlighter {
                     open_settings,
                     analyze_field,
                     widget_settings: Box::new(widget_settings),
+                    card_command: Box::new(card_command),
+                    fetch_card_command: Box::new(fetch_card_command),
+                    report_state: Box::new(report_state),
                 },
             )?,
         })

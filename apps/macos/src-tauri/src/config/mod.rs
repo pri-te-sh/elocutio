@@ -13,6 +13,69 @@ pub use integration::Integration;
 use serde::de::{DeserializeOwned, Error as _};
 use std::{fs, io, path::PathBuf, sync::Arc};
 
+/// How many suggestions the card currently has open.
+///
+/// The highlighter reports this as it works, and the menu bar shows it. It is
+/// app state rather than configuration, so it is kept in its own place.
+#[derive(Debug, Default)]
+pub struct SuggestionCount(std::sync::atomic::AtomicUsize);
+
+/// The shared handle type Tauri uses for managed state.
+pub type Shared<T> = std::rc::Rc<T>;
+
+impl SuggestionCount {
+    /// The current count.
+    pub fn get(&self) -> usize {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Set the current count.
+    pub fn set(&self, count: usize) {
+        self.0.store(count, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Asks the highlighter to run a card command.
+///
+/// The command is transient: it lives in the shared configuration in memory
+/// and the highlighter fetches it on its fast poll. It is never written to
+/// disk, because a keypress is not a setting.
+pub async fn set_card_command(app: &tauri::AppHandle, command: CardCommand) -> Result<(), String> {
+    use tauri::Manager;
+    let state = app.state::<std::sync::Arc<tokio::sync::Mutex<Config>>>();
+    let mut config = state.lock().await;
+    config.card_command = Some(command);
+    Ok(())
+}
+
+/// A command for the suggestion card.
+///
+/// The card lives in the highlighter process, and the card window never takes
+/// keyboard focus — activating it would move the caret and break the paste
+/// that follows. So the keyboard model is driven from the main process with
+/// global hotkeys, and the command travels to the highlighter with the
+/// configuration poll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardCommand {
+    /// Open the card on the first suggestion.
+    Focus,
+    /// Move to the next suggestion.
+    NextSuggestion,
+    /// Move to the previous suggestion.
+    PreviousSuggestion,
+    /// Show the next replacement of the current suggestion.
+    NextReplacement,
+    /// Show the previous replacement.
+    PreviousReplacement,
+    /// Apply the shown replacement.
+    Accept,
+    /// Dismiss the current suggestion.
+    Dismiss,
+    /// Close the card.
+    Close,
+}
+
 /// User-controlled app state needed by Tauri commands and the highlighter process.
 pub struct Config {
     pub mutable_dictionary: MutableDictionary,
@@ -49,6 +112,13 @@ pub struct Config {
     pub learn_from_edits: bool,
     /// Requested rewrite tone.
     pub rewrite_tone: crate::openrouter::RewriteTone,
+    /// A pending command for the highlighter's suggestion card.
+    pub card_command: Option<CardCommand>,
+    /// How many suggestions the card currently has open.
+    ///
+    /// The highlighter reports this so the menu bar and the settings window
+    /// can say what the card is showing.
+    pub card_suggestion_count: usize,
     /// Where the floating widget is pinned, per app.
     ///
     /// An app that is not in the map uses the default position: beside the
@@ -94,6 +164,8 @@ impl Config {
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             custom_instruction: String::new(),
+            card_command: None,
+            card_suggestion_count: 0,
             widget_anchors: crate::widget_anchor::WidgetAnchors::default(),
             local_only: false,
             blocklist: Vec::new(),
@@ -359,6 +431,10 @@ impl Config {
             rewrite_tone: deserialize_optional_field(object, "rewrite_tone")?.unwrap_or_default(),
             custom_instruction: deserialize_optional_field(object, "custom_instruction")?
                 .unwrap_or_default(),
+            // A card command is transient: it is never written to disk, so
+            // there is nothing to read back.
+            card_command: None,
+            card_suggestion_count: 0,
             widget_anchors: deserialize_optional_field(object, "widget_anchors")?
                 .unwrap_or_default(),
             local_only: deserialize_optional_field(object, "local_only")?.unwrap_or(false),

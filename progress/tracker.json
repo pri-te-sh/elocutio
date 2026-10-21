@@ -713,12 +713,22 @@
           "priority": "P1",
           "estimateDays": 2,
           "status": "in_progress",
-          "notes": "The word-level diff renders in Settings after a rewrite. The system-wide path still replaces the selection immediately, without a preview to accept or reject.",
+          "notes": "The word-level diff renders in Settings after a rewrite, and the system-wide Rewrite Selection now previews before it applies: the first press prepares the rewrite and shows the diff, the second applies exactly what was shown. A rewrite the user has not looked at never lands in their document. Accept and reject are still separate actions in the overlay.",
           "evidence": [
             {
               "type": "text",
               "path": "crates/elocutio-analysis/src/diff.rs",
               "contains": "pub fn diff_words"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/rewrite.rs",
+              "contains": "pub async fn preview_selection"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/rewrite.rs",
+              "contains": "pub async fn apply_pending"
             }
           ]
         },

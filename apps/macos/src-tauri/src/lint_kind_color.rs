@@ -31,30 +31,72 @@ pub enum TextColor {
     White,
 }
 
-pub fn lint_kind_color(lint_kind: LintKind) -> Color {
-    match lint_kind {
-        LintKind::Agreement => Color::new(0x22, 0x8B, 0x22),
-        LintKind::BoundaryError => Color::new(0x8B, 0x45, 0x13),
-        LintKind::Capitalization => Color::new(0x54, 0x0D, 0x6E),
-        LintKind::Eggcorn => Color::new(0xFF, 0x8C, 0x00),
-        LintKind::Enhancement => Color::new(0x0E, 0xAD, 0x69),
-        LintKind::Formatting => Color::new(0x7D, 0x3C, 0x98),
-        LintKind::Grammar => Color::new(0x9B, 0x59, 0xB6),
-        LintKind::Malapropism => Color::new(0xC7, 0x15, 0x85),
-        LintKind::Miscellaneous => Color::new(0x3B, 0xCE, 0xAC),
-        LintKind::Nonstandard => Color::new(0x00, 0x8B, 0x8B),
-        LintKind::Punctuation => Color::new(0xD4, 0x85, 0x0F),
-        LintKind::Readability => Color::new(0x2E, 0x8B, 0x57),
-        LintKind::Redundancy => Color::new(0x46, 0x82, 0xB4),
-        LintKind::Regionalism => Color::new(0xC0, 0x61, 0xCB),
-        LintKind::Repetition => Color::new(0x00, 0xA6, 0x7C),
-        LintKind::Spelling => Color::new(0xEE, 0x42, 0x66),
-        LintKind::Style => Color::new(0xFF, 0xD2, 0x3F),
-        LintKind::Typo => Color::new(0xFF, 0x6B, 0x35),
-        LintKind::Usage => Color::new(0x1E, 0x90, 0xFF),
-        LintKind::WordChoice => Color::new(0x22, 0x8B, 0x22),
-        LintKind::WordOrder => Color::new(0x4D, 0x4D, 0xFF),
+/// The three underline colours the plan calls for.
+///
+/// "red/blue/gray underlines immediately" (PLAN.md §4.2). Three colours, not
+/// twenty: a user learns what red means in one glance, and the overlay stays
+/// quiet enough to read through. The inherited Harper palette used a different
+/// colour for every rule kind, which is why the mapping is a category rather
+/// than a kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnderlineKind {
+    /// A correctness problem: spelling, grammar, punctuation.
+    Red,
+    /// A style or clarity problem: concision, word choice, tone.
+    Blue,
+    /// Something worth knowing about but not worth changing.
+    Gray,
+}
+
+impl UnderlineKind {
+    /// The colour the underline is drawn in.
+    pub const fn color(self) -> Color {
+        match self {
+            // A warm red for correctness, close to what a reader expects.
+            UnderlineKind::Red => Color::new(0xD6, 0x3A, 0x4B),
+            // Ink Indigo for style, which is the brand's primary.
+            UnderlineKind::Blue => Color::new(0x3D, 0x4C, 0xB8),
+            // A neutral gray for advisory notes.
+            UnderlineKind::Gray => Color::new(0x8A, 0x8F, 0x9C),
+        }
     }
+}
+
+/// Which of the three underline colours a lint kind uses.
+pub fn underline_kind(lint_kind: LintKind) -> UnderlineKind {
+    match lint_kind {
+        // Correctness.
+        LintKind::Spelling
+        | LintKind::Typo
+        | LintKind::Capitalization
+        | LintKind::Punctuation
+        | LintKind::Agreement
+        | LintKind::BoundaryError
+        | LintKind::Eggcorn
+        | LintKind::Grammar
+        | LintKind::Malapropism
+        | LintKind::Nonstandard
+        | LintKind::Repetition
+        | LintKind::Usage
+        | LintKind::WordOrder => UnderlineKind::Red,
+
+        // Style and clarity.
+        LintKind::Enhancement
+        | LintKind::Formatting
+        | LintKind::Readability
+        | LintKind::Redundancy
+        | LintKind::Regionalism
+        | LintKind::Style
+        | LintKind::WordChoice => UnderlineKind::Blue,
+
+        // Advisory.
+        LintKind::Miscellaneous => UnderlineKind::Gray,
+    }
+}
+
+/// The colour a lint kind is drawn in.
+pub fn lint_kind_color(lint_kind: LintKind) -> Color {
+    underline_kind(lint_kind).color()
 }
 
 pub fn lint_kind_color_from_key(lint_kind_key: &str) -> Option<Color> {
@@ -73,5 +115,64 @@ pub fn contrasting_text_color(color: Color) -> TextColor {
         TextColor::Black
     } else {
         TextColor::White
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_lint_kind_has_an_underline_colour() {
+        for kind in LINT_KINDS {
+            let color = lint_kind_color(kind);
+            // The colour must not be black, or the underline would be
+            // invisible on a light document.
+            assert!(
+                color.r != 0 || color.g != 0 || color.b != 0,
+                "{kind:?} has an invisible colour"
+            );
+        }
+    }
+
+    #[test]
+    fn correctness_is_red() {
+        assert_eq!(underline_kind(LintKind::Spelling), UnderlineKind::Red);
+        assert_eq!(underline_kind(LintKind::Grammar), UnderlineKind::Red);
+        assert_eq!(underline_kind(LintKind::Punctuation), UnderlineKind::Red);
+        assert_eq!(underline_kind(LintKind::Capitalization), UnderlineKind::Red);
+    }
+
+    #[test]
+    fn style_is_blue() {
+        assert_eq!(underline_kind(LintKind::WordChoice), UnderlineKind::Blue);
+        assert_eq!(underline_kind(LintKind::Redundancy), UnderlineKind::Blue);
+        assert_eq!(underline_kind(LintKind::Enhancement), UnderlineKind::Blue);
+    }
+
+    #[test]
+    fn the_three_colours_are_distinct() {
+        assert_ne!(UnderlineKind::Red.color(), UnderlineKind::Blue.color());
+        assert_ne!(UnderlineKind::Blue.color(), UnderlineKind::Gray.color());
+        assert_ne!(UnderlineKind::Red.color(), UnderlineKind::Gray.color());
+    }
+
+    #[test]
+    fn the_red_is_actually_red() {
+        let red = UnderlineKind::Red.color();
+        assert!(red.r > red.b, "the correctness colour should read as red");
+    }
+
+    #[test]
+    fn the_blue_is_actually_blue() {
+        let blue = UnderlineKind::Blue.color();
+        assert!(blue.b > blue.r, "the style colour should read as blue");
+    }
+
+    #[test]
+    fn the_grey_is_neutral() {
+        let gray = UnderlineKind::Gray.color();
+        let spread = (gray.r as i32 - gray.g as i32).abs() + (gray.g as i32 - gray.b as i32).abs();
+        assert!(spread < 30, "the advisory colour should be neutral");
     }
 }

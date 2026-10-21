@@ -489,20 +489,27 @@
     }
   }
 
-  /** Whether an element is on screen, used to keep the nav link in step. */
-  function sectionIsVisible(id: string): boolean {
+  /**
+   * Whether a section is the one on screen, used to keep the nav link in step.
+   *
+   * The line is the bottom edge of the sticky table of contents, so a section
+   * counts as current once its heading has scrolled up past the nav.
+   */
+  function sectionIsVisible(id: string, line: number): boolean {
     const target = document.getElementById(id);
     if (!target) {
       return false;
     }
     const box = target.getBoundingClientRect();
-    return box.top <= 120 && box.bottom > 120;
+    return box.top <= line && box.bottom > line;
   }
 
   /** Move the active link to whichever section is currently on screen. */
   function syncActiveSection() {
+    const nav = document.querySelector(".toc");
+    const line = (nav?.getBoundingClientRect().bottom ?? 0) + 8;
     for (const section of sections) {
-      if (sectionIsVisible(section.id)) {
+      if (sectionIsVisible(section.id, line)) {
         activeSection = section.id;
         return;
       }
@@ -1460,16 +1467,6 @@
   /** Open or close the checklist for one app. */
   function toggleMatrixApp(bundleId: string) {
     matrixOpenApp = matrixOpenApp === bundleId ? null : bundleId;
-  }
-
-  /** The state recorded for one condition of one app, if any. */
-  function matrixStateOf(bundleId: string, condition: string): MatrixState | null {
-    return matrixChecks[bundleId]?.[condition] ?? null;
-  }
-
-  /** How many conditions of one app have a state set in this session. */
-  function matrixRecorded(bundleId: string): number {
-    return Object.keys(matrixChecks[bundleId] ?? {}).length;
   }
 
   /**
@@ -3027,6 +3024,7 @@
 
       <ul class="app-list">
         {#each matrixApps as app (app.bundle_id)}
+          {@const appChecks = matrixChecks[app.bundle_id] ?? {}}
           <li class="matrix-app">
             <button class="matrix-head" onclick={() => toggleMatrixApp(app.bundle_id)}>
               <span>
@@ -3034,7 +3032,7 @@
                 <span class="muted">{app.bundle_id}</span>
               </span>
               <span class="muted">
-                {matrixRecorded(app.bundle_id)}/{matrixConditions.length} marked here
+                {Object.keys(appChecks).length}/{matrixConditions.length} marked here
               </span>
             </button>
             {#if matrixOpenApp === app.bundle_id}
@@ -3045,7 +3043,7 @@
                     <span class="matrix-states">
                       {#each matrixStates as state (state)}
                         <button
-                          class:active={matrixStateOf(app.bundle_id, condition.name) === state}
+                          class:active={appChecks[condition.name] === state}
                           onclick={() => recordMatrixCheck(app.bundle_id, condition.name, state)}
                           disabled={matrixBusy}
                         >
@@ -3246,7 +3244,8 @@
 
   /* The section headings, one per group of cards. */
   .section {
-    scroll-margin-top: 16px;
+    /* Clears the sticky table of contents when a nav link is followed. */
+    scroll-margin-top: 72px;
     margin-bottom: 8px;
   }
 

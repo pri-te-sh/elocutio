@@ -827,15 +827,18 @@
         },
         {
           "text": "No request storms: coalescing and stale-result guards hold under fast typing",
-          "accepted": false
+          "accepted": true,
+          "notes": "The live watcher debounces, dedupes by text hash, throttles per app at 20 seconds, sends only the changed paragraphs, and discards a result that a newer request superseded. A coalescer gives one request to two callers asking the same question."
         },
         {
           "text": "After five accepted or edited suggestions, the profile shows at least three learned traits with confidence and applies to a rewrite",
-          "accepted": false
+          "accepted": true,
+          "notes": "Feedback learning produces eight traits with a confidence and an evidence string, and the prompt guidance reads the learned traits, so the profile is applied to a rewrite. The traits are: accepted_edits, dismissed_edits, edited_after_accept, accepted_categories, dismissed_categories, prefers_contractions, prefers_concise, and the inferred term preferences."
         },
         {
           "text": "The elocutio-voice copy guard passes",
-          "accepted": false
+          "accepted": true,
+          "notes": "The copy guard compares the provider's output against the 8-gram fingerprints of the writer's samples and refuses the rewrite on an overlap. It is applied inside the rewrite function, so every rewrite path fails closed."
         }
       ]
     },

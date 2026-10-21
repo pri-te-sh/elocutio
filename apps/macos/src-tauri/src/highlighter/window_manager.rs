@@ -37,6 +37,8 @@ pub struct WindowManager {
     refresh_config: RefreshConfig,
     open_settings: OpenSettings,
     analyze_field: AnalyzeField,
+    /// Reports the widget anchor and tone for the app currently focused.
+    widget_settings: WidgetSettings,
 }
 
 pub struct WindowManagerCallbacks {
@@ -47,7 +49,15 @@ pub struct WindowManagerCallbacks {
     pub refresh_config: RefreshConfig,
     pub open_settings: OpenSettings,
     pub analyze_field: AnalyzeField,
+    /// Reports the widget anchor and tone for the app currently focused.
+    pub widget_settings: WidgetSettings,
 }
+
+/// The widget settings for the app currently focused.
+///
+/// The highlighter passes the focused bundle identifier, because it is the only
+/// process that knows which app is in front.
+pub type WidgetSettings = Box<dyn FnMut(&str) -> Option<crate::widget_anchor::WidgetAnchor>>;
 
 impl WindowManager {
     /// Creates the event loop before windows exist because winit requires window creation to happen
@@ -74,6 +84,7 @@ impl WindowManager {
             refresh_config: callbacks.refresh_config,
             open_settings: callbacks.open_settings,
             analyze_field: callbacks.analyze_field,
+            widget_settings: callbacks.widget_settings,
         })
     }
 
@@ -96,6 +107,7 @@ impl WindowManager {
                 refresh_config: self.refresh_config,
                 open_settings: self.open_settings,
                 analyze_field: self.analyze_field,
+                widget_settings: self.widget_settings,
             },
         );
 
@@ -121,6 +133,7 @@ struct WindowManagerApp {
     hovered_lint: Option<usize>,
     cursor_hittest_enabled: bool,
     error: Option<Error>,
+    widget_settings: WidgetSettings,
 }
 
 impl WindowManagerApp {
@@ -148,6 +161,7 @@ impl WindowManagerApp {
             hovered_lint: None,
             cursor_hittest_enabled: false,
             error: None,
+            widget_settings: callbacks.widget_settings,
         }
     }
 
@@ -164,6 +178,16 @@ impl WindowManagerApp {
                 self.render_state.set_field_active(false);
             }
         }
+
+        // The pinned position belongs to the focused app and comes from the
+        // parent process. The tone is detected locally while the tree is
+        // walked, so it costs nothing and works offline.
+        if let Ok(Some(bundle_id)) = self.os_broker.focused_bundle_id() {
+            let anchor = (self.widget_settings)(&bundle_id);
+            self.render_state.set_widget_anchor(anchor);
+        }
+        self.render_state
+            .set_tone_badge(self.os_broker.detected_tone());
 
         for window in &self.windows {
             window.request_redraw();

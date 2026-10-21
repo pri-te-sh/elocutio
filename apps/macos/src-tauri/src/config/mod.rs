@@ -49,6 +49,12 @@ pub struct Config {
     pub learn_from_edits: bool,
     /// Requested rewrite tone.
     pub rewrite_tone: crate::openrouter::RewriteTone,
+    /// Where the floating widget is pinned, per app.
+    ///
+    /// An app that is not in the map uses the default position: beside the
+    /// first underline, or in the screen corner when there is nothing to
+    /// underline.
+    pub widget_anchors: crate::widget_anchor::WidgetAnchors,
     /// A free-text instruction the user applies to every request.
     ///
     /// It is sanitized before it reaches a prompt: control characters are
@@ -88,6 +94,7 @@ impl Config {
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             custom_instruction: String::new(),
+            widget_anchors: crate::widget_anchor::WidgetAnchors::default(),
             local_only: false,
             blocklist: Vec::new(),
         }
@@ -303,6 +310,7 @@ impl Config {
             "learn_from_edits": self.learn_from_edits,
             "rewrite_tone": self.rewrite_tone,
             "custom_instruction": self.custom_instruction,
+            "widget_anchors": self.widget_anchors,
             "local_only": self.local_only,
             "blocklist": self.blocklist,
         }))
@@ -350,6 +358,8 @@ impl Config {
                 .unwrap_or(false),
             rewrite_tone: deserialize_optional_field(object, "rewrite_tone")?.unwrap_or_default(),
             custom_instruction: deserialize_optional_field(object, "custom_instruction")?
+                .unwrap_or_default(),
+            widget_anchors: deserialize_optional_field(object, "widget_anchors")?
                 .unwrap_or_default(),
             local_only: deserialize_optional_field(object, "local_only")?.unwrap_or(false),
             blocklist: deserialize_optional_field(object, "blocklist")?.unwrap_or_default(),

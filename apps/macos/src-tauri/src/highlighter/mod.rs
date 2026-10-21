@@ -40,6 +40,7 @@ impl Highlighter {
         refresh_config: impl FnMut() + 'static,
         open_settings: impl FnMut() + 'static,
         analyze_field: impl FnMut() + 'static,
+        widget_settings: impl FnMut(&str) -> Option<crate::widget_anchor::WidgetAnchor> + 'static,
     ) -> Result<Self, Error> {
         let lint_text: LintText = Box::new(lint_text);
         let ignore_lint: IgnoreLint = Box::new(ignore_lint);
@@ -60,6 +61,7 @@ impl Highlighter {
                     refresh_config,
                     open_settings,
                     analyze_field,
+                    widget_settings: Box::new(widget_settings),
                 },
             )?,
         })

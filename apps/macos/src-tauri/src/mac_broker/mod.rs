@@ -68,6 +68,8 @@ pub struct MacBroker {
     application_icon_cache: Mutex<HashMap<String, Vec<u8>>>,
     window_movement: Option<WindowMovementState>,
     accessibility_activation: Option<AccessibilityActivationState>,
+    /// The tone detected for the focused field, for the widget's badge.
+    detected_tone: Option<String>,
 }
 
 impl MacBroker {
@@ -80,6 +82,7 @@ impl MacBroker {
             application_icon_cache: Mutex::new(HashMap::new()),
             window_movement: None,
             accessibility_activation: None,
+            detected_tone: None,
         }
     }
 
@@ -483,6 +486,8 @@ impl OsBroker for MacBroker {
 
         walker.walk(&focused, &collector);
 
+        let tone = collector.detected_tone();
+        self.detected_tone = tone;
         collector.unwrap_rects()
     }
 
@@ -503,6 +508,15 @@ impl OsBroker for MacBroker {
         let actual = ax_string_attribute(&element, "AXValue")
             .map_err(|error| format!("Could not verify the restored field: {error}"))?;
         Ok(actual == text)
+    }
+
+    fn detected_tone(&self) -> Option<String> {
+        self.detected_tone.clone()
+    }
+
+    fn focused_bundle_id(&mut self) -> Result<Option<String>, String> {
+        let pid = focused_window_pid::focused_window_pid().map_err(|error| error.to_string())?;
+        bundle_identifier_for_pid(pid).map_err(|error| error.to_string())
     }
 
     fn focused_text(&mut self) -> Result<Option<FocusedText>, String> {

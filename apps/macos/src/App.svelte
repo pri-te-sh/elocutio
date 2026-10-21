@@ -122,6 +122,7 @@
     failed: number;
     needs_human: number;
   };
+  type WidgetAnchor = { corner: string; offset: number };
   type ModelOption = {
     id: string;
     display_name: string;
@@ -199,6 +200,8 @@
   let costCapBusy = false;
   let costCapMessage = "";
   let gateReport: GateReport | null = null;
+  let widgetAnchors: [string, WidgetAnchor][] = [];
+  let anchorCorners: string[] = [];
   let customInstruction = "";
   let instructionBusy = false;
   let instructionMessage = "";
@@ -435,6 +438,27 @@
       costCapMessage = String(error);
     } finally {
       costCapBusy = false;
+    }
+  }
+
+  async function refreshWidgetAnchors() {
+    try {
+      widgetAnchors = await invoke<[string, WidgetAnchor][]>("get_widget_anchors");
+      anchorCorners = await invoke<string[]>("get_widget_anchor_corners");
+    } catch (error) {
+      instructionMessage = String(error);
+    }
+  }
+
+  async function setWidgetAnchor(bundleId: string, corner: string | null) {
+    try {
+      const anchor = corner === null ? null : { corner, offset: 24 };
+      widgetAnchors = await invoke<[string, WidgetAnchor][]>("set_widget_anchor", {
+        bundleId,
+        anchor,
+      });
+    } catch (error) {
+      instructionMessage = String(error);
     }
   }
 
@@ -895,6 +919,7 @@
     void refreshCostCap();
     void refreshInstruction();
     void refreshGate();
+    void refreshWidgetAnchors();
   });
 </script>
 
@@ -1122,6 +1147,42 @@
     {#if appsMessage}
       <p class="message">{appsMessage}</p>
     {/if}
+
+    <h3>Widget position</h3>
+    <p class="muted">
+      The floating widget sits beside the first underline by default. Pin it to a corner for an app
+      to keep it there.
+    </p>
+
+    <ul class="app-list">
+      {#each integrations as integration (integration.bundle_id)}
+        {@const pinned = widgetAnchors.find(([id]) => id === integration.bundle_id)}
+        <li>
+          <label class="switch-row">
+            <select
+              value={pinned ? pinned[1].corner : ""}
+              onchange={(event) =>
+                setWidgetAnchor(
+                  integration.bundle_id,
+                  (event.currentTarget as HTMLSelectElement).value || null,
+                )}
+              disabled={appsBusy}
+            >
+              <option value="">Default</option>
+              {#each anchorCorners as corner}
+                <option value={corner}>{corner.replace("_", " ")}</option>
+              {/each}
+            </select>
+            <span>
+              <strong>{integration.display_name}</strong>
+              <span class="muted">
+                {pinned ? "Pinned" : "Default position"}
+              </span>
+            </span>
+          </label>
+        </li>
+      {/each}
+    </ul>
   </section>
 
   <section class="card">

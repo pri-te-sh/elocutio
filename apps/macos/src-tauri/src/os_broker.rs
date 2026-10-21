@@ -98,6 +98,21 @@ pub trait OsBroker {
         Ok(None)
     }
 
+    /// The tone detected for the focused field, if it was clear enough to name.
+    ///
+    /// The detection is local and deterministic.
+    fn detected_tone(&self) -> Option<String> {
+        None
+    }
+
+    /// The bundle identifier of the app in front, if it can be determined.
+    ///
+    /// The highlighter needs this to ask for the settings of the app the user
+    /// is actually looking at.
+    fn focused_bundle_id(&mut self) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
     /// Replace the full value of the focused editable field for undo.
     fn replace_focused_text(&mut self, _text: &str) -> Result<bool, String> {
         Err("This platform does not support field undo yet.".into())

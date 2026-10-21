@@ -112,6 +112,24 @@ where
         }
     }
 
+    /// The widget's pinned position for the focused app.
+    pub async fn get_widget_anchor(
+        &mut self,
+        bundle_id: &str,
+    ) -> Result<Option<crate::widget_anchor::WidgetAnchor>, ProtocolError> {
+        match self
+            .send_request(Request::GetWidgetAnchor {
+                bundle_id: bundle_id.to_string(),
+            })
+            .await?
+        {
+            Response::GetWidgetAnchor { anchor } => Ok(anchor),
+            _ => Err(ProtocolError::UnexpectedResponse {
+                expected: "GetWidgetAnchor",
+            }),
+        }
+    }
+
     /// Checks the parent's current app policy, registering and persisting an unknown app if allowed.
     /// Explicitly disabled integrations are preserved even if the caller's snapshot is stale.
     pub async fn resolve_integration(&mut self, bundle_id: &str) -> Result<bool, ProtocolError> {

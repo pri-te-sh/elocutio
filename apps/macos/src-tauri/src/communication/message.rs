@@ -14,26 +14,64 @@ pub enum Request {
     GetIgnoredLints,
     GetIntegrations,
     GetAutoEnableNewApps,
-    ResolveIntegration { bundle_id: String },
-    SetLintConfig { config: FlatConfig },
-    IgnoreLint { ignored_lints: IgnoredLints },
-    AddToDictionary { word: String },
-    AddIntegration { bundle_id: String },
-    RemoveIntegration { bundle_id: String },
-    SetIntegrationEnabled { bundle_id: String, enabled: bool },
+    ResolveIntegration {
+        bundle_id: String,
+    },
+    SetLintConfig {
+        config: FlatConfig,
+    },
+    IgnoreLint {
+        ignored_lints: IgnoredLints,
+    },
+    AddToDictionary {
+        word: String,
+    },
+    AddIntegration {
+        bundle_id: String,
+    },
+    RemoveIntegration {
+        bundle_id: String,
+    },
+    SetIntegrationEnabled {
+        bundle_id: String,
+        enabled: bool,
+    },
+    /// The widget's pinned position for the focused app.
+    GetWidgetAnchor {
+        bundle_id: String,
+    },
 }
 
 /// Canonical server-to-client protocol message sent by the Tauri app.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
-    GetLintConfig { config: FlatConfig },
-    GetDictionary { words: Vec<String> },
-    GetDialect { dialect: Dialect },
-    GetDebounceMs { debounce_ms: u64 },
-    GetIgnoredLints { ignored_lints: IgnoredLints },
-    GetIntegrations { integrations: Vec<Integration> },
-    GetAutoEnableNewApps { enabled: bool },
-    ResolveIntegration { enabled: bool },
+    GetLintConfig {
+        config: FlatConfig,
+    },
+    GetDictionary {
+        words: Vec<String>,
+    },
+    GetDialect {
+        dialect: Dialect,
+    },
+    GetDebounceMs {
+        debounce_ms: u64,
+    },
+    GetIgnoredLints {
+        ignored_lints: IgnoredLints,
+    },
+    GetIntegrations {
+        integrations: Vec<Integration>,
+    },
+    GetAutoEnableNewApps {
+        enabled: bool,
+    },
+    ResolveIntegration {
+        enabled: bool,
+    },
+    GetWidgetAnchor {
+        anchor: Option<crate::widget_anchor::WidgetAnchor>,
+    },
     Ack,
 }
 

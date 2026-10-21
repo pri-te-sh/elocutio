@@ -65,6 +65,7 @@ pub mod quality;
 pub mod rect;
 mod rewrite;
 mod usage;
+pub mod widget_anchor;
 
 #[cfg(target_os = "macos")]
 mod mac_broker;
@@ -387,6 +388,7 @@ pub fn popup_debug() {
         || {},
         || {},
         || {},
+        |_| None,
     )
     .unwrap();
     highlighter.run_window_for_each_monitor().unwrap();
@@ -560,6 +562,7 @@ pub fn run_highlighter(has_parent: bool) {
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             custom_instruction: String::new(),
+            widget_anchors: crate::widget_anchor::WidgetAnchors::default(),
             local_only: false,
             blocklist: Vec::new(),
         };
@@ -641,6 +644,22 @@ pub fn run_highlighter(has_parent: bool) {
         }
     };
 
+    // The widget position and the tone badge belong to the app that is
+    // focused, so the highlighter asks the main process for both. The
+    // protocol client is async, and the highlighter has a current-thread
+    // runtime for exactly this.
+    let widget_settings_client = client.clone();
+    let widget_settings_runtime = sync_runtime.clone();
+    let widget_settings = move |bundle_id: &str| {
+        let mut client = widget_settings_client
+            .lock()
+            .expect("IPC client lock poisoned");
+        widget_settings_runtime
+            .block_on(client.get_widget_anchor(bundle_id))
+            .ok()
+            .flatten()
+    };
+
     if let Err(error) = Highlighter::new(
         broker,
         lint_text,
@@ -650,6 +669,7 @@ pub fn run_highlighter(has_parent: bool) {
         refresh_config,
         open_settings,
         analyze_field,
+        widget_settings,
     )
     .and_then(Highlighter::run_window_for_each_monitor)
     {
@@ -731,6 +751,7 @@ fn fetch_highlighter_config(
             learn_from_edits: false,
             rewrite_tone: crate::openrouter::RewriteTone::Neutral,
             custom_instruction: String::new(),
+            widget_anchors: crate::widget_anchor::WidgetAnchors::default(),
             local_only: false,
             blocklist: Vec::new(),
         })

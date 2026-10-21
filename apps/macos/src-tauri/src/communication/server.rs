@@ -72,6 +72,12 @@ where
             Request::GetAutoEnableNewApps => Response::GetAutoEnableNewApps {
                 enabled: self.config.lock().await.auto_enable_new_apps,
             },
+            Request::GetWidgetAnchor { bundle_id } => {
+                let config = self.config.lock().await;
+                Response::GetWidgetAnchor {
+                    anchor: config.widget_anchors.get(bundle_id),
+                }
+            }
             Request::ResolveIntegration { bundle_id } => {
                 let mut config = self.config.lock().await;
                 let previous_len = config.integrations.len();

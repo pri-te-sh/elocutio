@@ -42,6 +42,9 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_provider_model,
         set_provider_model,
         list_provider_models,
+        get_widget_anchors,
+        set_widget_anchor,
+        get_widget_anchor_corners,
         get_coalescer_state,
         run_m1_gate,
         clear_coalescer_state,
@@ -497,6 +500,42 @@ fn clear_coalescer_state() -> usize {
     let coalescer = crate::coalesce::shared();
     coalescer.clear();
     coalescer.len()
+}
+
+/// The widget anchors the user has pinned.
+#[tauri::command]
+async fn get_widget_anchors(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<Vec<(String, crate::widget_anchor::WidgetAnchor)>, String> {
+    Ok(config.lock().await.widget_anchors.entries())
+}
+
+/// Pin the widget to a corner for an app, or clear the pin.
+///
+/// An app that is not pinned uses the default position: beside the first
+/// underline, or in the screen corner when there is nothing to underline.
+#[tauri::command]
+async fn set_widget_anchor(
+    bundle_id: String,
+    anchor: Option<crate::widget_anchor::WidgetAnchor>,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<Vec<(String, crate::widget_anchor::WidgetAnchor)>, String> {
+    let mut config = config.lock().await;
+    match anchor {
+        Some(anchor) => config.widget_anchors.set(&bundle_id, anchor),
+        None => config.widget_anchors.clear(&bundle_id),
+    }
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(config.widget_anchors.entries())
+}
+
+/// The corners the widget can be pinned to.
+#[tauri::command]
+fn get_widget_anchor_corners() -> Vec<crate::widget_anchor::AnchorCorner> {
+    crate::widget_anchor::AnchorCorner::ALL.to_vec()
 }
 
 /// The models the configured provider can serve.

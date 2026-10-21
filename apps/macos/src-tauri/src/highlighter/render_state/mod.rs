@@ -52,6 +52,16 @@ pub struct RenderState {
     /// Screen-space bounds of the widget's "AI" action zone.
     analyze_rect: Option<egui::Rect>,
 
+    /// Where the widget is anchored for the current app.
+    ///
+    /// The user can pin the widget to a corner per app, and the position
+    /// persists. `None` means the default: beside the first underline, or in
+    /// the bottom-right corner when there is nothing to underline.
+    widget_anchor: Option<crate::widget_anchor::WidgetAnchor>,
+
+    /// The tone detected for the current field, shown as a badge on the widget.
+    tone_badge: Option<String>,
+
     /// Whether a supported editable field is currently focused.
     field_active: bool,
 
@@ -96,6 +106,8 @@ impl RenderState {
             current_sidebar_position: FIRST_ROW_OFFSET,
             widget_rect: None,
             analyze_rect: None,
+            widget_anchor: None,
+            tone_badge: None,
             field_active: false,
             last_render: None,
             markdown_cache: CommonMarkCache::default(),
@@ -134,6 +146,16 @@ impl RenderState {
 
     pub fn set_field_active(&mut self, active: bool) {
         self.field_active = active;
+    }
+
+    /// Pin the widget for the current app, or return it to the default.
+    pub fn set_widget_anchor(&mut self, anchor: Option<crate::widget_anchor::WidgetAnchor>) {
+        self.widget_anchor = anchor;
+    }
+
+    /// The tone detected for the current field, shown as a badge.
+    pub fn set_tone_badge(&mut self, tone: Option<String>) {
+        self.tone_badge = tone;
     }
 
     fn lints(&self) -> &[ActionableLint] {
@@ -346,20 +368,28 @@ impl RenderState {
         if self.field_active {
             let size = egui::vec2(148.0, 36.0);
             let screen = ui.ctx().content_rect();
-            let mut pos = if let Some(first) = self.lints().first() {
-                let anchor = rect_bounds(&first.rect);
-                let above = anchor.top() - size.y - 6.0;
-                let y = if above >= screen.top() + 8.0 {
-                    above
-                } else {
-                    anchor.bottom() + 6.0
-                };
-                egui::pos2(anchor.left(), y)
-            } else {
-                egui::pos2(
-                    screen.right() - size.x - 24.0,
-                    screen.bottom() - size.y - 24.0,
-                )
+            // A pinned anchor wins. Otherwise the widget sits beside the first
+            // underline, or in the bottom-right corner when there is nothing
+            // to underline.
+            let mut pos = match self.widget_anchor {
+                Some(anchor) => anchor.position(screen, size),
+                None => {
+                    if let Some(first) = self.lints().first() {
+                        let anchor = rect_bounds(&first.rect);
+                        let above = anchor.top() - size.y - 6.0;
+                        let y = if above >= screen.top() + 8.0 {
+                            above
+                        } else {
+                            anchor.bottom() + 6.0
+                        };
+                        egui::pos2(anchor.left(), y)
+                    } else {
+                        egui::pos2(
+                            screen.right() - size.x - 24.0,
+                            screen.bottom() - size.y - 24.0,
+                        )
+                    }
+                }
             };
             if pos.x + size.x > screen.right() - 8.0 {
                 pos.x = screen.right() - size.x - 8.0;
@@ -431,6 +461,22 @@ impl RenderState {
                 egui::FontId::proportional(13.0),
                 egui::Color32::from_rgb(0x19, 0x1f, 0x70),
             );
+
+            // The tone badge sits between the count and the AI action, and
+            // only when a tone was actually detected.
+            if let Some(tone) = &self.tone_badge {
+                let tone_rect = egui::Rect::from_min_max(
+                    egui::pos2(rect.left() + 46.0, rect.top() + 8.0),
+                    egui::pos2(rect.left() + 96.0, rect.bottom() - 8.0),
+                );
+                ui.painter().text(
+                    tone_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    tone,
+                    egui::FontId::proportional(11.0),
+                    egui::Color32::from_rgb(0x4a, 0x52, 0x66),
+                );
+            }
 
             if response
                 .on_hover_cursor(egui::CursorIcon::PointingHand)

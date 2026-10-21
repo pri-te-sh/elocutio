@@ -152,6 +152,11 @@ pub struct RectCollector<'a> {
     pid: i32,
     cached: Option<CachedAnalysis>,
     lint_text: RefCell<&'a mut LintCallback<'a>>,
+    /// The tone detected for the field, set while the tree is walked.
+    ///
+    /// Detection is local and deterministic, so the badge on the widget costs
+    /// nothing and works offline.
+    tone: RefCell<Option<String>>,
 }
 
 impl TreeVisitor for RectCollector<'_> {
@@ -273,7 +278,13 @@ impl<'a> RectCollector<'a> {
             pid,
             cached,
             lint_text: RefCell::new(lint_text),
+            tone: RefCell::new(None),
         }
+    }
+
+    /// The tone detected for the field, if it was clear enough to name.
+    pub fn detected_tone(&self) -> Option<String> {
+        self.tone.borrow().clone()
     }
 
     pub fn unwrap_rects(self) -> Option<Vec<ActionableLint>> {

@@ -573,10 +573,19 @@
               "type": "text",
               "path": "crates/elocutio-analysis/src/golden.rs",
               "contains": "pub fn evaluate"
+            },
+            {
+              "type": "path",
+              "path": "crates/elocutio-analysis/tests/golden_validator.rs"
+            },
+            {
+              "type": "text",
+              "path": "crates/elocutio-analysis/tests/golden_validator.rs",
+              "contains": "every_expected_span_is_exactly_where_the_quote_is"
             }
           ],
           "status": "done",
-          "notes": "A golden-set harness with span precision/recall/F0.5, exact-match, over-edit, schema-failure, and resolution metrics, plus the plan's regression gate. The seed set has 44 items with 8 no-error controls; the plan wants 200-500, so the data still needs to grow."
+          "notes": "The golden set has 500 items, 444 expected edits, and 100 no-error controls (20%), with every one of the 13 error types covered and all four stratification axes populated. The harness computes span precision/recall/F0.5, exact-match, over-edit, schema-failure, and resolution rates, and implements the plan's regression gate. A validator re-derives every expected offset from its quote, so a wrong offset cannot be committed. ERRANT M2 F0.5, GLEU, meaning preservation, latency, and cost are still not implemented."
         },
         {
           "id": "m1-gate",

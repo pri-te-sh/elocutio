@@ -231,7 +231,7 @@
           "priority": "P0",
           "estimateDays": 1.5,
           "status": "in_progress",
-          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay; Chrome and Mail are excluded from AX probing for M0 stability (Chrome needs the M3 extension, Mail needs a text-bounds fallback). Rewrite Selection works in TextEdit, Safari, and Chrome. The app support matrix is tracked in apps/macos/src-tauri/src/app_matrix.json and a test keeps it in step with the Rust allowlist.",
+          "notes": "Builds and launches. TextEdit, Notes, and Safari pass the overlay; Chrome and Mail are excluded from AX probing for M0 stability (Chrome needs the M3 extension, Mail needs a text-bounds fallback). Rewrite Selection works in TextEdit, Safari, and Chrome. The app support matrix is tracked in apps/macos/src-tauri/src/app_matrix.json and a test keeps it in step with the Rust allowlist. The five-app gate is the only part of M0 still open.",
           "dependsOn": [
             "m0-fork"
           ],
@@ -339,8 +339,29 @@
           "dependsOn": [
             "m0-build"
           ],
-          "status": "in_progress",
-          "notes": "Updater removed for M0; the OpenRouter key is in the Keychain and never in config/logs. A full audit of the inherited network/IPC/AX surfaces remains."
+          "status": "done",
+          "notes": "The inherited code has been reviewed: network surface, IPC, updater, permissions, storage, text injection, and prompt injection. The review fixed three high-severity write-path defects (clipboard data loss, a paste read-back that accepted a corrupted result, and a default request the default model rejected with a 400) and left one medium finding open for the M3 browser bridge: the IPC protocol has no frame-size limit or version envelope yet. See docs/SECURITY-REVIEW.md.",
+          "evidence": [
+            {
+              "type": "path",
+              "path": "docs/SECURITY-REVIEW.md"
+            },
+            {
+              "type": "text",
+              "path": "docs/SECURITY-REVIEW.md",
+              "contains": "## 2. Network surface"
+            },
+            {
+              "type": "text",
+              "path": "docs/SECURITY-REVIEW.md",
+              "contains": "## 3. IPC surface"
+            },
+            {
+              "type": "text",
+              "path": "docs/SECURITY-REVIEW.md",
+              "contains": "## 7. Prompt injection"
+            }
+          ]
         }
       ],
       "acceptance": [

@@ -62,9 +62,14 @@ a protection the code does not have yet.
 | Deleting a sample/profile cascades to derived data | **Implemented for the profile**; per-sample deletion arrives with M3 uploads |
 | Only the style card is sent to providers, with a preview | **Implemented** — no excerpts are sent yet |
 
-The inherited Harper code has **not** yet had the security review that
-`docs/PLAN.md` lists as a fork condition. See
-[`docs/M0-VERIFICATION.md`](docs/M0-VERIFICATION.md).
+The inherited Harper code has been reviewed: see
+[`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md). It found and fixed three
+high-severity defects in the write path — clipboard data loss, a paste
+read-back that accepted a corrupted result, and a default request the default
+model rejected with an HTTP 400 — and left one medium finding open for the
+M3 browser bridge: the IPC protocol has no frame-size limit and no version
+envelope yet, which it will need before the transport becomes a network
+surface.
 
 ## Threat model
 

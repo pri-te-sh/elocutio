@@ -94,7 +94,7 @@ The differentiated part is the judgment layer: provider abstraction, prompt desi
 3. Remove all Harper trademarks, product names, icons, bundle IDs, URLs, and config paths. Replace with Elocutio equivalents.
 4. Do not imply endorsement by Automattic.
 5. Add a clear "Built on Harper" attribution in README and About.
-6. Run a security review of the inherited code (network surface, IPC, updater, permissions).
+6. Run a security review of the inherited code (network surface, IPC, updater, permissions). **Done:** [`SECURITY-REVIEW.md`](SECURITY-REVIEW.md).
 7. If the M0 spike shows the Tauri/highlighter shell cannot deliver non-activating, correctly aligned UI in our Tier A apps, stop and switch to Option B before investing in the LLM layer.
 
 ---
@@ -545,7 +545,7 @@ Estimates assume one experienced Rust/TypeScript engineer full-time; add 30–50
 
 **Acceptance:** rebranded app builds; overlay works in 5 apps; key validates; a rewrite replaces the selection correctly using the write ladder (pasteboard + ⌘V primary, AX fast path in AppKit); the card never steals focus; no Harper branding remains.
 
-**Status (2026-10-19):** partial. App builds/runs; TextEdit, Notes, and Safari pass; OpenRouter key validates; click-to-replace is stable; and the system-wide Rewrite Selection write ladder (⌥⌘E, transient pasteboard, clipboard restore) works in TextEdit, Safari, and Chrome. Chrome/Mail overlay geometry and the inherited security audit remain. Evidence: [`M0-VERIFICATION.md`](M0-VERIFICATION.md).
+**Status (2026-10-21):** partial. App builds/runs; TextEdit, Notes, and Safari pass; OpenRouter key validates; click-to-replace is stable; and the system-wide Rewrite Selection write ladder (⌥⌘E, transient pasteboard, clipboard restore) works in TextEdit, Safari, and Chrome. The inherited security audit is **complete** — see [`SECURITY-REVIEW.md`](SECURITY-REVIEW.md) — and it fixed three high-severity defects in the write path. The Chrome/Mail overlay geometry remains, and that is the only thing now keeping the five-app gate open. Evidence: [`M0-VERIFICATION.md`](M0-VERIFICATION.md).
 
 ### M1 — LLM MVP (10–14 days)
 

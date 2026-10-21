@@ -48,6 +48,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_widget_anchors,
         get_network_log,
         get_app_matrix,
+        get_app_matrix_record,
         get_app_matrix_summary,
         record_app_matrix_check,
         preview_request,
@@ -158,9 +159,8 @@ async fn set_dialect_name(
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<String, String> {
     let mut config = config.lock().await;
-    config.dialect = Dialect::try_from_abbr(dialect.trim()).ok_or_else(|| {
-        "Unknown dialect. Use one of: US, CA, AU, GB, IN.".to_string()
-    })?;
+    config.dialect = Dialect::try_from_abbr(dialect.trim())
+        .ok_or_else(|| "Unknown dialect. Use one of: US, CA, AU, GB, IN.".to_string())?;
     config
         .save_to_system()
         .await
@@ -665,6 +665,14 @@ async fn preview_request(
         &text,
         has_key,
     ))
+}
+
+/// The recorded matrix checks, so the window can show what was already done.
+///
+/// Without this, a cell checked in an earlier session reads as unverified.
+#[tauri::command]
+fn get_app_matrix_record() -> Result<crate::matrix::MatrixRecord, String> {
+    crate::matrix::load_record()
 }
 
 /// The Tier A app matrix: the apps, the conditions, and what has been checked.

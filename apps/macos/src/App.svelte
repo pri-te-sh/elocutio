@@ -990,6 +990,11 @@
       matrixUnsupported = matrix.unsupported;
       matrixConditions = matrix.conditions;
       matrixSummary = await invoke<MatrixSummary>("get_app_matrix_summary");
+      // The record is read back so a check made in an earlier session shows
+      // as checked rather than unverified.
+      const record =
+        await invoke<Record<string, Record<string, MatrixState>>>("get_app_matrix_record");
+      matrixChecks = record ?? {};
     } catch (error) {
       matrixMessage = String(error);
     }

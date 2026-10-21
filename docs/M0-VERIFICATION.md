@@ -163,7 +163,7 @@ inline experience, and the voice. What is implemented, and what is not:
 | Request coalescing and a per-request cost cap | Implemented | `coalesce.rs`, `openrouter.rs` |
 | Block list | Implemented | `config::blocklist` |
 | Paragraph-scoped rewriting | **Not implemented** | The rewrite previews and applies a selection, but does not rewrite one paragraph of a longer document |
-| The 10-app manual matrix | **Needs a human** | The list and the record exist; the checks do not |
+| The 10-app manual matrix | **Needs a human** | The list, the conditions, and a persistent record of what was checked exist; the checks themselves do not |
 
 ## Known issues and next actions
 

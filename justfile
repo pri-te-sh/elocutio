@@ -54,6 +54,18 @@ macos-dev:
 progress:
 	python3 scripts/progress.py build
 
+# Build the publishable dashboard folder (progress/publish/).
+progress-publish:
+	python3 scripts/progress.py publish
+
+# Republish the dashboard to here.now (requires the here.now skill + API key).
+progress-deploy:
+	bash ~/.agents/skills/here-now/scripts/publish.sh progress/publish \
+		--slug devoted-fable-8gt6 \
+		--client deepseek-harness \
+		--title "Elocutio — Build Progress" \
+		--description "Live build-progress dashboard for Elocutio: milestones, work items, evidence, risks, and git activity."
+
 # Serve the live progress dashboard at http://127.0.0.1:8787.
 progress-serve:
 	python3 scripts/progress.py serve --open

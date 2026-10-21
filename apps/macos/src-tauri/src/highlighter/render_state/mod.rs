@@ -16,6 +16,12 @@ use self::{
     },
 };
 use super::{AddToDictionary, AnalyzeField, DisableRule, IgnoreLint, OpenSettings, PreviewRequest};
+
+/// The collapsed widget's size, in points.
+const DOT_SIZE: f32 = 14.0;
+
+/// The collapsed widget's radius, in points.
+const DOT_RADIUS: f32 = 4.0;
 use crate::{
     lint_kind_color::lint_kind_color,
     rect::{ActionableLint, Rect},
@@ -531,7 +537,16 @@ impl RenderState {
         }
 
         if self.field_active {
-            let size = egui::vec2(148.0, 36.0);
+            // The widget collapses to a dot when there is nothing to say, so
+            // it does not sit in the corner of every window the user types in.
+            // The plan asks for this: "Appears after the first suggestion;
+            // collapses to a dot when idle."
+            let collapsed = self.lints().is_empty();
+            let size = if collapsed {
+                egui::vec2(DOT_SIZE, DOT_SIZE)
+            } else {
+                egui::vec2(148.0, 36.0)
+            };
             let screen = ui.ctx().content_rect();
             // A pinned anchor wins. Otherwise the widget sits beside the first
             // underline, or in the bottom-right corner when there is nothing
@@ -565,6 +580,27 @@ impl RenderState {
                 .clamp(screen.top() + 8.0, screen.bottom() - size.y - 8.0);
             let rect = egui::Rect::from_min_size(pos, size);
             self.widget_rect = Some(rect);
+
+            if collapsed {
+                // The dot: a small mark that says Elocutio is watching.
+                ui.painter().circle_filled(
+                    rect.center(),
+                    DOT_RADIUS,
+                    egui::Color32::from_rgb(0x8A, 0x8F, 0x9C),
+                );
+                let response = ui.interact(
+                    rect,
+                    ui.id().with("elocutio-suggestion-widget"),
+                    egui::Sense::click(),
+                );
+                if response.clicked() {
+                    self.open_widget();
+                }
+                // The collapsed widget has no AI action.
+                self.analyze_rect = None;
+                return;
+            }
+
             let analyze_rect = egui::Rect::from_min_max(
                 egui::pos2(rect.right() - 46.0, rect.top()),
                 rect.right_bottom(),

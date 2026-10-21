@@ -470,6 +470,25 @@
   const matrixStates: MatrixState[] = ["pass", "fail", "unverified"];
 
   /**
+   * The shortcuts, so a user can look them up rather than remember them.
+   *
+   * The card shortcuts are global hotkeys, because the suggestion card never
+   * takes keyboard focus — activating it would move the caret and break the
+   * paste that follows. The three app shortcuts are ordinary global ones.
+   */
+  const shortcuts = [
+    { keys: "⌃⌥G", what: "Focus the suggestion card" },
+    { keys: "⌃⌥N", what: "Next suggestion" },
+    { keys: "⌃⌥B", what: "Previous suggestion" },
+    { keys: "⌃⌥A", what: "Accept the suggestion" },
+    { keys: "⌃⌥D", what: "Dismiss the suggestion" },
+    { keys: "⌃⌥K", what: "Close the card" },
+    { keys: "⌥⌘E", what: "Rewrite the selection — press twice to apply" },
+    { keys: "⌥⌘A", what: "Analyze the focused field" },
+    { keys: "⌥⌘Z", what: "Undo the last Elocutio edit" },
+  ];
+
+  /**
    * Jump to a section and remember it as the active one.
    *
    * The default anchor behaviour is kept — the URL hash updates, so the link
@@ -1904,6 +1923,23 @@
         If nothing appears, confirm Accessibility is granted, then stop and start suggestions.
         Secure fields, terminals, and Google Docs are intentionally unsupported.
       </p>
+    </section>
+
+    <section class="card">
+      <h3 class="card-title">Keyboard</h3>
+      <p class="muted">
+        The suggestion card never takes keyboard focus, so its shortcuts are global hotkeys. They
+        work while you are typing in another app.
+      </p>
+
+      <ul class="usage-list shortcut-list">
+        {#each shortcuts as shortcut (shortcut.keys)}
+          <li>
+            <kbd>{shortcut.keys}</kbd>
+            <span class="shortcut-what">{shortcut.what}</span>
+          </li>
+        {/each}
+      </ul>
     </section>
   </section>
 
@@ -3907,5 +3943,16 @@
   .skipped-list code {
     align-self: flex-start;
     font-size: 12px;
+  }
+
+  /* ---- The shortcut reference ---- */
+
+  .shortcut-list li {
+    grid-template-columns: 5.5rem 1fr;
+    align-items: center;
+  }
+
+  .shortcut-what {
+    color: var(--near-black);
   }
 </style>

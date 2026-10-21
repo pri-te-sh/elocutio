@@ -146,6 +146,7 @@ inline experience, and the voice. What is implemented, and what is not:
 | Feature | State | Where |
 | --- | --- | --- |
 | Widget count, AI action, anchors | Implemented | `highlighter/render_state/mod.rs` |
+| Widget collapses to a dot when idle | Implemented | The plan asks for this: "collapses to a dot when idle" |
 | Widget tone badge | Implemented | The tone is detected locally while the AX tree is walked |
 | Widget position pinned per app | Implemented | `widget_anchor.rs`; stored as an anchor, not as pixels |
 | Keyboard model for the card | Implemented | `⌃⌥G` focus, `⌃⌥N`/`⌃⌥B` navigate, `⌃⌥A` accept, `⌃⌥D` dismiss, `⌃⌥K` close |

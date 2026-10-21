@@ -34,7 +34,6 @@ use std::{
     time::Instant,
 };
 
-use crate::app_matrix::overlay_supported;
 use crate::os_broker::{AccessibilityPermissionStatus, AppSearchResult, FocusedText, OsBroker};
 use crate::rect::ActionableLint;
 
@@ -446,11 +445,12 @@ impl OsBroker for MacBroker {
             return Some(Vec::new());
         }
 
-        // M0 overlay whitelist. Chrome/Electron and Mail need a separate
-        // extension or text-bounds fallback; probing their AX trees can raise a
-        // foreign exception and abort the highlighter. Keep them out until the
-        // M3 extension / Mail fallback lands.
-        if !overlay_supported(&bundle_identifier) {
+        // The overlay whitelist. Chrome/Electron and Mail are not drawn in yet
+        // — they need the M3 extension and a text-bounds fallback — but their
+        // Accessibility trees may be probed, because the highlighter runs in
+        // its own process and a watchdog restarts it if a tree walk aborts.
+        // An app that is neither drawn in nor safe to probe is left alone.
+        if !crate::app_matrix::probe_allowed(&bundle_identifier) {
             self.window_movement = None;
             self.reset_accessibility_activation();
             return Some(Vec::new());

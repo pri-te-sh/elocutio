@@ -34,7 +34,9 @@ fn json_list(key: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::json_list;
-    use crate::app_matrix::{OVERLAY_SUPPORTED, TARGET_OVERLAY_APPS, WRITE_LADDER_VERIFIED};
+    use crate::app_matrix::{
+        OVERLAY_PROBE_ALLOWED, OVERLAY_SUPPORTED, TARGET_OVERLAY_APPS, WRITE_LADDER_VERIFIED,
+    };
 
     #[test]
     fn the_json_matrix_matches_the_rust_allowlist() {
@@ -59,6 +61,19 @@ mod tests {
                 .map(|value| value.to_string())
                 .collect::<Vec<_>>(),
             "app_matrix.json and app_matrix.rs disagree about the target apps"
+        );
+    }
+
+    #[test]
+    fn the_json_probe_list_matches_the_rust_list() {
+        let json_probe = json_list("overlayProbeAllowed");
+        assert_eq!(
+            json_probe,
+            OVERLAY_PROBE_ALLOWED
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>(),
+            "app_matrix.json and app_matrix.rs disagree about the probe allowlist"
         );
     }
 

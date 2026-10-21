@@ -8,10 +8,18 @@
     "com.google.Chrome"
   ],
   "overlaySupported": ["com.apple.TextEdit", "com.apple.Notes", "com.apple.Safari"],
+  "overlayProbeAllowed": [
+    "com.apple.TextEdit",
+    "com.apple.Notes",
+    "com.apple.Safari",
+    "com.apple.mail",
+    "com.google.Chrome"
+  ],
   "writeLadderVerified": ["com.apple.TextEdit", "com.apple.Safari", "com.google.Chrome"],
   "notes": {
     "com.apple.mail": "Compose exposes a text element but never produces usable text-range bounds, so no overlay.",
-    "com.google.Chrome": "The Chromium overlay needs the M3 extension; the AX path is excluded for stability because probing Chromium AX trees can abort the highlighter.",
+    "com.google.Chrome": "The Chromium overlay needs the M3 extension. The Accessibility tree may be probed because the highlighter runs in its own process and a watchdog restarts it if a tree walk aborts.",
+    "probeAllowed": "Apps whose Accessibility tree may be read. Probing can abort the highlighter for some apps, which is why the highlighter is a separate process with a restart watchdog.",
     "verification": "Entries in writeLadderVerified are user-reported interactive checks recorded in docs/M0-VERIFICATION.md."
   }
 }

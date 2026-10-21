@@ -25,6 +25,20 @@ pub const TARGET_OVERLAY_APPS: &[&str] = &[
 pub const OVERLAY_SUPPORTED: &[&str] =
     &["com.apple.TextEdit", "com.apple.Notes", "com.apple.Safari"];
 
+/// The apps whose Accessibility tree may be read.
+///
+/// Every app the overlay draws in is also safe to probe; this list adds the
+/// two whose geometry is not yet verified. Probing can abort the highlighter
+/// for some apps, which is why the highlighter runs in its own process and a
+/// watchdog restarts it if it dies.
+pub const OVERLAY_PROBE_ALLOWED: &[&str] = &[
+    "com.apple.TextEdit",
+    "com.apple.Notes",
+    "com.apple.Safari",
+    "com.apple.mail",
+    "com.google.Chrome",
+];
+
 /// The apps where the pasteboard write ladder has been verified interactively.
 pub const WRITE_LADDER_VERIFIED: &[&str] = &[
     "com.apple.TextEdit",
@@ -35,6 +49,15 @@ pub const WRITE_LADDER_VERIFIED: &[&str] = &[
 /// Whether the overlay draws in the given bundle identifier.
 pub fn overlay_supported(bundle_id: &str) -> bool {
     OVERLAY_SUPPORTED.contains(&bundle_id)
+}
+
+/// Whether the app's Accessibility tree may be probed.
+///
+/// A probe can abort the highlighter for some apps. The highlighter is a
+/// separate process with a restart watchdog, so a crash is recoverable rather
+/// than fatal, which is what makes probing these apps acceptable.
+pub fn probe_allowed(bundle_id: &str) -> bool {
+    OVERLAY_PROBE_ALLOWED.contains(&bundle_id)
 }
 
 /// The set of target apps the overlay does not yet cover.
@@ -79,5 +102,19 @@ mod tests {
         assert!(overlay_supported("com.apple.Safari"));
         assert!(!overlay_supported("com.google.Chrome"));
         assert!(!overlay_supported("com.apple.mail"));
+    }
+
+    #[test]
+    fn chrome_and_mail_may_be_probed() {
+        // The highlighter runs in its own process and a watchdog restarts it,
+        // so probing an app that can abort the tree walk is recoverable.
+        assert!(probe_allowed("com.google.Chrome"));
+        assert!(probe_allowed("com.apple.mail"));
+        assert!(probe_allowed("com.apple.TextEdit"));
+    }
+
+    #[test]
+    fn an_unknown_app_may_not_be_probed() {
+        assert!(!probe_allowed("com.example.Unknown"));
     }
 }

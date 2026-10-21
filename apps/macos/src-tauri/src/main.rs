@@ -186,6 +186,59 @@ fn warm_app_search_cache(app: tauri::AppHandle) {
     });
 }
 
+/// Restarts the highlighter if it dies.
+///
+/// The highlighter runs as a separate process because the Accessibility and
+/// AppKit work it does is not safe on the main thread, and because a crash
+/// there must not take the app with it. A crash therefore costs the user the
+/// overlay until it is restarted, so this watchdog restarts it.
+///
+/// The restart is rate-limited: a highlighter that crashes immediately on
+/// every start would otherwise become a restart loop.
+fn watch_highlighter(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        const WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+        const MAX_RESTARTS: u32 = 5;
+        const RESTART_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
+
+        let mut restarts: u32 = 0;
+        let mut last_restart = std::time::Instant::now() - RESTART_COOLDOWN;
+
+        loop {
+            tokio::time::sleep(WATCH_INTERVAL).await;
+
+            let service = app.state::<HighlighterService>();
+            if service.is_running() {
+                continue;
+            }
+
+            // The user may have turned the service off deliberately.
+            let enabled = {
+                let config = app.state::<Arc<Mutex<Config>>>();
+                let config = config.lock().await;
+                config.highlighter_service_enabled
+            };
+            if !enabled {
+                continue;
+            }
+
+            if restarts >= MAX_RESTARTS {
+                continue;
+            }
+            if last_restart.elapsed() < RESTART_COOLDOWN {
+                continue;
+            }
+
+            restarts += 1;
+            last_restart = std::time::Instant::now();
+            tracing::warn!(restarts, "highlighter stopped; restarting it");
+            if let Err(error) = service.start() {
+                tracing::warn!(%error, "could not restart the highlighter");
+            }
+        }
+    });
+}
+
 pub fn main() {
     let subscriber = FmtSubscriber::builder()
         .map_writer(move |_| stderr)
@@ -288,6 +341,7 @@ pub fn run_tauri() {
             register_shortcuts(app.handle());
             auto_analyze::start(app.handle().clone());
             warm_app_search_cache(app.handle().clone());
+            watch_highlighter(app.handle().clone());
 
             if is_first_launch || !onboarding_completed {
                 windows::show_settings_window(app.handle())?;

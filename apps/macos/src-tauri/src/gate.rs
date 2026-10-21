@@ -209,6 +209,24 @@ pub fn run_m1_gate() -> GateReport {
             .to_string(),
     });
 
+    // 10. The Tier A app matrix.
+    let matrix =
+        crate::matrix::MatrixSummary::summarize(&crate::matrix::load_record().unwrap_or_default());
+    checks.push(GateCheck {
+        id: "app-matrix".to_string(),
+        description: "The Tier A app matrix has been run under every condition.".to_string(),
+        state: if matrix.unverified == 0 && matrix.failed == 0 {
+            CheckState::Pass
+        } else {
+            CheckState::NeedsHuman
+        },
+        detail: format!(
+            "{} of {} Tier A apps draw in the overlay. {} checks recorded, {} failed, {} still to \
+             check.",
+            matrix.supported, matrix.tier_a, matrix.checked, matrix.failed, matrix.unverified
+        ),
+    });
+
     let passed = checks
         .iter()
         .filter(|check| check.state == CheckState::Pass)

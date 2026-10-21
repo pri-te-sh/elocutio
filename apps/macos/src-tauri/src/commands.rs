@@ -44,6 +44,9 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         list_provider_models,
         get_widget_anchors,
         get_network_log,
+        get_app_matrix,
+        get_app_matrix_summary,
+        record_app_matrix_check,
         preview_request,
         get_network_log_summary,
         clear_network_log,
@@ -589,6 +592,60 @@ async fn preview_request(
         &text,
         has_key,
     ))
+}
+
+/// The Tier A app matrix: the apps, the conditions, and what has been checked.
+///
+/// A manual matrix cannot be automated, because it needs a human looking at
+/// a screen. What this returns is the list and the record, so the matrix is
+/// something you can run rather than something you remember.
+#[tauri::command]
+fn get_app_matrix() -> serde_json::Value {
+    serde_json::json!({
+        "tierA": crate::matrix::TIER_A_APPS,
+        "tierB": crate::matrix::TIER_B_APPS,
+        "unsupported": crate::matrix::UNSUPPORTED_APPS
+            .iter()
+            .map(|(bundle_id, reason)| serde_json::json!({
+                "bundleId": bundle_id,
+                "reason": reason,
+            }))
+            .collect::<Vec<_>>(),
+        "conditions": crate::matrix::ALL_CONDITIONS
+            .iter()
+            .map(|condition| serde_json::json!({
+                "name": crate::matrix::condition_key(*condition),
+                "label": condition.label(),
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// The summary of what has been verified in the app matrix.
+#[tauri::command]
+fn get_app_matrix_summary() -> crate::matrix::MatrixSummary {
+    crate::matrix::MatrixSummary::summarize(&crate::matrix::load_record().unwrap_or_default())
+}
+
+/// Record the result of one matrix check.
+#[tauri::command]
+fn record_app_matrix_check(
+    bundle_id: String,
+    condition: String,
+    state: String,
+) -> Result<crate::matrix::MatrixSummary, String> {
+    let mut record = crate::matrix::load_record()?;
+    let condition = crate::matrix::condition_from_key(&condition)
+        .ok_or_else(|| format!("Unknown matrix condition: {condition}"))?;
+    let state = match state.as_str() {
+        "pass" => crate::matrix::CheckState::Pass,
+        "fail" => crate::matrix::CheckState::Fail,
+        "unverified" => crate::matrix::CheckState::Unverified,
+        other => return Err(format!("Unknown check state: {other}")),
+    };
+    record.record(&bundle_id, condition, state);
+    crate::matrix::save_record(&record)?;
+    Ok(crate::matrix::MatrixSummary::summarize(&record))
 }
 
 /// The network log: every host the app has contacted.

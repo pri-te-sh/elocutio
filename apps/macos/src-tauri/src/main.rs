@@ -59,6 +59,7 @@ pub mod lint_kind_color;
 mod llm_analysis;
 mod llm_cache;
 mod main_thread;
+pub mod matrix;
 pub mod network_log;
 mod openrouter;
 mod os_broker;

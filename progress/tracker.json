@@ -772,6 +772,20 @@
           "estimateDays": 2,
           "dependsOn": [
             "m2-widget"
+          ],
+          "status": "in_progress",
+          "notes": "The matrix is a record, not a claim: it holds the eleven Tier A apps the plan names, the twenty-one conditions to check, and what has actually been verified. An app that has never been checked reads as unverified, not as passing. The plan's tier table names eleven Tier A apps while its definition of done says twelve; the discrepancy is recorded in docs/PLAN.md rather than resolved by inventing a twelfth app.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/matrix.rs",
+              "contains": "pub const TIER_A_APPS"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/matrix.rs",
+              "contains": "pub fn record"
+            }
           ]
         },
         {

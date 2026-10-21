@@ -306,6 +306,12 @@ Use Carbon `RegisterEventHotKey` (or Tauri global-shortcut) to avoid Input Monit
 | Tier | Apps |
 | --- | --- |
 | A | TextEdit, Notes, Mail, Messages, Safari (textareas/contenteditable), Chrome (textareas/contenteditable), Pages, Microsoft Word, Slack, Obsidian, Gmail (extension) |
+
+The tier table names **eleven** Tier A apps; the definition of done in §14
+says "12 Tier A apps pass the manual matrix". The table is treated as the
+list, and the discrepancy is recorded here rather than resolved by inventing
+a twelfth app. The matrix in `apps/macos/src-tauri/src/matrix.rs` holds the
+list and the record of what has actually been checked.
 | B | Notion desktop, Linear, Jira, Confluence, VS Code, Excel, PowerPoint, Outlook, Teams, Figma comments |
 | Unsupported | Google Docs (canvas; no DOM/AX text), password fields, secure input, Terminal/iTerm, remote desktops, games, apps that block Accessibility, Java Swing |
 

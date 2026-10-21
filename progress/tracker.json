@@ -661,10 +661,15 @@
               "type": "text",
               "path": "apps/macos/src-tauri/src/highlighter/render_state/mod.rs",
               "contains": "elocutio-suggestion-widget"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/widget_anchor.rs",
+              "contains": "pub fn position"
             }
           ],
           "status": "in_progress",
-          "notes": "The floating widget shows the live count, opens the inherited card, triggers AI analysis, and anchors to the first underline or the screen corner. Per-app positioning, a tone badge, and drag behavior remain."
+          "notes": "The floating widget shows the live count, opens the inherited card, triggers AI analysis, anchors to the first underline or the screen corner, shows the detected tone as a badge, and can be pinned to a corner per app. Drag-to-anchor remains."
         },
         {
           "id": "m2-live",

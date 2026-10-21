@@ -122,9 +122,27 @@ fn register_shortcuts(app: &tauri::AppHandle) {
 
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                match crate::rewrite::rewrite_selection(&app).await {
-                    Ok(message) => crate::rewrite::notify(&app, "Elocutio", &message),
-                    Err(error) => crate::rewrite::notify(&app, "Rewrite failed", &error),
+                // The first press prepares the rewrite and shows what would
+                // change; the second applies exactly what was shown. A rewrite
+                // the user has not seen is a rewrite they did not ask for.
+                if crate::rewrite::load_pending().ok().flatten().is_some() {
+                    match crate::rewrite::apply_pending(&app).await {
+                        Ok(message) => crate::rewrite::notify(&app, "Elocutio", &message),
+                        Err(error) => crate::rewrite::notify(&app, "Rewrite failed", &error),
+                    }
+                } else {
+                    match crate::rewrite::preview_selection(&app).await {
+                        Ok(pending) => crate::rewrite::notify(
+                            &app,
+                            "Elocutio rewrite ready",
+                            &format!(
+                                "Press ⌥⌘E again to apply. {} → {} characters.",
+                                pending.original.chars().count(),
+                                pending.rewritten.chars().count()
+                            ),
+                        ),
+                        Err(error) => crate::rewrite::notify(&app, "Rewrite failed", &error),
+                    }
                 }
             });
         });

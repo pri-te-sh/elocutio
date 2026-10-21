@@ -43,6 +43,10 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_provider_model,
         list_provider_models,
         get_widget_anchors,
+        preview_rewrite_selection,
+        apply_pending_rewrite,
+        get_pending_rewrite,
+        discard_pending_rewrite,
         set_widget_anchor,
         get_widget_anchor_corners,
         get_coalescer_state,
@@ -502,7 +506,43 @@ fn clear_coalescer_state() -> usize {
     coalescer.len()
 }
 
-/// The widget anchors the user has pinned.
+/// Prepare a rewrite of the current selection and show what would change.
+///
+/// The rewrite is not applied. The user sees the diff and then applies it,
+/// so an edit they have not looked at never lands in their document.
+#[tauri::command]
+async fn preview_rewrite_selection(
+    app: State<'_, tauri::AppHandle>,
+) -> Result<crate::rewrite::PendingRewrite, String> {
+    crate::rewrite::preview_selection(&app).await
+}
+
+/// Apply the prepared rewrite to the selection.
+#[tauri::command]
+async fn apply_pending_rewrite(app: State<'_, tauri::AppHandle>) -> Result<String, String> {
+    crate::rewrite::apply_pending(&app).await
+}
+
+/// The prepared rewrite, if there is one.
+#[tauri::command]
+fn get_pending_rewrite() -> Result<Option<crate::rewrite::PendingRewrite>, String> {
+    crate::rewrite::load_pending()
+}
+
+/// Discard the prepared rewrite.
+#[tauri::command]
+fn discard_pending_rewrite() -> Result<(), String> {
+    let path = crate::config::Config::folder_path()
+        .map(|folder| folder.join("pending-rewrite.json"))
+        .ok_or_else(|| "Could not find the application support directory.".to_string())?;
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Could not discard the rewrite: {error}")),
+    }
+}
+
+/// The widgets the user has pinned.
 #[tauri::command]
 async fn get_widget_anchors(
     config: State<'_, Arc<Mutex<Config>>>,

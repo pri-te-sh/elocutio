@@ -43,6 +43,9 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_provider_model,
         list_provider_models,
         get_widget_anchors,
+        get_network_log,
+        get_network_log_summary,
+        clear_network_log,
         preview_rewrite_selection,
         apply_pending_rewrite,
         get_pending_rewrite,
@@ -540,6 +543,29 @@ fn discard_pending_rewrite() -> Result<(), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!("Could not discard the rewrite: {error}")),
     }
+}
+
+/// The network log: every host the app has contacted.
+///
+/// The log holds metadata only — the host, the model, the token counts, the
+/// cost — and never the text that was sent.
+#[tauri::command]
+fn get_network_log() -> Result<Vec<crate::network_log::NetworkEntry>, String> {
+    crate::network_log::read()
+}
+
+/// A summary of the network log.
+#[tauri::command]
+fn get_network_log_summary() -> Result<crate::network_log::NetworkSummary, String> {
+    let entries = crate::network_log::read()?;
+    Ok(crate::network_log::NetworkSummary::summarize(&entries))
+}
+
+/// Delete the network log.
+#[tauri::command]
+fn clear_network_log() -> Result<crate::network_log::NetworkSummary, String> {
+    crate::network_log::clear()?;
+    Ok(crate::network_log::NetworkSummary::default())
 }
 
 /// The widgets the user has pinned.

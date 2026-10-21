@@ -122,6 +122,27 @@
     failed: number;
     needs_human: number;
   };
+  type NetworkEntry = {
+    at: number;
+    host: string;
+    provider: string;
+    model: string | null;
+    kind: string;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number | null;
+    ok: boolean;
+    status: number | null;
+    error: string | null;
+  };
+  type NetworkSummary = {
+    requests: number;
+    succeeded: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number;
+    hosts: [string, number][];
+  };
   type WidgetAnchor = { corner: string; offset: number };
   type ModelOption = {
     id: string;
@@ -201,6 +222,8 @@
   let costCapMessage = "";
   let gateReport: GateReport | null = null;
   let widgetAnchors: [string, WidgetAnchor][] = [];
+  let networkLog: NetworkEntry[] = [];
+  let networkSummary: NetworkSummary | null = null;
   let anchorCorners: string[] = [];
   let customInstruction = "";
   let instructionBusy = false;
@@ -438,6 +461,24 @@
       costCapMessage = String(error);
     } finally {
       costCapBusy = false;
+    }
+  }
+
+  async function refreshNetworkLog() {
+    try {
+      networkLog = await invoke<NetworkEntry[]>("get_network_log");
+      networkSummary = await invoke<NetworkSummary>("get_network_log_summary");
+    } catch (error) {
+      instructionMessage = String(error);
+    }
+  }
+
+  async function clearNetworkLog() {
+    try {
+      networkSummary = await invoke<NetworkSummary>("clear_network_log");
+      networkLog = [];
+    } catch (error) {
+      instructionMessage = String(error);
     }
   }
 
@@ -920,6 +961,7 @@
     void refreshInstruction();
     void refreshGate();
     void refreshWidgetAnchors();
+    void refreshNetworkLog();
   });
 </script>
 
@@ -1583,6 +1625,52 @@
     {#if voiceMessage}
       <p class="message">{voiceMessage}</p>
     {/if}
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <div>
+        <h2>Network log</h2>
+        <p class="muted">
+          Every host Elocutio has contacted. The log holds the host, the model, the token counts and
+          the cost — never the text that was sent.
+        </p>
+      </div>
+      {#if networkSummary}
+        <span class="status on">{networkSummary.requests} request(s)</span>
+      {/if}
+    </div>
+
+    {#if networkSummary && networkSummary.hosts.length > 0}
+      <ul class="usage-list">
+        {#each networkSummary.hosts as [host, count] (host)}
+          <li>
+            <span>{host}</span>
+            <span>{count} request(s)</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#if networkLog.length > 0}
+      <ul class="usage-list">
+        {#each networkLog.slice().reverse() as entry (entry.at)}
+          <li>
+            <span>{new Date(entry.at * 1000).toLocaleString()}</span>
+            <span>{entry.host}</span>
+            <span>{entry.kind}</span>
+            <span class:warn={!entry.ok}>{entry.ok ? "ok" : (entry.error ?? "failed")}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    <div class="actions">
+      <button class="ghost" onclick={refreshNetworkLog}>Refresh</button>
+      <button class="ghost" onclick={clearNetworkLog} disabled={networkLog.length === 0}>
+        Delete the log
+      </button>
+    </div>
   </section>
 
   <section class="card">

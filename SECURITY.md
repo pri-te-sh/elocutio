@@ -56,6 +56,7 @@ a protection the code does not have yet.
 | Secure input fields are never read or modified | **Implemented** |
 | Apps on the block list are never read or sent to a provider | **Implemented** |
 | The usage log records metadata only, never your text | **Implemented** |
+| Every outbound request is recorded in a local network log | **Implemented** |
 | The local bridge binds to `127.0.0.1`, requires a pairing token, and checks the `Origin` | **Planned (M3)** — no bridge server exists yet |
 | Updates are signed and verified before installation | **Planned (M5)** — the updater is removed for now, so there is no unsigned-update path |
 | Voice samples are encrypted at rest | **Planned** — the current build stores only the aggregate style card, in a plain local file |

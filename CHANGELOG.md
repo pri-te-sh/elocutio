@@ -114,6 +114,9 @@ to follow [Semantic Versioning](https://semver.org/).
   and a burst for the same key is throttled.
 - A streaming rewrite path, with the copy guard still applied to the finished
   text.
+- A local network log: every host the app has contacted, with the model, the
+  token counts, and the cost. It is the proof behind "no hidden network
+  calls", and it records no text.
 
 ### Changed
 
@@ -148,8 +151,8 @@ to follow [Semantic Versioning](https://semver.org/).
 - Chrome and Mail do not show the overlay yet; Chrome needs the M3 extension
   path and Mail needs a text-bounds fallback.
 - The Rewrite Selection shortcut is fixed at ⌥⌘E; it is not configurable yet.
-- The word-level diff renders in Settings; the system-wide rewrite still
-  replaces the selection without a preview to accept or reject.
+- The system-wide rewrite previews before it applies, but accept and reject
+  are still separate actions in the overlay rather than one control.
 - The voice fingerprint set grows with the sample size, so a very large upload
   would make the style card large. This needs a decision before M3.
 - Streaming is implemented and tested but not yet wired to a command.

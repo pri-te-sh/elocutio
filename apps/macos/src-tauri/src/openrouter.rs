@@ -365,8 +365,36 @@ pub async fn test_key_for(provider: &ProviderConfig) -> Result<OpenRouterStatus,
         .await
         .map_err(|error| format!("Could not read the provider response: {error}"))?;
     if !status.is_success() {
+        // A key check is a network request too, so it is recorded.
+        let _ = crate::network_log::record(crate::network_log::NetworkEntry {
+            at: crate::network_log::now_seconds(),
+            host: crate::network_log::host_of(&provider.models_endpoint()),
+            provider: provider.kind.display_name().to_string(),
+            model: None,
+            kind: crate::network_log::RequestKind::KeyCheck,
+            input_tokens: 0,
+            output_tokens: 0,
+            cost_usd: None,
+            ok: false,
+            status: Some(status.as_u16()),
+            error: Some(openrouter_error(status, &body)),
+        });
         return Err(openrouter_error(status, &body));
     }
+
+    let _ = crate::network_log::record(crate::network_log::NetworkEntry {
+        at: crate::network_log::now_seconds(),
+        host: crate::network_log::host_of(&provider.models_endpoint()),
+        provider: provider.kind.display_name().to_string(),
+        model: None,
+        kind: crate::network_log::RequestKind::KeyCheck,
+        input_tokens: 0,
+        output_tokens: 0,
+        cost_usd: None,
+        ok: true,
+        status: Some(status.as_u16()),
+        error: None,
+    });
 
     if provider.kind == ProviderKind::OpenRouter {
         let parsed: KeyEnvelope = serde_json::from_str(&body)

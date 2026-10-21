@@ -14,8 +14,13 @@ use elocutio_analysis::{RawEdit, resolve_edit};
 use elocutio_core::TextSpan;
 use serde::Serialize;
 
-/// The seed golden set, shipped with the app.
-pub const SEED_GOLDEN_JSON: &str = include_str!("../resources/seed_golden.json");
+/// The seed golden set.
+///
+/// The app reads the crate's copy rather than keeping its own, so the set the
+/// app scores against is always the set the tests use. A second copy would
+/// drift, and the app would quietly keep scoring an older corpus.
+pub const SEED_GOLDEN_JSON: &str =
+    include_str!("../../../../crates/elocutio-analysis/tests/data/seed_golden.json");
 
 /// The outcome of running the resolver against the golden set.
 #[derive(Debug, Clone, Serialize)]

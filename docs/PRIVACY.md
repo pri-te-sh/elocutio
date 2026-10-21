@@ -29,11 +29,11 @@ row names a file you can find in
 **Not collected:** analytics, device identifiers, advertising IDs, location,
 contacts, calendar, screen contents, or keystrokes.
 
-**Still to build:** a request log, a network log, request preview, provenance
-events, a documents editor, and exemplar sending are **not implemented yet**.
-They are listed in the plan as M2–M4 work. The `elocutio-store` crate reserves
-the SQLite schema and file name, but the current build stores everything in
-the plain files listed above.
+**Still to build:** a request log with per-request detail, a request preview,
+provenance events, a documents editor, and exemplar sending are **not
+implemented yet**. They are listed in the plan as M2–M4 work. The
+`elocutio-store` crate reserves the SQLite schema and file name, but the
+current build stores everything in the plain files listed above.
 
 ---
 
@@ -65,6 +65,7 @@ Voice is intended for your own writing or a brand you are authorized to represen
 | Voice events (`voice-events.jsonl`) | Rating, tone choice, or override key; no text | Clear |
 | Suggestion events (`suggestion-events.jsonl`) | Rule, category, and edit size only; no text | Delete in Settings |
 | Undo snapshot (`last-edit-undo.json`) | The field's before/after text, until the next edit | Deleted after one undo |
+| Network log (`network-log.jsonl`) | Host, provider, model, token counts, cost, and whether the request succeeded; no text | Delete the log in Settings |
 | Usage metadata (`usage.jsonl`) | timestamp, model, token counts, provider-reported cost; no text | Delete the file from Application Support |
 
 ## Cross-device
@@ -116,10 +117,12 @@ sent to a provider, even if it is also enabled as an integration. Blocking an
 app also disables it as an integration, so the two settings cannot contradict
 each other.
 
-**Still to build:** a preview of the exact request and a network log of every
-host contacted are planned but not implemented. The current build shows the
-voice payload that would be sent, and the usage log records the provider and
-model for every request.
+**The network log** records every host the app has contacted, with the model,
+the token counts, and the cost. It is the proof behind "no telemetry or hidden
+network calls": open Settings → Network log and you can see every request that
+left the Mac, and no others. The log holds metadata only — never the text
+that was sent. A preview of the exact request is still planned and not
+implemented; the current build shows the voice payload that would be sent.
 
 ---
 
@@ -144,7 +147,7 @@ model for every request.
 We say **"no first-party inference backend"**, not "no network calls." The app does contact your provider and the update server. To verify:
 
 1. Read the source (Apache-2.0).
-2. Open Settings → Privacy → Network log to see every host, model, token count, and cost.
+2. Open Settings → Network log to see every host, model, token count, and cost.
 3. Use a network monitor (Little Snitch, `nettop`) while the app runs.
 4. Build from source and compare the bundle.
 5. Voice: open Settings → Voice → "What will be sent" to see the exact style card and exemplars; enable "style card only" to send no excerpts.

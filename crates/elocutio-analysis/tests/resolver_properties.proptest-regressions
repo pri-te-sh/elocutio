@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 621925b9d8d03f327bbcebd9a453d43e8c00befe44b42405d01e6ced5a5ff619 # shrinks to needle = "e"
+cc b223127811ceccf18f6d8add33d4c8b8ae45524ef5a869d418b453ba9ea4ee4d # shrinks to needle = "efi"

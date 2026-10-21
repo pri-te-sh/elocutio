@@ -45,9 +45,30 @@ pub async fn send_chat(
 
     for attempt in 0..MAX_ATTEMPTS {
         match attempt_once(adapter, endpoint, &body).await {
-            Ok(response) => return Ok(response),
+            Ok(response) => {
+                // Every request that leaves the Mac is recorded, so the
+                // privacy claim "no hidden network calls" has something to
+                // point at. The entry holds metadata, never the text.
+                let _ = crate::network_log::record_chat(
+                    &crate::network_log::host_of(&endpoint.url),
+                    adapter.display_name(),
+                    Some(&request.model.model),
+                    (response.usage.input_tokens, response.usage.output_tokens),
+                    response.usage.cost_usd(),
+                    crate::network_log::Outcome::success(200),
+                );
+                return Ok(response);
+            }
             Err(error) => {
                 let retryable = is_retryable(&error);
+                let _ = crate::network_log::record_chat(
+                    &crate::network_log::host_of(&endpoint.url),
+                    adapter.display_name(),
+                    Some(&request.model.model),
+                    (0, 0),
+                    None,
+                    crate::network_log::Outcome::failure(None, error.message.clone()),
+                );
                 last_error = Some(error);
                 if !retryable || attempt + 1 >= MAX_ATTEMPTS {
                     break;

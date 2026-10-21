@@ -118,6 +118,26 @@ These landed after the first post-M0 pass and are covered by the automated suite
 - [x] Tone detection, a merge-and-rank pass, a golden-set harness, a suggestion event log, a block list, a cost cap, and a live-mode throttle all landed with tests.
 - [ ] The fingerprint set grows with the sample size, so a very large upload would make the style card large. This needs a decision before M3 uploads ship.
 
+## The M1 gate report
+
+The M1 gate in `docs/PLAN.md` is now a runnable report rather than a claim.
+`apps/macos/src-tauri/src/gate.rs` checks every item the gate lists and
+reports each as **pass**, **fail**, or **needs a human**. The five-app overlay
+check fails today, because Chrome and Mail are not drawn in yet, and the gate
+says so instead of reporting green.
+
+| Check | State | Why |
+| --- | --- | --- |
+| `overlay-five-apps` | **Fail** | Chrome needs the M3 extension; Mail needs a text-bounds fallback. |
+| `probe-safety` | Pass | Every target app is probe-safe, because a highlighter crash is recovered by the restart watchdog. |
+| `write-ladder` | Needs a human | Verified in TextEdit, Safari, and Chrome; not yet checked in Notes or Mail. |
+| `read-back` | Pass | The read-back compares the field before and after the paste, so a corrupted paste is rejected. |
+| `undo` | Pass | The undo record is compared against the field before it is written back. |
+| `error-states` | Pass | The provider error taxonomy maps every status to a specific message. |
+| `no-text-in-logs` | Pass | The usage log has a timestamp, model, token counts, and cost — no text field. |
+| `key-survives-restart` | Pass | The key is read from the macOS Keychain on every request. |
+| `clipboard-restore` | Pass | The pasteboard is restored at the item level, so images and files survive. |
+
 ## Known issues and next actions
 
 1. **Mail:** expose usable text-range bounds (or fall back to the static-text collector) before claiming support. Until then, keep Mail out of the supported matrix.

@@ -109,6 +109,19 @@
     is_override: boolean;
     evidence: string[];
   };
+  type GateCheck = {
+    id: string;
+    description: string;
+    state: "pass" | "fail" | "needs_human";
+    detail: string;
+  };
+  type GateReport = {
+    gate: string;
+    checks: GateCheck[];
+    passed: number;
+    failed: number;
+    needs_human: number;
+  };
   type ModelOption = {
     id: string;
     display_name: string;
@@ -185,6 +198,7 @@
   let costCapInput = "";
   let costCapBusy = false;
   let costCapMessage = "";
+  let gateReport: GateReport | null = null;
   let customInstruction = "";
   let instructionBusy = false;
   let instructionMessage = "";
@@ -421,6 +435,14 @@
       costCapMessage = String(error);
     } finally {
       costCapBusy = false;
+    }
+  }
+
+  async function refreshGate() {
+    try {
+      gateReport = await invoke<GateReport>("run_m1_gate");
+    } catch (error) {
+      instructionMessage = String(error);
     }
   }
 
@@ -872,6 +894,7 @@
     void refreshModels();
     void refreshCostCap();
     void refreshInstruction();
+    void refreshGate();
   });
 </script>
 
@@ -1504,6 +1527,49 @@
   <section class="card">
     <div class="row">
       <div>
+        <h2>Release gate</h2>
+        <p class="muted">
+          Every check the build plan's M1 gate lists, reported as pass, fail, or needing a human.
+          A check that needs a human is not a pass.
+        </p>
+      </div>
+      {#if gateReport}
+        <span
+          class="status"
+          class:on={gateReport.failed === 0 && gateReport.needs_human === 0}
+          class:off={gateReport.failed > 0 || gateReport.needs_human > 0}
+        >
+          {gateReport.failed > 0
+            ? `${gateReport.failed} failing`
+            : gateReport.needs_human > 0
+              ? `${gateReport.needs_human} to check`
+              : "Green"}
+        </span>
+      {/if}
+    </div>
+
+    {#if gateReport}
+      <ul class="gate-list">
+        {#each gateReport.checks as check (check.id)}
+          <li class="gate-check {check.state}">
+            <span class="gate-state">{check.state === "pass" ? "Pass" : check.state === "fail" ? "Fail" : "Check"}</span>
+            <div>
+              <strong>{check.description}</strong>
+              <span class="muted">{check.detail}</span>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    <div class="actions">
+      <button class="ghost" onclick={refreshGate}>Refresh</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <div>
         <h2>Suggestion events</h2>
         <p class="muted">
           Record which suggestions you accept and dismiss so the voice profile can learn your
@@ -1991,6 +2057,50 @@
     padding: 0 6px;
     font-size: 10.5px;
     color: var(--muted);
+  }
+
+  .gate-list {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+
+  .gate-check {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  .gate-check div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .gate-state {
+    flex: 0 0 auto;
+    min-width: 44px;
+    text-align: center;
+    border-radius: 999px;
+    padding: 0 7px;
+    border: 1px solid var(--border);
+    font-size: 10.5px;
+    color: var(--muted);
+  }
+
+  .gate-check.pass .gate-state {
+    border-color: var(--ok, var(--border));
+    color: var(--ok, var(--muted));
+  }
+
+  .gate-check.fail .gate-state {
+    border-color: var(--bad);
+    color: var(--bad);
   }
 
   .usage-list {

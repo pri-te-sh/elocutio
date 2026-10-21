@@ -52,6 +52,7 @@ pub mod communication;
 pub mod config;
 mod debounce;
 pub mod events;
+pub mod gate;
 pub mod highlighter;
 pub mod highlighter_service;
 pub mod lint_kind_color;

@@ -588,6 +588,20 @@
             "m1-card",
             "m1-onboarding",
             "m1-keychain"
+          ],
+          "status": "in_progress",
+          "notes": "The gate is a runnable report: every check the plan lists is either proved by the repository or marked as needing a human. The five-app overlay check fails today, because Chrome and Mail are not drawn in yet, and the gate says so rather than reporting green. The clipboard, read-back, error-state, log-content, key, undo, and probe-safety checks pass. The write-ladder check needs a human in each app.",
+          "evidence": [
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/gate.rs",
+              "contains": "pub fn run_m1_gate"
+            },
+            {
+              "type": "text",
+              "path": "apps/macos/src-tauri/src/gate.rs",
+              "contains": "CheckState::NeedsHuman"
+            }
           ]
         }
       ],

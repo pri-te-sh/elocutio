@@ -43,6 +43,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_provider_model,
         list_provider_models,
         get_coalescer_state,
+        run_m1_gate,
         clear_coalescer_state,
         get_custom_instruction,
         rewrite_text_streamed,
@@ -465,6 +466,16 @@ async fn set_custom_instruction(
         .await
         .map_err(|error| error.to_string())?;
     Ok(config.custom_instruction.clone())
+}
+
+/// Run the M1 gate and report every check.
+///
+/// The automatic checks read the repository and the running configuration. The
+/// checks that need a human are reported as needing one rather than quietly
+/// passing, so the gate never claims more than it can show.
+#[tauri::command]
+fn run_m1_gate() -> crate::gate::GateReport {
+    crate::gate::run_m1_gate()
 }
 
 /// The number of analysis requests the coalescer is tracking.

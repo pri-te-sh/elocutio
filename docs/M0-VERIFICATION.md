@@ -157,7 +157,7 @@ inline experience, and the voice. What is implemented, and what is not:
 | Live mode: debounce, throttle, diff-only, stale guard | Implemented | `auto_analyze.rs` |
 | Request coalescing and a per-request cost cap | Implemented | `coalesce.rs`, `openrouter.rs` |
 | Block list | Implemented | `config::blocklist` |
-| Overlay accept and reject as separate actions | **Not implemented** | The card accepts a suggestion; the rewrite previews before it applies |
+| Paragraph-scoped rewriting | **Not implemented** | The rewrite previews and applies a selection, but does not rewrite one paragraph of a longer document |
 | The 10-app manual matrix | **Needs a human** | The list and the record exist; the checks do not |
 
 ## Known issues and next actions

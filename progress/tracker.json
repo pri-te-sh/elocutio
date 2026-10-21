@@ -722,7 +722,7 @@
           "priority": "P1",
           "estimateDays": 2,
           "status": "in_progress",
-          "notes": "The word-level diff renders in Settings after a rewrite, and the system-wide Rewrite Selection now previews before it applies: the first press prepares the rewrite and shows the diff, the second applies exactly what was shown. A rewrite the user has not looked at never lands in their document. Accept and reject are still separate actions in the overlay.",
+          "notes": "The system-wide Rewrite Selection now previews before it applies: the first press prepares the rewrite and shows a word-level diff, the second applies exactly what was shown, and a third is not possible because the prepared rewrite is removed once applied. A rewrite the user has not looked at never lands in their document. The diff is also shown in Settings after a rewrite. Paragraph-scoped rewriting — rewriting one paragraph of a longer document and leaving the rest alone — is not implemented.",
           "evidence": [
             {
               "type": "text",

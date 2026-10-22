@@ -631,6 +631,11 @@
         color: var(--white);
         cursor: pointer;
       }
+      /* [hidden] loses to the display rules above, so restate it */
+      .poster[hidden],
+      .video video[hidden] {
+        display: none;
+      }
       .poster-mark {
         position: absolute;
         top: clamp(22px, 4vw, 48px);

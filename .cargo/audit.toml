@@ -1,0 +1,10 @@
+# cargo-audit config, read from the repo root by CI.
+[advisories]
+ignore = [
+  # zip: ZipArchive::extract() mishandles symlinks, permissions and SUID bits.
+  # harper-core (weirpack) and candle-core only read entries; neither calls
+  # extract(). The fix needs zip 9, which candle-core does not support yet.
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+]

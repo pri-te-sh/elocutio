@@ -198,7 +198,7 @@
   // Mode Detection: `#elo-overlay` vs Desktop Studio & Settings
   // ---------------------------------------------------------------------------
   let isOverlayWindow = $state(
-    typeof window !== "undefined" && window.location.hash === "#elo-overlay"
+    typeof window !== "undefined" && window.location.hash === "#elo-overlay",
   );
 
   // ---------------------------------------------------------------------------
@@ -235,9 +235,7 @@
 
   // Hover-expanded "elo" pill toolbar state (Images 1, 2, 4)
   let eloPillHovered = $state(false);
-  let eloPillHoveredBtn = $state<"power" | "tone" | "rewrite" | "count" | null>(
-    null
-  );
+  let eloPillHoveredBtn = $state<"power" | "tone" | "rewrite" | "count" | null>(null);
   let eloPowerMenuOpen = $state(false);
 
   // "What do you want to do?" Rewrite card state (Image 5)
@@ -424,11 +422,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   // ---------------------------------------------------------------------------
   // Helper: Short Action Label for Compact Mini-Popover (Image 3)
   // ---------------------------------------------------------------------------
-  function shortActionHeadline(
-    subcategory: string,
-    message: string,
-    sugKind?: string
-  ): string {
+  function shortActionHeadline(subcategory: string, message: string, sugKind?: string): string {
     const sub = subcategory.toLowerCase();
     const msg = message.toLowerCase();
     if (sub.includes("capital") || msg.includes("capital")) {
@@ -458,14 +452,11 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   let filteredOverlayAlerts = $derived(
     overlayCategoryFilter === "all"
       ? overlaySnap.alerts
-      : overlaySnap.alerts.filter((a) => a.category === overlayCategoryFilter)
+      : overlaySnap.alerts.filter((a) => a.category === overlayCategoryFilter),
   );
 
   let activeOverlayAlert = $derived.by(() => {
-    const list =
-      filteredOverlayAlerts.length > 0
-        ? filteredOverlayAlerts
-        : overlaySnap.alerts;
+    const list = filteredOverlayAlerts.length > 0 ? filteredOverlayAlerts : overlaySnap.alerts;
     if (list.length === 0) return null;
     if (overlayActiveAlertId) {
       const found = list.find((a) => a.id === overlayActiveAlertId);
@@ -476,9 +467,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
   let activeOverlayAlertIndex = $derived.by(() => {
     if (!activeOverlayAlert) return 0;
-    const idx = overlaySnap.alerts.findIndex(
-      (a) => a.id === activeOverlayAlert.id
-    );
+    const idx = overlaySnap.alerts.findIndex((a) => a.id === activeOverlayAlert.id);
     return idx >= 0 ? idx : 0;
   });
 
@@ -493,18 +482,10 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       const maxX = Math.max(minX, fr.x + fr.width - w - 8);
       const minY = fr.height < 56 ? Math.max(32, fr.y - h - 4) : fr.y + 6;
       const maxY =
-        fr.height < 56
-          ? fr.y + fr.height + 12
-          : Math.max(minY, fr.y + fr.height - h - 8);
+        fr.height < 56 ? fr.y + fr.height + 12 : Math.max(minY, fr.y + fr.height - h - 8);
       return {
-        x: Math.max(
-          minX,
-          Math.min(maxX, dragStartWidget.x + dragCurrentOffset.x)
-        ),
-        y: Math.max(
-          minY,
-          Math.min(maxY, dragStartWidget.y + dragCurrentOffset.y)
-        ),
+        x: Math.max(minX, Math.min(maxX, dragStartWidget.x + dragCurrentOffset.x)),
+        y: Math.max(minY, Math.min(maxY, dragStartWidget.y + dragCurrentOffset.y)),
         width: w,
         height: h,
       };
@@ -537,15 +518,11 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     const rawH = typeof window !== "undefined" ? window.innerHeight : 900;
     const winW = Math.max(
       rawW,
-      overlaySnap.field_rect
-        ? overlaySnap.field_rect.x + overlaySnap.field_rect.width + 24
-        : 0
+      overlaySnap.field_rect ? overlaySnap.field_rect.x + overlaySnap.field_rect.width + 24 : 0,
     );
     const winH = Math.max(
       rawH,
-      overlaySnap.field_rect
-        ? overlaySnap.field_rect.y + overlaySnap.field_rect.height + 24
-        : 0
+      overlaySnap.field_rect ? overlaySnap.field_rect.y + overlaySnap.field_rect.height + 24 : 0,
     );
 
     if (overlayPopoverMode === "mini" && activeOverlayAlert) {
@@ -562,19 +539,10 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
     if (overlayPopoverMode === "rewrite") {
       const cardW = 368;
-      const cardH = rewriteLoading
-        ? 162
-        : rewritePreview
-          ? 345
-          : rewriteMoreIdeasOpen
-            ? 412
-            : 308;
+      const cardH = rewriteLoading ? 162 : rewritePreview ? 345 : rewriteMoreIdeasOpen ? 412 : 308;
       const anchor = baseWidgetRect ?? overlaySnap.field_rect;
       if (!anchor) return null;
-      const x = Math.max(
-        16,
-        Math.min(anchor.x + anchor.width - cardW, winW - cardW - 16)
-      );
+      const x = Math.max(16, Math.min(anchor.x + anchor.width - cardW, winW - cardW - 16));
       let y = anchor.y - cardH - 12;
       if (y < 36) {
         y = Math.min(winH - cardH - 16, anchor.y + anchor.height + 10);
@@ -616,54 +584,42 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   function computeCategoryScore(
     wordCount: number,
     issueCount: number,
-    categoryWeight: number
+    categoryWeight: number,
   ): number {
     if (wordCount === 0 || issueCount === 0) return 100;
     const effectiveWords = Math.max(25, wordCount);
     const ratePer100 = (issueCount / effectiveWords) * 100;
     const penalty = Math.round(
-      ratePer100 * 6.5 * categoryWeight + issueCount * 3.5 * categoryWeight
+      ratePer100 * 6.5 * categoryWeight + issueCount * 3.5 * categoryWeight,
     );
     return Math.max(15, Math.min(100, 100 - penalty));
   }
 
   function computeCategoryScoresMap(
     wordCount: number,
-    counts: Record<string, number>
+    counts: Record<string, number>,
   ): Record<string, number> {
     return {
       correctness: computeCategoryScore(
         wordCount,
         counts.correctness ?? 0,
-        CATEGORY_WEIGHTS.correctness
+        CATEGORY_WEIGHTS.correctness,
       ),
-      clarity: computeCategoryScore(
-        wordCount,
-        counts.clarity ?? 0,
-        CATEGORY_WEIGHTS.clarity
-      ),
+      clarity: computeCategoryScore(wordCount, counts.clarity ?? 0, CATEGORY_WEIGHTS.clarity),
       engagement: computeCategoryScore(
         wordCount,
         counts.engagement ?? 0,
-        CATEGORY_WEIGHTS.engagement
+        CATEGORY_WEIGHTS.engagement,
       ),
-      delivery: computeCategoryScore(
-        wordCount,
-        counts.delivery ?? 0,
-        CATEGORY_WEIGHTS.delivery
-      ),
-      style: computeCategoryScore(
-        wordCount,
-        counts.style ?? 0,
-        CATEGORY_WEIGHTS.style
-      ),
+      delivery: computeCategoryScore(wordCount, counts.delivery ?? 0, CATEGORY_WEIGHTS.delivery),
+      style: computeCategoryScore(wordCount, counts.style ?? 0, CATEGORY_WEIGHTS.style),
     };
   }
 
   function computeOverallWritingScore(
     wordCount: number,
     counts: Record<string, number>,
-    catScores: Record<string, number>
+    catScores: Record<string, number>,
   ): number {
     const totalIssues =
       (counts.correctness ?? 0) +
@@ -709,15 +665,15 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   });
 
   let overlayCategoryScores = $derived.by(() =>
-    computeCategoryScoresMap(overlaySnap.word_count, overlayCategoryCounts)
+    computeCategoryScoresMap(overlaySnap.word_count, overlayCategoryCounts),
   );
 
   let overlayScore = $derived.by(() =>
     computeOverallWritingScore(
       overlaySnap.word_count,
       overlayCategoryCounts,
-      overlayCategoryScores
-    )
+      overlayCategoryScores,
+    ),
   );
 
   let hasStyleOrClarityAlerts = $derived(
@@ -725,7 +681,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       (overlayCategoryCounts.engagement ?? 0) +
       (overlayCategoryCounts.delivery ?? 0) +
       (overlayCategoryCounts.style ?? 0) >
-      0
+      0,
   );
 
   // ---------------------------------------------------------------------------
@@ -734,15 +690,13 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   let filteredEditorLints = $derived(
     editorCategoryFilter === "all"
       ? editorLints
-      : editorLints.filter((l) => l.category === editorCategoryFilter)
+      : editorLints.filter((l) => l.category === editorCategoryFilter),
   );
 
   let activeEditorLint = $derived.by(() => {
     if (filteredEditorLints.length === 0) return null;
     if (editorSelectedLintId) {
-      const found = filteredEditorLints.find(
-        (l) => l.id === editorSelectedLintId
-      );
+      const found = filteredEditorLints.find((l) => l.id === editorSelectedLintId);
       if (found) return found;
     }
     return filteredEditorLints[0];
@@ -771,21 +725,15 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   let editorCharCount = $derived(editorText.length);
 
   let editorCategoryScores = $derived.by(() =>
-    computeCategoryScoresMap(editorWordCount, editorCategoryCounts)
+    computeCategoryScoresMap(editorWordCount, editorCategoryCounts),
   );
 
   let editorScore = $derived.by(() =>
-    computeOverallWritingScore(
-      editorWordCount,
-      editorCategoryCounts,
-      editorCategoryScores
-    )
+    computeOverallWritingScore(editorWordCount, editorCategoryCounts, editorCategoryScores),
   );
 
   let editorLexicalDiversity = $derived.by(() => {
-    const words = editorText
-      .toLowerCase()
-      .match(/[a-z0-9']+/g);
+    const words = editorText.toLowerCase().match(/[a-z0-9']+/g);
     if (!words || words.length === 0) return 0;
     const unique = new Set(words).size;
     return Math.round((unique / words.length) * 100);
@@ -813,10 +761,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     if (!writingAnalytics || writingAnalytics.daily_activity.length === 0) {
       return 1;
     }
-    return Math.max(
-      1,
-      ...writingAnalytics.daily_activity.map((d) => d.ai_passes + d.inline_edits)
-    );
+    return Math.max(1, ...writingAnalytics.daily_activity.map((d) => d.ai_passes + d.inline_edits));
   });
 
   interface TextSegment {
@@ -876,9 +821,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     const id = item.bundle_id.toLowerCase();
     const name = item.display_name.toLowerCase();
     if (name.startsWith("com.apple.")) return true;
-    return SYSTEM_DAEMON_PATTERNS.some(
-      (pat) => id.includes(pat) || name === pat
-    );
+    return SYSTEM_DAEMON_PATTERNS.some((pat) => id.includes(pat) || name === pat);
   }
 
   let filteredIntegrations = $derived(
@@ -888,10 +831,9 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         return !isSystemBackgroundHelper(item);
       }
       return (
-        item.display_name.toLowerCase().includes(q) ||
-        item.bundle_id.toLowerCase().includes(q)
+        item.display_name.toLowerCase().includes(q) || item.bundle_id.toLowerCase().includes(q)
       );
-    })
+    }),
   );
 
   function formatRuleDisplayName(key: string): string {
@@ -902,12 +844,8 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       .trim();
   }
 
-  let enabledRulesCount = $derived(
-    lintRules.filter((r) => r.enabled).length
-  );
-  let disabledRulesCount = $derived(
-    lintRules.filter((r) => !r.enabled).length
-  );
+  let enabledRulesCount = $derived(lintRules.filter((r) => r.enabled).length);
+  let disabledRulesCount = $derived(lintRules.filter((r) => !r.enabled).length);
 
   let filteredDictionaryWords = $derived.by(() => {
     const q = newDictWord.trim().toLowerCase();
@@ -923,7 +861,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       if (!q) return true;
       const display = formatRuleDisplayName(rule.key).toLowerCase();
       return rule.key.toLowerCase().includes(q) || display.includes(q);
-    })
+    }),
   );
 
   // ---------------------------------------------------------------------------
@@ -985,22 +923,19 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       const target = e.target as HTMLElement | null;
       if (!target) return;
       const inputEl = target.closest(
-        ".elo-rewrite-card input.rewrite-prompt-input"
+        ".elo-rewrite-card input.rewrite-prompt-input",
       ) as HTMLInputElement | null;
       if (inputEl && !inputEl.disabled) {
         focusOverlayPromptInput();
         return;
       }
       const btn = target.closest(
-        ".elo-rewrite-card button, .elo-floating-card button, .elo-mini-card button"
+        ".elo-rewrite-card button, .elo-floating-card button, .elo-mini-card button",
       ) as HTMLButtonElement | null;
       if (!btn || btn.disabled) return;
       const upTime = Date.now();
       setTimeout(() => {
-        if (
-          lastNativeClickAt < upTime - 5 &&
-          lastSyntheticClickAt < upTime - 5
-        ) {
+        if (lastNativeClickAt < upTime - 5 && lastSyntheticClickAt < upTime - 5) {
           lastSyntheticClickAt = Date.now();
           btn.click();
         }
@@ -1025,51 +960,38 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     window.addEventListener("pointerup", onCaptPointerUp, true);
     window.addEventListener("click", onCaptClick, true);
 
-    const unlistenPromise = listen<EloOverlaySnapshot>(
-      "elo-overlay-snapshot",
-      (event) => {
-        handleIncomingSnapshot(event.payload);
-      }
-    );
+    const unlistenPromise = listen<EloOverlaySnapshot>("elo-overlay-snapshot", (event) => {
+      handleIncomingSnapshot(event.payload);
+    });
 
-    const unlistenClickPromise = listen<{ x: number; y: number }>(
-      "elo-overlay-click",
-      (event) => {
-        if (isDraggingElo || draggedDuringPress) {
-          return;
-        }
-        const { x, y } = event.payload;
-        const hit = document.elementFromPoint(x, y) as HTMLElement | null;
-        if (!hit) return;
-        const inputHit = hit.closest(
-          "input.rewrite-prompt-input"
-        ) as HTMLInputElement | null;
-        if (inputHit && !inputHit.disabled) {
-          focusOverlayPromptInput();
-          return;
-        }
-        const now = Date.now();
-        if (
-          now - lastNativeClickAt < 350 ||
-          now - lastSyntheticClickAt < 350
-        ) {
-          return;
-        }
-        lastSyntheticClickAt = now;
-        const btn = hit.closest(
-          "button, input, a, [role='button']"
-        ) as HTMLElement | null;
-        if (btn) {
-          if (btn.tagName === "INPUT") {
-            focusOverlayPromptInput();
-          } else {
-            btn.click();
-          }
-        } else if (hit.closest(".elo-teardrop-widget")) {
-          toggleFullEloCard();
-        }
+    const unlistenClickPromise = listen<{ x: number; y: number }>("elo-overlay-click", (event) => {
+      if (isDraggingElo || draggedDuringPress) {
+        return;
       }
-    );
+      const { x, y } = event.payload;
+      const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+      if (!hit) return;
+      const inputHit = hit.closest("input.rewrite-prompt-input") as HTMLInputElement | null;
+      if (inputHit && !inputHit.disabled) {
+        focusOverlayPromptInput();
+        return;
+      }
+      const now = Date.now();
+      if (now - lastNativeClickAt < 350 || now - lastSyntheticClickAt < 350) {
+        return;
+      }
+      lastSyntheticClickAt = now;
+      const btn = hit.closest("button, input, a, [role='button']") as HTMLElement | null;
+      if (btn) {
+        if (btn.tagName === "INPUT") {
+          focusOverlayPromptInput();
+        } else {
+          btn.click();
+        }
+      } else if (hit.closest(".elo-teardrop-widget")) {
+        toggleFullEloCard();
+      }
+    });
 
     const unlistenOutsidePromise = listen("elo-overlay-outside-click", () => {
       releaseOverlayPromptInput();
@@ -1089,7 +1011,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       "elo-rewrite-state",
       (event) => {
         rewriteLoading = Boolean(event.payload?.active);
-      }
+      },
     );
 
     const pollTimer = setInterval(refreshOverlaySnapshot, 180);
@@ -1129,10 +1051,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       overlayPopoverMode = "closed";
     }
 
-    if (
-      overlayActiveAlertId &&
-      !snap.alerts.some((a) => a.id === overlayActiveAlertId)
-    ) {
+    if (overlayActiveAlertId && !snap.alerts.some((a) => a.id === overlayActiveAlertId)) {
       overlayActiveAlertId = snap.alerts[0]?.id ?? null;
       if (overlayPopoverMode === "mini" && !overlayActiveAlertId) {
         overlayPopoverMode = "closed";
@@ -1161,8 +1080,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     } else if (cmd === "prev" && overlaySnap.alerts.length > 0) {
       if (overlayPopoverMode === "closed") overlayPopoverMode = "full";
       const prevIdx =
-        (activeOverlayAlertIndex - 1 + overlaySnap.alerts.length) %
-        overlaySnap.alerts.length;
+        (activeOverlayAlertIndex - 1 + overlaySnap.alerts.length) % overlaySnap.alerts.length;
       overlayActiveAlertId = overlaySnap.alerts[prevIdx].id;
     } else if (cmd === "accept" && activeOverlayAlert) {
       applyOverlaySuggestion(activeOverlayAlert.id, 0);
@@ -1210,11 +1128,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     overlayPopoverMode = overlayPopoverMode === "full" ? "closed" : "full";
     overlayMoreMenuOpen = false;
     eloPowerMenuOpen = false;
-    if (
-      overlayPopoverMode === "full" &&
-      !overlayActiveAlertId &&
-      overlaySnap.alerts[0]
-    ) {
+    if (overlayPopoverMode === "full" && !overlayActiveAlertId && overlaySnap.alerts[0]) {
       overlayActiveAlertId = overlaySnap.alerts[0].id;
     }
     syncOverlayRegions();
@@ -1223,10 +1137,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   function onEloWidgetPointerDown(e: PointerEvent) {
     if (e.button !== 0 || !baseWidgetRect) return;
     const targetEl = e.target as HTMLElement;
-    if (
-      targetEl.closest(".elo-sub-action-btn") ||
-      targetEl.closest(".elo-power-menu")
-    ) {
+    if (targetEl.closest(".elo-sub-action-btn") || targetEl.closest(".elo-power-menu")) {
       return;
     }
     pointerDownOnElo = true;
@@ -1270,8 +1181,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       const h = 38;
       const fr = overlaySnap.field_rect;
       const baseX = Math.max(fr.x + 6, fr.x + fr.width - w - 8);
-      const baseY =
-        fr.height < 56 ? fr.y + fr.height + 4 : fr.y + fr.height - h - 8;
+      const baseY = fr.height < 56 ? fr.y + fr.height + 4 : fr.y + fr.height - h - 8;
       const finalX = dragStartWidget.x + dragCurrentOffset.x;
       const finalY = dragStartWidget.y + dragCurrentOffset.y;
       await invoke("save_elo_widget_offset", {
@@ -1293,8 +1203,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     eloPowerMenuOpen = false;
     rewriteError = null;
     rewritePreview = null;
-    overlayPopoverMode =
-      overlayPopoverMode === "rewrite" ? "closed" : "rewrite";
+    overlayPopoverMode = overlayPopoverMode === "rewrite" ? "closed" : "rewrite";
     syncOverlayRegions();
   }
 
@@ -1304,14 +1213,11 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     rewriteError = null;
     const startedAt = Date.now();
     try {
-      const resp = await invoke<EloRewriteResponse>(
-        "elo_rewrite_focused_text",
-        {
-          mode,
-          customPrompt: customPrompt ?? null,
-          sourceOverride: null,
-        }
-      );
+      const resp = await invoke<EloRewriteResponse>("elo_rewrite_focused_text", {
+        mode,
+        customPrompt: customPrompt ?? null,
+        sourceOverride: null,
+      });
       const elapsed = Date.now() - startedAt;
       if (elapsed < 450) {
         await new Promise((r) => setTimeout(r, 450 - elapsed));
@@ -1434,10 +1340,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     }
   }
 
-  async function openStudioFromOverlay(
-    tab: StudioTab,
-    importFocusedText = false
-  ) {
+  async function openStudioFromOverlay(tab: StudioTab, importFocusedText = false) {
     overlayPopoverMode = "closed";
     syncOverlayRegions();
     try {
@@ -1534,10 +1437,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         text: editorText,
       });
       editorLints = items;
-      if (
-        editorSelectedLintId &&
-        !items.some((i) => i.id === editorSelectedLintId)
-      ) {
+      if (editorSelectedLintId && !items.some((i) => i.id === editorSelectedLintId)) {
         editorSelectedLintId = items[0]?.id ?? null;
         if (editorInlineCardMode === "mini") editorInlineCardPos = null;
       } else if (!editorSelectedLintId && items.length > 0) {
@@ -1696,15 +1596,12 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     if (rewritingLintId) return;
     rewritingLintId = lint.id;
     try {
-      const resp = await invoke<EloRewriteResponse>(
-        "elo_rewrite_focused_text",
-        {
-          mode: "concise",
-          customPrompt:
-            "Split or tighten this long sentence so it reads clearly and concisely while preserving its meaning.",
-          sourceOverride: lint.original,
-        }
-      );
+      const resp = await invoke<EloRewriteResponse>("elo_rewrite_focused_text", {
+        mode: "concise",
+        customPrompt:
+          "Split or tighten this long sentence so it reads clearly and concisely while preserving its meaning.",
+        sourceOverride: lint.original,
+      });
       if (resp.rewritten && resp.rewritten.trim()) {
         applyEditorSuggestion(lint, resp.rewritten.trim());
       }
@@ -1731,12 +1628,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     const start = textareaEl.selectionStart ?? editorText.length;
     const end = textareaEl.selectionEnd ?? editorText.length;
     const selected = editorText.slice(start, end) || "text";
-    editorText =
-      editorText.slice(0, start) +
-      prefix +
-      selected +
-      suffix +
-      editorText.slice(end);
+    editorText = editorText.slice(0, start) + prefix + selected + suffix + editorText.slice(end);
     scheduleEditorCheck();
   }
 
@@ -1795,9 +1687,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     aiRewriteResult = null;
     editorInlineCardMode = "rewrite";
     editorInlineCardPos =
-      editorInlineCardPos && editorInlineCardMode === "rewrite"
-        ? null
-        : { x: 120, y: 90 };
+      editorInlineCardPos && editorInlineCardMode === "rewrite" ? null : { x: 120, y: 90 };
   }
 
   async function runStudioIdeaRewrite(mode: string, customPrompt?: string) {
@@ -1807,14 +1697,11 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     aiRewriteResult = null;
     const startedAt = Date.now();
     try {
-      const resp = await invoke<EloRewriteResponse>(
-        "elo_rewrite_focused_text",
-        {
-          mode,
-          customPrompt: customPrompt ?? null,
-          sourceOverride: editorText,
-        }
-      );
+      const resp = await invoke<EloRewriteResponse>("elo_rewrite_focused_text", {
+        mode,
+        customPrompt: customPrompt ?? null,
+        sourceOverride: editorText,
+      });
       const elapsed = Date.now() - startedAt;
       if (elapsed < 450) {
         await new Promise((r) => setTimeout(r, 450 - elapsed));
@@ -1851,17 +1738,10 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       usageSummary = await invoke<UsageSummaryView>("get_usage_summary", {
         limit: 20,
       });
-      selectedPresetId = detectPresetFromUrl(
-        providerSettings.kind,
-        providerSettings.base_url
-      );
+      selectedPresetId = detectPresetFromUrl(providerSettings.kind, providerSettings.base_url);
       refreshPresetModels(selectedPresetId, providerSettings.base_url);
-      personalizationDb = await invoke<PersonalizationDbStatus>(
-        "get_personalization_db_status"
-      );
-      writingAnalytics = await invoke<WritingAnalyticsSnapshot>(
-        "get_writing_analytics"
-      );
+      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
+      writingAnalytics = await invoke<WritingAnalyticsSnapshot>("get_writing_analytics");
     } catch {
       // Ignore
     }
@@ -1893,13 +1773,10 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   async function refreshPresetModels(presetId: string, baseUrl: string) {
     fetchingModels = true;
     try {
-      presetModelSlugs = await invoke<PresetModelSlug[]>(
-        "fetch_provider_preset_models",
-        {
-          presetId,
-          baseUrl,
-        }
-      );
+      presetModelSlugs = await invoke<PresetModelSlug[]>("fetch_provider_preset_models", {
+        presetId,
+        baseUrl,
+      });
     } catch {
       presetModelSlugs = [];
     } finally {
@@ -1996,9 +1873,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   async function changeDialect(abbr: string) {
     try {
       dialectName = await invoke<string>("set_dialect_name", { dialect: abbr });
-      personalizationDb = await invoke<PersonalizationDbStatus>(
-        "get_personalization_db_status"
-      );
+      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
       await runEditorCheck();
     } catch {
       // Ignore
@@ -2006,17 +1881,13 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   async function toggleLintRule(ruleKey: string, enabled: boolean) {
-    lintRules = lintRules.map((r) =>
-      r.key === ruleKey ? { ...r, enabled } : r
-    );
+    lintRules = lintRules.map((r) => (r.key === ruleKey ? { ...r, enabled } : r));
     try {
       await invoke("set_lint_rule_enabled", {
         ruleName: ruleKey,
         enabled,
       });
-      personalizationDb = await invoke<PersonalizationDbStatus>(
-        "get_personalization_db_status"
-      );
+      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
       await runEditorCheck();
     } catch {
       lintRules = await invoke<LintRuleView[]>("get_lint_rules");
@@ -2030,9 +1901,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       await invoke("add_to_dictionary", { word: w });
       newDictWord = "";
       dictionaryWords = await invoke<string[]>("get_dictionary");
-      personalizationDb = await invoke<PersonalizationDbStatus>(
-        "get_personalization_db_status"
-      );
+      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
       await runEditorCheck();
     } catch {
       // Ignore
@@ -2044,9 +1913,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       const updated = dictionaryWords.filter((w) => w !== word);
       await invoke("set_dictionary", { words: updated });
       dictionaryWords = await invoke<string[]>("get_dictionary");
-      personalizationDb = await invoke<PersonalizationDbStatus>(
-        "get_personalization_db_status"
-      );
+      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
       await runEditorCheck();
     } catch {
       // Ignore
@@ -2062,9 +1929,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         name: "My Writing Voice",
       });
       voiceTraits = await invoke<VoiceTraitView[]>("get_voice_traits");
-      personalizationDb = await invoke<PersonalizationDbStatus>(
-        "get_personalization_db_status"
-      );
+      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
       voiceStatusMsg = "Learned voice profile from your writing sample.";
     } catch (err) {
       voiceStatusMsg = String(err);
@@ -2092,19 +1957,13 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       await invoke("set_custom_instruction", {
         instruction: customInstruction,
       });
-      const parsedBudget =
-        budgetInput.trim() === "" ? null : Number(budgetInput.trim());
+      const parsedBudget = budgetInput.trim() === "" ? null : Number(budgetInput.trim());
       await invoke("set_budget", {
-        budgetUsd:
-          parsedBudget !== null && Number.isFinite(parsedBudget)
-            ? parsedBudget
-            : null,
+        budgetUsd: parsedBudget !== null && Number.isFinite(parsedBudget) ? parsedBudget : null,
       });
-      const parsedCap =
-        costCapInput.trim() === "" ? null : Number(costCapInput.trim());
+      const parsedCap = costCapInput.trim() === "" ? null : Number(costCapInput.trim());
       await invoke("set_cost_cap", {
-        costCapUsd:
-          parsedCap !== null && Number.isFinite(parsedCap) ? parsedCap : null,
+        costCapUsd: parsedCap !== null && Number.isFinite(parsedCap) ? parsedCap : null,
       });
       if (apiKeyInput.trim()) {
         await invoke("set_openrouter_key", { key: apiKeyInput.trim() });
@@ -2114,12 +1973,9 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       usageSummary = await invoke<UsageSummaryView>("get_usage_summary", {
         limit: 20,
       });
-      personalizationDb = await invoke<PersonalizationDbStatus>(
-        "get_personalization_db_status"
-      );
+      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
       providerStatusIsError = false;
-      providerStatusMsg =
-        "Saved provider configuration, budget, and AES-256 encrypted key.";
+      providerStatusMsg = "Saved provider configuration, budget, and AES-256 encrypted key.";
     } catch (err) {
       providerStatusIsError = true;
       providerStatusMsg = String(err);
@@ -2184,9 +2040,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
             ? "/mark-black.png"
             : "/mark-white.png"}
         alt=""
-        style="width: {Math.round(size * 0.68)}px; height: {Math.round(
-          size * 0.68
-        )}px;"
+        style="width: {Math.round(size * 0.68)}px; height: {Math.round(size * 0.68)}px;"
         class="elo-brand-mark-img"
         draggable="false"
       />
@@ -2236,9 +2090,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         "
       >
         {#each overlaySnap.alerts as alert (alert.id)}
-          {@const isActive =
-            overlayPopoverMode !== "closed" &&
-            activeOverlayAlert?.id === alert.id}
+          {@const isActive = overlayPopoverMode !== "closed" && activeOverlayAlert?.id === alert.id}
           {@const isHovered = overlayHoveredAlertId === alert.id}
           <button
             type="button"
@@ -2290,9 +2142,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         >
           <!-- Dark Tooltip Above Hovered Button (Image 4: "Rewrite with elo") -->
           {#if rewriteLoading && overlayPopoverMode !== "rewrite"}
-            <div class="elo-dark-tooltip is-rewriting-tip">
-              ✨ Rewriting with elo…
-            </div>
+            <div class="elo-dark-tooltip is-rewriting-tip">✨ Rewriting with elo…</div>
           {:else if eloPillHoveredBtn === "rewrite"}
             <div class="elo-dark-tooltip">
               {rewriteLoading ? "Rewriting with elo…" : "Rewrite with elo"}
@@ -2317,10 +2167,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               <button type="button" onclick={pauseEloForCurrentApp}>
                 Pause elo in {overlaySnap.app_name || "this app"}
               </button>
-              <button
-                type="button"
-                onclick={() => openStudioFromOverlay("apps", false)}
-              >
+              <button type="button" onclick={() => openStudioFromOverlay("apps", false)}>
                 Manage app settings…
               </button>
             </div>
@@ -2410,10 +2257,8 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
           <button
             type="button"
             class="elo-count-badge-btn"
-            class:style-only={
-              overlaySnap.alerts.length > 0 &&
-              (overlayCategoryCounts.correctness ?? 0) === 0
-            }
+            class:style-only={overlaySnap.alerts.length > 0 &&
+              (overlayCategoryCounts.correctness ?? 0) === 0}
             class:zero={overlaySnap.alerts.length === 0}
             aria-label="Review suggestions"
             onmouseenter={() => (eloPillHoveredBtn = "count")}
@@ -2447,7 +2292,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
             {shortActionHeadline(
               activeOverlayAlert.subcategory,
               activeOverlayAlert.message,
-              activeOverlayAlert.suggestions[0]?.kind
+              activeOverlayAlert.suggestions[0]?.kind,
             )}
           </div>
 
@@ -2456,8 +2301,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               <button
                 type="button"
                 class="mini-replacement-btn"
-                onclick={() =>
-                  applyOverlaySuggestion(activeOverlayAlert.id, idx)}
+                onclick={() => applyOverlaySuggestion(activeOverlayAlert.id, idx)}
               >
                 <span class="mini-repl-highlight">
                   {sug.kind === "remove" ? "Remove word" : sug.label}
@@ -2546,11 +2390,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
           {#if rewriteLoading}
             <div class="rewrite-ideas-body">
-              <div
-                class="rewrite-active-progress"
-                role="status"
-                aria-live="polite"
-              >
+              <div class="rewrite-active-progress" role="status" aria-live="polite">
                 <div class="rewrite-progress-row">
                   <progress
                     aria-label="Rewriting text with elo"
@@ -2577,20 +2417,13 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                 {rewritePreview.rewritten}
               </div>
               <div class="rewrite-preview-actions">
-                <button
-                  type="button"
-                  class="elo-btn-accept"
-                  onclick={applyOverlayRewriteToApp}
-                >
+                <button type="button" class="elo-btn-accept" onclick={applyOverlayRewriteToApp}>
                   Insert in {overlaySnap.app_name || "App"}
                 </button>
                 <button
                   type="button"
                   class="elo-btn-alt"
-                  onclick={() =>
-                    navigator.clipboard?.writeText(
-                      rewritePreview?.rewritten ?? ""
-                    )}
+                  onclick={() => navigator.clipboard?.writeText(rewritePreview?.rewritten ?? "")}
                 >
                   Copy
                 </button>
@@ -2719,9 +2552,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                   type="text"
                   class="rewrite-prompt-input"
                   bind:this={overlayPromptInputEl}
-                  placeholder={rewriteLoading
-                    ? "Rewriting with elo…"
-                    : "Tell elo to..."}
+                  placeholder={rewriteLoading ? "Rewriting with elo…" : "Tell elo to..."}
                   bind:value={rewriteCustomPrompt}
                   disabled={rewriteLoading}
                   onclick={() => focusOverlayPromptInput()}
@@ -2841,10 +2672,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
           {#if activeOverlayAlert}
             <div class="elo-active-alert-box">
               <div class="elo-alert-cat-row">
-                <span
-                  class="elo-cat-dot"
-                  style="background: {activeOverlayAlert.color};"
-                ></span>
+                <span class="elo-cat-dot" style="background: {activeOverlayAlert.color};"></span>
                 <span class="elo-cat-title">
                   <strong>{activeOverlayAlert.category_label}:</strong>
                   {activeOverlayAlert.subcategory}
@@ -2873,8 +2701,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                       <button
                         type="button"
                         class={idx === 0 ? "elo-btn-accept" : "elo-btn-alt"}
-                        onclick={() =>
-                          applyOverlaySuggestion(activeOverlayAlert.id, idx)}
+                        onclick={() => applyOverlaySuggestion(activeOverlayAlert.id, idx)}
                       >
                         {idx === 0
                           ? sug.kind === "remove"
@@ -2919,7 +2746,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                           onclick={() =>
                             addOverlayWordToDictionary(
                               activeOverlayAlert.original,
-                              activeOverlayAlert.id
+                              activeOverlayAlert.id,
                             )}
                         >
                           Add "{activeOverlayAlert.original}" to dictionary
@@ -2928,10 +2755,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                       <button
                         type="button"
                         onclick={() =>
-                          disableOverlayRule(
-                            activeOverlayAlert.rule_name,
-                            activeOverlayAlert.id
-                          )}
+                          disableOverlayRule(activeOverlayAlert.rule_name, activeOverlayAlert.id)}
                       >
                         Turn off rule ({activeOverlayAlert.subcategory})
                       </button>
@@ -2953,10 +2777,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                         overlayMoreMenuOpen = false;
                       }}
                     >
-                      <span
-                        class="elo-cat-dot"
-                        style="background: {item.color};"
-                      ></span>
+                      <span class="elo-cat-dot" style="background: {item.color};"></span>
                       <span class="compact-orig">{item.original}</span>
                       <span class="compact-sep">·</span>
                       <span class="compact-sub">
@@ -2984,13 +2805,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
           {/if}
 
           <footer class="elo-card-cat-footer">
-            {#each [
-              { id: "correctness", label: "Correctness", color: "#E5484D" },
-              { id: "clarity", label: "Clarity", color: "#2563EB" },
-              { id: "engagement", label: "Engagement", color: "#10B981" },
-              { id: "delivery", label: "Delivery", color: "#7C3AED" },
-              { id: "style", label: "Style guide", color: "#191F70" },
-            ] as cat}
+            {#each [{ id: "correctness", label: "Correctness", color: "#E5484D" }, { id: "clarity", label: "Clarity", color: "#2563EB" }, { id: "engagement", label: "Engagement", color: "#10B981" }, { id: "delivery", label: "Delivery", color: "#7C3AED" }, { id: "style", label: "Style guide", color: "#191F70" }] as cat}
               {@const count = overlayCategoryCounts[cat.id] ?? 0}
               {@const catScore = overlayCategoryScores[cat.id] ?? 100}
               <button
@@ -2999,13 +2814,10 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                 class:is-selected={overlayCategoryFilter === cat.id}
                 title="{cat.label}: {catScore}% ({count} {count === 1 ? 'alert' : 'alerts'})"
                 onclick={() =>
-                  (overlayCategoryFilter =
-                    overlayCategoryFilter === cat.id ? "all" : cat.id)}
+                  (overlayCategoryFilter = overlayCategoryFilter === cat.id ? "all" : cat.id)}
               >
                 <span class="elo-cat-track">
-                  <span
-                    class="elo-cat-bar"
-                    style="width: {catScore}%; background: {cat.color};"
+                  <span class="elo-cat-bar" style="width: {catScore}%; background: {cat.color};"
                   ></span>
                 </span>
                 <span class="elo-cat-row">
@@ -3048,8 +2860,21 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
             class:active={activeTab === "editor"}
             onclick={() => (activeTab = "editor")}
           >
-            <svg class="rail-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <svg
+              class="rail-svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
             <span class="rail-label">Manuscript</span>
             {#if editorLints.length > 0}
@@ -3066,8 +2891,21 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               loadAllSettings();
             }}
           >
-            <svg class="rail-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 19.5h16M7 16v-5M12 16V7M17 16v-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <svg
+              class="rail-svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 19.5h16M7 16v-5M12 16V7M17 16v-8"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
             <span class="rail-label">Analytics</span>
           </button>
@@ -3081,11 +2919,50 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               loadAllSettings();
             }}
           >
-            <svg class="rail-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/>
-              <rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/>
-              <rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/>
-              <rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/>
+            <svg
+              class="rail-svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <rect
+                x="3"
+                y="3"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <rect
+                x="14"
+                y="3"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <rect
+                x="3"
+                y="14"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <rect
+                x="14"
+                y="14"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
             </svg>
             <span class="rail-label">Apps</span>
             {#if axStatus !== "Granted"}
@@ -3102,8 +2979,21 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               loadAllSettings();
             }}
           >
-            <svg class="rail-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <svg
+              class="rail-svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
             <span class="rail-label">Lexicon</span>
           </button>
@@ -3117,8 +3007,21 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               loadAllSettings();
             }}
           >
-            <svg class="rail-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M2 12h2m4-6v12m4-9v6m4-10v14m4-7h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <svg
+              class="rail-svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M2 12h2m4-6v12m4-9v6m4-10v14m4-7h2"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
             <span class="rail-label">Voice DNA</span>
           </button>
@@ -3132,8 +3035,21 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               loadAllSettings();
             }}
           >
-            <svg class="rail-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <svg
+              class="rail-svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
             <span class="rail-label">Privacy & AI</span>
           </button>
@@ -3150,8 +3066,20 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
           onclick={toggleEloService}
         >
           <span class="rail-companion-icon-wrap">
-            <svg class="rail-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <svg
+              class="rail-svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
             </svg>
             <span class="rail-status-led" class:is-on={serviceRunning}></span>
           </span>
@@ -3219,1713 +3147,1639 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               />
             </header>
 
-          <div class="canvas-stage">
-            <div
-              class="canvas-backdrop scroller"
-              bind:this={backdropEl}
-              aria-hidden="true"
-            >
-              {#each highlightedSegments as seg}
-                {#if seg.lint}
-                  <mark
-                    class="inline-lint-mark"
-                    class:selected={activeEditorLint?.id === seg.lint.id}
-                    style="--lint-color: {seg.lint.color};"
-                  >{seg.text}</mark>
-                {:else}
-                  <span>{seg.text}</span>
+            <div class="canvas-stage">
+              <div class="canvas-backdrop scroller" bind:this={backdropEl} aria-hidden="true">
+                {#each highlightedSegments as seg}
+                  {#if seg.lint}
+                    <mark
+                      class="inline-lint-mark"
+                      class:selected={activeEditorLint?.id === seg.lint.id}
+                      style="--lint-color: {seg.lint.color};">{seg.text}</mark
+                    >
+                  {:else}
+                    <span>{seg.text}</span>
+                  {/if}
+                {/each}
+                {#if editorText.endsWith("\n")}
+                  <br />
                 {/if}
-              {/each}
-              {#if editorText.endsWith("\n")}
-                <br />
-              {/if}
-            </div>
+              </div>
 
-            <textarea
-              class="canvas-textarea scroller"
-              bind:this={textareaEl}
-              bind:value={editorText}
-              oninput={scheduleEditorCheck}
-              onscroll={syncScroll}
-              onclick={handleTextareaClick}
-              spellcheck="false"
-              placeholder="Start writing or paste your text here..."
-            ></textarea>
+              <textarea
+                class="canvas-textarea scroller"
+                bind:this={textareaEl}
+                bind:value={editorText}
+                oninput={scheduleEditorCheck}
+                onscroll={syncScroll}
+                onclick={handleTextareaClick}
+                spellcheck="false"
+                placeholder="Start writing or paste your text here..."></textarea>
 
-            <!-- Inline Quick-Fix Mini-Popover OR "What do you want to do?" Card inside Studio Canvas -->
-            {#if editorInlineCardPos && editorInlineCardMode === "mini" && activeEditorLint}
-              <div
-                class="elo-mini-popover studio-pos"
-                style="
+              <!-- Inline Quick-Fix Mini-Popover OR "What do you want to do?" Card inside Studio Canvas -->
+              {#if editorInlineCardPos && editorInlineCardMode === "mini" && activeEditorLint}
+                <div
+                  class="elo-mini-popover studio-pos"
+                  style="
                   left: {editorInlineCardPos.x}px;
                   top: {editorInlineCardPos.y}px;
                 "
-              >
-                <div class="mini-headline">
-                  {shortActionHeadline(
-                    activeEditorLint.subcategory,
-                    activeEditorLint.message,
-                    activeEditorLint.suggestions[0]?.kind
-                  )}
-                </div>
+                >
+                  <div class="mini-headline">
+                    {shortActionHeadline(
+                      activeEditorLint.subcategory,
+                      activeEditorLint.message,
+                      activeEditorLint.suggestions[0]?.kind,
+                    )}
+                  </div>
 
-                {#if activeEditorLint.suggestions.length > 0}
-                  {#each activeEditorLint.suggestions.slice(0, 2) as sug}
-                    <button
-                      type="button"
-                      class="mini-replacement-btn"
-                      onclick={() =>
-                        applyEditorSuggestion(activeEditorLint, sug.text)}
-                    >
-                      <span class="mini-repl-highlight">
-                        {sug.kind === "remove" ? "Remove word" : sug.label}
-                      </span>
-                    </button>
-                  {/each}
+                  {#if activeEditorLint.suggestions.length > 0}
+                    {#each activeEditorLint.suggestions.slice(0, 2) as sug}
+                      <button
+                        type="button"
+                        class="mini-replacement-btn"
+                        onclick={() => applyEditorSuggestion(activeEditorLint, sug.text)}
+                      >
+                        <span class="mini-repl-highlight">
+                          {sug.kind === "remove" ? "Remove word" : sug.label}
+                        </span>
+                      </button>
+                    {/each}
+                  {/if}
+
+                  <button
+                    type="button"
+                    class="mini-action-row"
+                    onclick={() => dismissEditorLint(activeEditorLint.id)}
+                  >
+                    <span>🗑</span>
+                    <span>Dismiss</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="mini-action-row"
+                    onclick={() => (editorInlineCardPos = null)}
+                  >
+                    {@render editorialWinkLogo(18, "#191F70", "#FFFFFF")}
+                    <span>See details in All alerts →</span>
+                  </button>
+                </div>
+              {:else if editorInlineCardPos && editorInlineCardMode === "rewrite"}
+                <div
+                  class="elo-rewrite-card studio-pos"
+                  style="right: 28px; bottom: 64px; width: 356px;"
+                >
+                  <header class="rewrite-card-topbar">
+                    <div class="rewrite-brand-left">
+                      {@render editorialWinkLogo(22, "#191F70", "#FFFFFF")}
+                      <span class="elo-card-brand-name">elo</span>
+                    </div>
+                    <div class="rewrite-top-icons">
+                      <button
+                        type="button"
+                        class="elo-icon-btn"
+                        onclick={() => (editorInlineCardPos = null)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </header>
+
+                  <div class="rewrite-ideas-body">
+                    {#if aiRewriteLoading}
+                      <div class="rewrite-active-progress" role="status" aria-live="polite">
+                        <div class="rewrite-progress-row">
+                          <progress
+                            aria-label="Rewriting text with elo"
+                            class="loading-spinner elo-card-spinner"
+                          ></progress>
+                          <div class="rewrite-progress-copy">
+                            <strong>elo is rewriting your text…</strong>
+                            <span>Refining clarity, tone, and flow</span>
+                          </div>
+                        </div>
+                        <div class="rewrite-shimmer-lines" aria-hidden="true">
+                          <span class="shimmer-bar w-92"></span>
+                          <span class="shimmer-bar w-76"></span>
+                        </div>
+                      </div>
+                    {:else}
+                      <h3>What do you want to do?</h3>
+                      <p class="rewrite-sub">Here are some ideas</p>
+
+                      <div class="rewrite-idea-list">
+                        <button
+                          type="button"
+                          class="rewrite-idea-row"
+                          disabled={aiRewriteLoading}
+                          onclick={() => runStudioIdeaRewrite("improve")}
+                        >
+                          <span class="idea-emoji">✏️</span>
+                          <span>Improve it</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="rewrite-idea-row"
+                          disabled={aiRewriteLoading}
+                          onclick={() => runStudioIdeaRewrite("confident")}
+                        >
+                          <span class="idea-emoji">🤝</span>
+                          <span>Sound confident</span>
+                        </button>
+                        <div class="rewrite-more-row">
+                          <button
+                            type="button"
+                            class="rewrite-idea-row flex-1"
+                            disabled={aiRewriteLoading}
+                            onclick={() => (rewriteMoreIdeasOpen = !rewriteMoreIdeasOpen)}
+                          >
+                            <span class="idea-emoji">⊞</span>
+                            <span>More ideas</span>
+                          </button>
+                        </div>
+                        {#if rewriteMoreIdeasOpen}
+                          <div class="rewrite-extra-ideas">
+                            <button
+                              type="button"
+                              class="rewrite-chip"
+                              disabled={aiRewriteLoading}
+                              onclick={() => runStudioIdeaRewrite("concise")}
+                            >
+                              🎯 Make it concise
+                            </button>
+                            <button
+                              type="button"
+                              class="rewrite-chip"
+                              disabled={aiRewriteLoading}
+                              onclick={() => runStudioIdeaRewrite("formal")}
+                            >
+                              🎩 Sound formal
+                            </button>
+                            <button
+                              type="button"
+                              class="rewrite-chip"
+                              disabled={aiRewriteLoading}
+                              onclick={() => runStudioIdeaRewrite("friendly")}
+                            >
+                              😊 Sound friendly
+                            </button>
+                            <button
+                              type="button"
+                              class="rewrite-chip"
+                              disabled={aiRewriteLoading}
+                              onclick={() => runStudioIdeaRewrite("bullets")}
+                            >
+                              • Bullet points
+                            </button>
+                          </div>
+                        {/if}
+                      </div>
+
+                      {#if aiRewriteResult}
+                        <div class="rewrite-preview-box">
+                          {aiRewriteResult}
+                        </div>
+                        <div class="rewrite-preview-actions">
+                          <button
+                            type="button"
+                            class="elo-btn-accept sm"
+                            onclick={() => {
+                              if (aiRewriteResult) {
+                                editorText = aiRewriteResult;
+                                aiRewriteResult = null;
+                                editorInlineCardPos = null;
+                                runEditorCheck();
+                              }
+                            }}
+                          >
+                            Replace in Editor
+                          </button>
+                          <button
+                            type="button"
+                            class="elo-btn-dismiss sm"
+                            onclick={() => (aiRewriteResult = null)}
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      {/if}
+
+                      {#if aiRewriteError}
+                        <p class="rewrite-err">{aiRewriteError}</p>
+                      {/if}
+
+                      <form
+                        class="rewrite-prompt-form"
+                        onsubmit={(e) => {
+                          e.preventDefault();
+                          if (!aiRewriteLoading && studioCustomPrompt.trim()) {
+                            const prompt = studioCustomPrompt.trim();
+                            studioCustomPrompt = "";
+                            runStudioIdeaRewrite("custom", prompt);
+                          }
+                        }}
+                      >
+                        <input
+                          type="text"
+                          class="rewrite-prompt-input"
+                          placeholder="Tell elo to..."
+                          bind:value={studioCustomPrompt}
+                          disabled={aiRewriteLoading}
+                        />
+                        {#if studioCustomPrompt.trim() && !aiRewriteLoading}
+                          <button type="submit" class="rewrite-prompt-send">→</button>
+                        {/if}
+                      </form>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Draggable & Hover-Expandable Inline "elo" Teardrop Widget inside Studio Canvas -->
+              <div
+                role="group"
+                aria-label="Studio elo widget"
+                class="elo-teardrop-widget studio-inline-pos"
+                class:is-expanded={studioEloHovered}
+                class:is-rewriting={aiRewriteLoading}
+                style="transform: translate({studioEloOffset.x}px, {studioEloOffset.y}px);"
+                onmouseenter={() => (studioEloHovered = true)}
+                onmouseleave={() => {
+                  studioEloHovered = false;
+                  studioEloHoveredBtn = null;
+                }}
+                onpointerdown={onStudioEloPointerDown}
+                onpointermove={onStudioEloPointerMove}
+                onpointerup={onStudioEloPointerUp}
+              >
+                {#if aiRewriteLoading}
+                  <div class="elo-dark-tooltip is-rewriting-tip">✨ Rewriting with elo…</div>
+                {:else if studioEloHoveredBtn === "rewrite"}
+                  <div class="elo-dark-tooltip">Rewrite with elo</div>
+                {:else if studioEloHoveredBtn === "tone"}
+                  <div class="elo-dark-tooltip">Tone: {editorTone}</div>
+                {/if}
+
+                {#if studioEloHovered}
+                  <button
+                    type="button"
+                    class="elo-sub-action-btn"
+                    aria-label="Detected tone"
+                    onmouseenter={() => (studioEloHoveredBtn = "tone")}
+                    onmouseleave={() => (studioEloHoveredBtn = null)}
+                    onclick={(e) => openStudioRewriteCard(e)}
+                  >
+                    📢
+                  </button>
                 {/if}
 
                 <button
                   type="button"
-                  class="mini-action-row"
-                  onclick={() => dismissEditorLint(activeEditorLint.id)}
-                >
-                  <span>🗑</span>
-                  <span>Dismiss</span>
-                </button>
-
-                <button
-                  type="button"
-                  class="mini-action-row"
-                  onclick={() => (editorInlineCardPos = null)}
-                >
-                  {@render editorialWinkLogo(18, "#191F70", "#FFFFFF")}
-                  <span>See details in All alerts →</span>
-                </button>
-              </div>
-            {:else if editorInlineCardPos && editorInlineCardMode === "rewrite"}
-              <div
-                class="elo-rewrite-card studio-pos"
-                style="right: 28px; bottom: 64px; width: 356px;"
-              >
-                <header class="rewrite-card-topbar">
-                  <div class="rewrite-brand-left">
-                    {@render editorialWinkLogo(22, "#191F70", "#FFFFFF")}
-                    <span class="elo-card-brand-name">elo</span>
-                  </div>
-                  <div class="rewrite-top-icons">
-                    <button
-                      type="button"
-                      class="elo-icon-btn"
-                      onclick={() => (editorInlineCardPos = null)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </header>
-
-                <div class="rewrite-ideas-body">
-                  {#if aiRewriteLoading}
-                    <div
-                      class="rewrite-active-progress"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      <div class="rewrite-progress-row">
-                        <progress
-                          aria-label="Rewriting text with elo"
-                          class="loading-spinner elo-card-spinner"
-                        ></progress>
-                        <div class="rewrite-progress-copy">
-                          <strong>elo is rewriting your text…</strong>
-                          <span>Refining clarity, tone, and flow</span>
-                        </div>
-                      </div>
-                      <div class="rewrite-shimmer-lines" aria-hidden="true">
-                        <span class="shimmer-bar w-92"></span>
-                        <span class="shimmer-bar w-76"></span>
-                      </div>
-                    </div>
-                  {:else}
-                    <h3>What do you want to do?</h3>
-                    <p class="rewrite-sub">Here are some ideas</p>
-
-                    <div class="rewrite-idea-list">
-                      <button
-                        type="button"
-                        class="rewrite-idea-row"
-                        disabled={aiRewriteLoading}
-                        onclick={() => runStudioIdeaRewrite("improve")}
-                      >
-                        <span class="idea-emoji">✏️</span>
-                        <span>Improve it</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="rewrite-idea-row"
-                        disabled={aiRewriteLoading}
-                        onclick={() => runStudioIdeaRewrite("confident")}
-                      >
-                        <span class="idea-emoji">🤝</span>
-                        <span>Sound confident</span>
-                      </button>
-                      <div class="rewrite-more-row">
-                        <button
-                          type="button"
-                          class="rewrite-idea-row flex-1"
-                          disabled={aiRewriteLoading}
-                          onclick={() =>
-                            (rewriteMoreIdeasOpen = !rewriteMoreIdeasOpen)}
-                        >
-                          <span class="idea-emoji">⊞</span>
-                          <span>More ideas</span>
-                        </button>
-                      </div>
-                      {#if rewriteMoreIdeasOpen}
-                        <div class="rewrite-extra-ideas">
-                          <button
-                            type="button"
-                            class="rewrite-chip"
-                            disabled={aiRewriteLoading}
-                            onclick={() => runStudioIdeaRewrite("concise")}
-                          >
-                            🎯 Make it concise
-                          </button>
-                          <button
-                            type="button"
-                            class="rewrite-chip"
-                            disabled={aiRewriteLoading}
-                            onclick={() => runStudioIdeaRewrite("formal")}
-                          >
-                            🎩 Sound formal
-                          </button>
-                          <button
-                            type="button"
-                            class="rewrite-chip"
-                            disabled={aiRewriteLoading}
-                            onclick={() => runStudioIdeaRewrite("friendly")}
-                          >
-                            😊 Sound friendly
-                          </button>
-                          <button
-                            type="button"
-                            class="rewrite-chip"
-                            disabled={aiRewriteLoading}
-                            onclick={() => runStudioIdeaRewrite("bullets")}
-                          >
-                            • Bullet points
-                          </button>
-                        </div>
-                      {/if}
-                    </div>
-
-                    {#if aiRewriteResult}
-                      <div class="rewrite-preview-box">
-                        {aiRewriteResult}
-                      </div>
-                      <div class="rewrite-preview-actions">
-                        <button
-                          type="button"
-                          class="elo-btn-accept sm"
-                          onclick={() => {
-                            if (aiRewriteResult) {
-                              editorText = aiRewriteResult;
-                              aiRewriteResult = null;
-                              editorInlineCardPos = null;
-                              runEditorCheck();
-                            }
-                          }}
-                        >
-                          Replace in Editor
-                        </button>
-                        <button
-                          type="button"
-                          class="elo-btn-dismiss sm"
-                          onclick={() => (aiRewriteResult = null)}
-                        >
-                          Discard
-                        </button>
-                      </div>
-                    {/if}
-
-                    {#if aiRewriteError}
-                      <p class="rewrite-err">{aiRewriteError}</p>
-                    {/if}
-
-                    <form
-                      class="rewrite-prompt-form"
-                      onsubmit={(e) => {
-                        e.preventDefault();
-                        if (!aiRewriteLoading && studioCustomPrompt.trim()) {
-                          const prompt = studioCustomPrompt.trim();
-                          studioCustomPrompt = "";
-                          runStudioIdeaRewrite("custom", prompt);
-                        }
-                      }}
-                    >
-                      <input
-                        type="text"
-                        class="rewrite-prompt-input"
-                        placeholder="Tell elo to..."
-                        bind:value={studioCustomPrompt}
-                        disabled={aiRewriteLoading}
-                      />
-                      {#if studioCustomPrompt.trim() && !aiRewriteLoading}
-                        <button type="submit" class="rewrite-prompt-send">→</button>
-                      {/if}
-                    </form>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-
-            <!-- Draggable & Hover-Expandable Inline "elo" Teardrop Widget inside Studio Canvas -->
-            <div
-              role="group"
-              aria-label="Studio elo widget"
-              class="elo-teardrop-widget studio-inline-pos"
-              class:is-expanded={studioEloHovered}
-              class:is-rewriting={aiRewriteLoading}
-              style="transform: translate({studioEloOffset.x}px, {studioEloOffset.y}px);"
-              onmouseenter={() => (studioEloHovered = true)}
-              onmouseleave={() => {
-                studioEloHovered = false;
-                studioEloHoveredBtn = null;
-              }}
-              onpointerdown={onStudioEloPointerDown}
-              onpointermove={onStudioEloPointerMove}
-              onpointerup={onStudioEloPointerUp}
-            >
-              {#if aiRewriteLoading}
-                <div class="elo-dark-tooltip is-rewriting-tip">
-                  ✨ Rewriting with elo…
-                </div>
-              {:else if studioEloHoveredBtn === "rewrite"}
-                <div class="elo-dark-tooltip">Rewrite with elo</div>
-              {:else if studioEloHoveredBtn === "tone"}
-                <div class="elo-dark-tooltip">Tone: {editorTone}</div>
-              {/if}
-
-              {#if studioEloHovered}
-                <button
-                  type="button"
-                  class="elo-sub-action-btn"
-                  aria-label="Detected tone"
-                  onmouseenter={() => (studioEloHoveredBtn = "tone")}
+                  class="elo-sub-action-btn bulb-btn"
+                  class:is-busy={aiRewriteLoading}
+                  aria-label="Rewrite with elo"
+                  aria-busy={aiRewriteLoading}
+                  onmouseenter={() => (studioEloHoveredBtn = "rewrite")}
                   onmouseleave={() => (studioEloHoveredBtn = null)}
                   onclick={(e) => openStudioRewriteCard(e)}
                 >
-                  📢
+                  {#if aiRewriteLoading}
+                    <span class="elo-bulb-busy-wrap">
+                      <progress
+                        aria-label="Rewriting text with elo"
+                        class="loading-spinner elo-bulb-spinner"
+                      ></progress>
+                      {@render sparkleBulbIcon(16)}
+                    </span>
+                  {:else}
+                    {@render sparkleBulbIcon(20)}
+                  {/if}
                 </button>
-              {/if}
 
-              <button
-                type="button"
-                class="elo-sub-action-btn bulb-btn"
-                class:is-busy={aiRewriteLoading}
-                aria-label="Rewrite with elo"
-                aria-busy={aiRewriteLoading}
-                onmouseenter={() => (studioEloHoveredBtn = "rewrite")}
-                onmouseleave={() => (studioEloHoveredBtn = null)}
-                onclick={(e) => openStudioRewriteCard(e)}
-              >
-                {#if aiRewriteLoading}
-                  <span class="elo-bulb-busy-wrap">
-                    <progress
-                      aria-label="Rewriting text with elo"
-                      class="loading-spinner elo-bulb-spinner"
-                    ></progress>
-                    {@render sparkleBulbIcon(16)}
-                  </span>
-                {:else}
-                  {@render sparkleBulbIcon(20)}
-                {/if}
-              </button>
-
-              {#if editorLints.length > 0}
-                <span class="elo-pill-wink-mark" aria-hidden="true">
-                  {@render editorialWinkLogo(19, "transparent", "#191F70")}
-                </span>
-              {/if}
-
-              <button
-                type="button"
-                class="elo-count-badge-btn"
-                class:zero={editorLints.length === 0}
-                aria-label="Cycle alerts"
-              >
                 {#if editorLints.length > 0}
-                  <span>{editorLints.length}</span>
-                  <span class="elo-badge-corner-dot"></span>
-                {:else}
-                  {@render editorialWinkLogo(26, "#191F70", "#FFFFFF")}
+                  <span class="elo-pill-wink-mark" aria-hidden="true">
+                    {@render editorialWinkLogo(19, "transparent", "#191F70")}
+                  </span>
                 {/if}
-              </button>
-            </div>
-          </div>
 
-          <footer class="folio-colophon">
-            <div class="format-tools">
-              <button
-                type="button"
-                title="Bold"
-                onclick={() => insertMarkdownWrap("**", "**")}
-              >
-                <strong>B</strong>
-              </button>
-              <button
-                type="button"
-                title="Italic"
-                onclick={() => insertMarkdownWrap("*", "*")}
-              >
-                <em>I</em>
-              </button>
-              <button
-                type="button"
-                title="Heading 1"
-                onclick={() => insertMarkdownWrap("# ", "")}
-              >
-                H1
-              </button>
-              <button
-                type="button"
-                title="Heading 2"
-                onclick={() => insertMarkdownWrap("## ", "")}
-              >
-                H2
-              </button>
-              <button
-                type="button"
-                title="Bullet List"
-                onclick={() => insertMarkdownWrap("\n- ", "")}
-              >
-                • List
-              </button>
-            </div>
-
-            <div class="canvas-metrics">
-              <span class="tone-chip">Tone: {editorTone}</span>
-              <span>
-                {editorWordCount} words · {editorCharCount} chars · ~{Math.max(
-                  1,
-                  Math.ceil(editorWordCount / 220)
-                )} min read
-              </span>
-            </div>
-          </footer>
-        </section>
-
-        <!-- RIGHT PANE: UNIFIED "PROOFREADER'S MARGIN" (Replaces Grammarly 3-Col Split) -->
-        <aside class="proofreader-margin">
-          <!-- 1. EDITORIAL INDEX CARD (Replaces Circular Score Ring & Progress Bars) -->
-          <div class="editorial-index-card">
-            <div class="index-card-top">
-              <div>
-                <div class="index-eyebrow">EDITORIAL INDEX</div>
-                <div class="index-score-row">
-                  <span
-                    class="index-score-num"
-                    style="color: {scoreColorHex(editorScore)};"
-                  >
-                    {editorScore}
-                  </span>
-                  <span
-                    class="index-status-pill"
-                    style="--pill-accent: {scoreColorHex(editorScore)};"
-                  >
-                    {editorLints.length === 0
-                      ? "Polished Draft"
-                      : editorScore >= 85
-                        ? "Crisp Prose"
-                        : "Needs Proofing"}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                class="goals-btn"
-                onclick={() => (studioGoalsOpen = !studioGoalsOpen)}
-              >
-                <span>✦</span>
-                <span>Calibrate Goals</span>
-              </button>
-            </div>
-
-            {#if studioGoalsOpen}
-              <div class="goals-drawer">
-                <h4>Editorial Standard & Target Register</h4>
-                <label class="goal-field">
-                  <span>English Dialect</span>
-                  <select
-                    value={dialectName}
-                    onchange={(e) =>
-                      changeDialect(
-                        (e.currentTarget as HTMLSelectElement).value
-                      )}
-                  >
-                    <option value="US">American (US)</option>
-                    <option value="GB">British (UK)</option>
-                    <option value="CA">Canadian (CA)</option>
-                    <option value="AU">Australian (AU)</option>
-                    <option value="IN">Indian (IN)</option>
-                  </select>
-                </label>
-                <label class="goal-field">
-                  <span>Target Register</span>
-                  <select bind:value={selectedRewriteTone}>
-                    <option value="improve">Editorial Polish</option>
-                    <option value="concise">Concise & Direct</option>
-                    <option value="formal">Executive & Formal</option>
-                    <option value="friendly">Warm & Conversational</option>
-                  </select>
-                </label>
-              </div>
-            {/if}
-
-            <!-- 5 Interactive Dimension Tiles (Click to Filter Margin Notes) -->
-            <div class="dimension-grid">
-              {#each [
-                { id: "correctness", short: "Proof", label: "Correctness", color: "#C84B31" },
-                { id: "clarity", short: "Clarity", label: "Clarity", color: "#191F70" },
-                { id: "engagement", short: "Verve", label: "Engagement", color: "#1E6F5C" },
-                { id: "delivery", short: "Tone", label: "Delivery", color: "#6D28D9" },
-                { id: "style", short: "Style", label: "Style guide", color: "#191F70" },
-              ] as cat}
-                {@const count = editorCategoryCounts[cat.id] ?? 0}
-                {@const catScore = editorCategoryScores[cat.id] ?? 100}
                 <button
                   type="button"
-                  class="dimension-tile"
-                  class:active={editorCategoryFilter === cat.id}
-                  title="{cat.label}: {catScore}% ({count} {count === 1 ? 'note' : 'notes'})"
-                  onclick={() =>
-                    (editorCategoryFilter =
-                      editorCategoryFilter === cat.id ? "all" : cat.id)}
+                  class="elo-count-badge-btn"
+                  class:zero={editorLints.length === 0}
+                  aria-label="Cycle alerts"
                 >
-                  <span
-                    class="dim-score"
-                    style="color: {count > 0 ? cat.color : '#191F70'};"
-                  >
-                    {catScore}
-                  </span>
-                  <span class="dim-name">{cat.short}</span>
-                  {#if count > 0}
-                    <span class="dim-count-dot" style="background: {cat.color};">
-                      {count}
-                    </span>
+                  {#if editorLints.length > 0}
+                    <span>{editorLints.length}</span>
+                    <span class="elo-badge-corner-dot"></span>
+                  {:else}
+                    {@render editorialWinkLogo(26, "#191F70", "#FFFFFF")}
                   {/if}
                 </button>
-              {/each}
+              </div>
             </div>
-          </div>
 
-          <!-- 2. MARGIN ANNOTATIONS HEADER & FILTER BAR -->
-          <div class="margin-section-bar">
-            <div class="margin-section-left">
-              <button
-                type="button"
-                class="margin-filter-reset"
-                class:is-filtered={editorCategoryFilter !== "all"}
-                onclick={() => (editorCategoryFilter = "all")}
-              >
+            <footer class="folio-colophon">
+              <div class="format-tools">
+                <button type="button" title="Bold" onclick={() => insertMarkdownWrap("**", "**")}>
+                  <strong>B</strong>
+                </button>
+                <button type="button" title="Italic" onclick={() => insertMarkdownWrap("*", "*")}>
+                  <em>I</em>
+                </button>
+                <button
+                  type="button"
+                  title="Heading 1"
+                  onclick={() => insertMarkdownWrap("# ", "")}
+                >
+                  H1
+                </button>
+                <button
+                  type="button"
+                  title="Heading 2"
+                  onclick={() => insertMarkdownWrap("## ", "")}
+                >
+                  H2
+                </button>
+                <button
+                  type="button"
+                  title="Bullet List"
+                  onclick={() => insertMarkdownWrap("\n- ", "")}
+                >
+                  • List
+                </button>
+              </div>
+
+              <div class="canvas-metrics">
+                <span class="tone-chip">Tone: {editorTone}</span>
                 <span>
-                  {editorCategoryFilter === "all"
-                    ? "MARGIN ANNOTATIONS"
-                    : `${editorCategoryFilter.toUpperCase()} NOTES`}
+                  {editorWordCount} words · {editorCharCount} chars · ~{Math.max(
+                    1,
+                    Math.ceil(editorWordCount / 220),
+                  )} min read
                 </span>
-                <span class="margin-count-pill">{filteredEditorLints.length}</span>
-              </button>
-              {#if editorCategoryFilter !== "all"}
-                <button
-                  type="button"
-                  class="show-all-link"
-                  onclick={() => (editorCategoryFilter = "all")}
-                >
-                  Show all ({editorLints.length})
-                </button>
-              {/if}
-            </div>
-
-            {#if filteredEditorLints.length > 1}
-              <button
-                type="button"
-                class="accept-all-btn"
-                onclick={acceptAllEditorSuggestions}
-              >
-                Apply all ({filteredEditorLints.length}) →
-              </button>
-            {/if}
-          </div>
-
-          <!-- 3. LITERARY MARGIN NOTES FEED -->
-          <div class="margin-notes-feed scroller">
-            {#if filteredEditorLints.length === 0}
-              <div class="alerts-empty-card">
-                {@render editorialWinkLogo(36, "#191F70", "#FFFFFF")}
-                <h3>Impeccable Manuscript</h3>
-                <p>
-                  No editorial notes in this view. Continue drafting on the
-                  manuscript sheet or use Rewrite Atelier below.
-                </p>
               </div>
-            {:else}
-              {#each filteredEditorLints as lint, idx (lint.id)}
-                {@const isExpanded = activeEditorLint?.id === lint.id}
-                {#if isExpanded}
-                  <article
-                    class="margin-note-card expanded"
-                    style="--card-accent: {lint.color};"
-                  >
-                    <div class="note-card-top">
-                      <span
-                        class="note-eyebrow"
-                        style="color: {lint.color};"
-                      >
-                        {lint.category_label.toUpperCase()} · {lint.subcategory}
-                      </span>
-                      <span class="note-index-tag">Note #{idx + 1}</span>
-                    </div>
-
-                    <div class="note-diff-box">
-                      {#if lint.suggestions.length > 0}
-                        <del class="feed-orig">{lint.original}</del>
-                        <span class="feed-arrow">→</span>
-                        {#each lint.suggestions.slice(0, 3) as sug}
-                          <button
-                            type="button"
-                            class="literary-replacement-btn"
-                            onclick={() => applyEditorSuggestion(lint, sug.text)}
-                          >
-                            {sug.kind === "remove" ? "Omit word" : sug.label}
-                          </button>
-                        {/each}
-                      {:else}
-                        <span class="feed-excerpt">{lint.original}</span>
-                      {/if}
-                    </div>
-
-                    <p class="feed-card-explanation">{lint.message}</p>
-
-                    <div class="feed-card-footer">
-                      <div class="feed-card-btns">
-                        {#if lint.suggestions[0]}
-                          <button
-                            type="button"
-                            class="elo-btn-accept"
-                            onclick={() =>
-                              applyEditorSuggestion(
-                                lint,
-                                lint.suggestions[0].text
-                              )}
-                          >
-                            Apply Edit
-                          </button>
-                        {:else if lint.original.trim().split(/\s+/).length >= 8}
-                          <button
-                            type="button"
-                            class="elo-btn-accept"
-                            disabled={rewritingLintId === lint.id}
-                            onclick={() => rewriteSingleSentenceLint(lint)}
-                          >
-                            {rewritingLintId === lint.id
-                              ? "Tightening…"
-                              : "✦ Tighten Sentence"}
-                          </button>
-                        {/if}
-                        {#if canAddToLexicon(lint.original, lint.subcategory)}
-                          <button
-                            type="button"
-                            class="feed-dict-btn"
-                            onclick={() =>
-                              addEditorWordToDictionary(lint.original, lint.id)}
-                          >
-                            + Lexicon
-                          </button>
-                        {/if}
-                      </div>
-
-                      <div class="feed-card-icons">
-                        <button
-                          type="button"
-                          class="note-text-action"
-                          title="Dismiss annotation"
-                          onclick={() => dismissEditorLint(lint.id)}
-                        >
-                          Dismiss
-                        </button>
-                        <button
-                          type="button"
-                          class="elo-icon-btn"
-                          title="Mute this editorial rule"
-                          onclick={() =>
-                            disableEditorRule(lint.rule_name, lint.id)}
-                        >
-                          ⊘
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                {:else}
-                  <button
-                    type="button"
-                    class="margin-note-card compact"
-                    style="--card-accent: {lint.color};"
-                    onclick={() => selectAlertFromFeed(lint)}
-                  >
-                    <div class="compact-top">
-                      <span
-                        class="compact-cat"
-                        style="color: {lint.color};"
-                      >
-                        {lint.category_label.toUpperCase()} · {lint.subcategory}
-                      </span>
-                      <span class="note-index-tag">#{idx + 1}</span>
-                    </div>
-                    <div class="compact-diff-row">
-                      {#if lint.suggestions[0]}
-                        <del class="compact-del">{lint.original}</del>
-                        <span class="compact-arrow">→</span>
-                        <span class="compact-repl">
-                          {lint.suggestions[0].label}
-                        </span>
-                      {:else}
-                        <span class="compact-excerpt">{lint.original}</span>
-                      {/if}
-                    </div>
-                  </button>
-                {/if}
-              {/each}
-            {/if}
-          </div>
-
-          <!-- 4. PINNED BOTTOM "REWRITE ATELIER" DOCK -->
-          <div class="rewrite-atelier-dock">
-            <div class="atelier-dock-head">
-              <div class="atelier-dock-title">
-                <span class="dock-spark">✦</span>
-                <h4>Rewrite Atelier</h4>
-              </div>
-              <span class="dock-scope-tag">Full Passage</span>
-            </div>
-
-            {#if aiRewriteLoading}
-              <div
-                class="rewrite-active-progress"
-                role="status"
-                aria-live="polite"
-              >
-                <div class="rewrite-progress-row">
-                  <progress
-                    aria-label="Rewriting text with elo"
-                    class="loading-spinner elo-card-spinner"
-                  ></progress>
-                  <div class="rewrite-progress-copy">
-                    <strong>elo is rewriting your manuscript…</strong>
-                    <span>Refining clarity, tone, and rhythm</span>
-                  </div>
-                </div>
-                <div class="rewrite-shimmer-lines" aria-hidden="true">
-                  <span class="shimmer-bar w-92"></span>
-                  <span class="shimmer-bar w-76"></span>
-                </div>
-              </div>
-            {:else if aiRewriteResult}
-              <div class="ai-result-card">
-                <p>{aiRewriteResult}</p>
-                <div class="ai-result-actions">
-                  <button
-                    type="button"
-                    class="elo-btn-accept sm"
-                    onclick={() => {
-                      if (aiRewriteResult) {
-                        editorText = aiRewriteResult;
-                        aiRewriteResult = null;
-                        runEditorCheck();
-                      }
-                    }}
-                  >
-                    Replace Manuscript
-                  </button>
-                  <button
-                    type="button"
-                    class="elo-btn-dismiss sm"
-                    onclick={() => (aiRewriteResult = null)}
-                  >
-                    Discard
-                  </button>
-                </div>
-              </div>
-            {:else}
-              <div class="atelier-preset-chips">
-                <button
-                  type="button"
-                  class="atelier-chip"
-                  onclick={() => runStudioIdeaRewrite("improve")}
-                >
-                  ✎ Polish flow
-                </button>
-                <button
-                  type="button"
-                  class="atelier-chip"
-                  onclick={() => runStudioIdeaRewrite("concise")}
-                >
-                  🎯 Tighten
-                </button>
-                <button
-                  type="button"
-                  class="atelier-chip"
-                  onclick={() => runStudioIdeaRewrite("confident")}
-                >
-                  🤝 Confident
-                </button>
-                <button
-                  type="button"
-                  class="atelier-chip"
-                  onclick={() => runStudioIdeaRewrite("formal")}
-                >
-                  🎩 Executive
-                </button>
-                <button
-                  type="button"
-                  class="atelier-chip"
-                  onclick={() => runStudioIdeaRewrite("friendly")}
-                >
-                  😊 Warm
-                </button>
-                <button
-                  type="button"
-                  class="atelier-chip"
-                  onclick={() => runStudioIdeaRewrite("bullets")}
-                >
-                  • Bullets
-                </button>
-              </div>
-
-              {#if aiRewriteError}
-                <p class="ai-error-msg">{aiRewriteError}</p>
-              {/if}
-
-              <form
-                class="rewrite-prompt-form"
-                onsubmit={(e) => {
-                  e.preventDefault();
-                  if (!aiRewriteLoading && studioCustomPrompt.trim()) {
-                    const prompt = studioCustomPrompt.trim();
-                    studioCustomPrompt = "";
-                    runStudioIdeaRewrite("custom", prompt);
-                  }
-                }}
-              >
-                <input
-                  type="text"
-                  class="rewrite-prompt-input"
-                  placeholder="Direct elo to reshape this draft…"
-                  bind:value={studioCustomPrompt}
-                />
-                {#if studioCustomPrompt.trim()}
-                  <button type="submit" class="rewrite-prompt-send">→</button>
-                {/if}
-              </form>
-            {/if}
-          </div>
-        </aside>
-      </main>
-    {:else if activeTab === "analytics"}
-      <main class="settings-page scroller">
-        <div class="settings-container">
-          <section class="settings-card apps-folio-card lexicon-folio-card">
-            <div class="apps-folio-header">
-              <div>
-                <h3>Writing & AI Analytics</h3>
-                <p>
-                  Track your prose craft, editorial velocity, and how on-device
-                  checks and AI rewrites elevate your writing.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="ax-strip-link"
-                onclick={loadAllSettings}
-              >
-                ↻ Refresh Metrics
-              </button>
-            </div>
-
-            {#if writingAnalytics}
-              <!-- 1. Hero KPI Strip -->
-              <div class="analytics-kpi-grid">
-                <div class="analytics-kpi-card highlight-kpi">
-                  <span class="kpi-eyebrow">PROSE CRAFT INDEX</span>
-                  <div class="kpi-main-row">
-                    <span class="kpi-big-num">{writingAnalytics.prose_craft_score}</span>
-                    <span class="kpi-unit">/ 100</span>
-                  </div>
-                  <span class="kpi-sub">
-                    {writingAnalytics.acceptance_rate_pct}% suggestion precision · {writingAnalytics.active_days_14d}d active
-                  </span>
-                </div>
-
-                <div class="analytics-kpi-card">
-                  <span class="kpi-eyebrow">EDITORIAL TIME SAVED</span>
-                  <div class="kpi-main-row">
-                    <span class="kpi-big-num">
-                      {writingAnalytics.estimated_minutes_saved >= 60
-                        ? `${Math.floor(writingAnalytics.estimated_minutes_saved / 60)}h ${writingAnalytics.estimated_minutes_saved % 60}m`
-                        : `${writingAnalytics.estimated_minutes_saved}m`}
-                    </span>
-                  </div>
-                  <span class="kpi-sub">
-                    {writingAnalytics.total_accepted_edits + writingAnalytics.total_ai_requests} total interventions
-                  </span>
-                </div>
-
-                <div class="analytics-kpi-card">
-                  <span class="kpi-eyebrow">AI CO-PILOT LIFT</span>
-                  <div class="kpi-main-row">
-                    <span class="kpi-big-num">
-                      {writingAnalytics.total_ai_words_refined.toLocaleString()}
-                    </span>
-                    <span class="kpi-unit">words</span>
-                  </div>
-                  <span class="kpi-sub">
-                    Refined across {writingAnalytics.total_ai_requests.toLocaleString()} AI passes
-                  </span>
-                </div>
-
-                <div class="analytics-kpi-card">
-                  <span class="kpi-eyebrow">AI COST EFFICIENCY</span>
-                  <div class="kpi-main-row">
-                    <span class="kpi-big-num">
-                      ${writingAnalytics.avg_cost_per_pass_usd.toFixed(5)}
-                    </span>
-                    <span class="kpi-unit">/ pass</span>
-                  </div>
-                  <span class="kpi-sub">
-                    ${writingAnalytics.total_cost_usd.toFixed(4)} cumulative spend
-                  </span>
-                </div>
-              </div>
-
-              <!-- 2. Hybrid Intelligence Balance: Local Engine vs. AI Co-Pilot -->
-              <div class="lexicon-subblock">
-                <div class="lexicon-subhead">
-                  <h4>Hybrid Intelligence Split</h4>
-                  <span class="field-hint">
-                    {writingAnalytics.local_vs_ai_pct}% On-Device · {100 - writingAnalytics.local_vs_ai_pct}% Cloud AI Co-Pilot
-                  </span>
-                </div>
-
-                <div class="hybrid-split-bar" role="img" aria-label="On-device vs Cloud AI usage split">
-                  <div
-                    class="hybrid-seg local-seg"
-                    style="width: {writingAnalytics.local_vs_ai_pct}%;"
-                  ></div>
-                  <div
-                    class="hybrid-seg ai-seg"
-                    style="width: {100 - writingAnalytics.local_vs_ai_pct}%;"
-                  ></div>
-                </div>
-
-                <div class="hybrid-cards-row">
-                  <div class="hybrid-stat-box">
-                    <div class="hybrid-box-head">
-                      <span class="hybrid-dot local-dot"></span>
-                      <strong>On-Device Harper Engine</strong>
-                      <span class="hybrid-pill">0 ms · $0.00</span>
-                    </div>
-                    <p>
-                      {writingAnalytics.total_accepted_edits} accepted inline fixes · {writingAnalytics.vocabulary_shield_words} protected lexicon words · {writingAnalytics.active_rules_count} active rules
-                    </p>
-                  </div>
-
-                  <div class="hybrid-stat-box">
-                    <div class="hybrid-box-head">
-                      <span class="hybrid-dot ai-dot"></span>
-                      <strong>AI Rewrite Co-Pilot</strong>
-                      <span class="hybrid-pill">
-                        {writingAnalytics.voice_traits_calibrated} Voice DNA traits
-                      </span>
-                    </div>
-                    <p>
-                      {writingAnalytics.total_ai_requests} deep passes · {(
-                        writingAnalytics.total_input_tokens +
-                        writingAnalytics.total_output_tokens
-                      ).toLocaleString()} total tokens processed
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 3. Writing Mastery Pillars & 7-Day Activity + Manuscript Vitals -->
-              <div class="analytics-two-col lexicon-subblock">
-                <div class="analytics-col">
-                  <div class="lexicon-subhead">
-                    <h4>Writing Mastery by Pillar</h4>
-                  </div>
-                  <div class="pillar-list">
-                    {#each writingAnalytics.category_breakdown as item (item.category)}
-                      <div class="pillar-row">
-                        <div class="pillar-top">
-                          <strong>{item.category}</strong>
-                          <span class="pillar-score">{item.mastery_pct}%</span>
-                        </div>
-                        <div class="pillar-track">
-                          <div
-                            class="pillar-fill"
-                            style="width: {item.mastery_pct}%;"
-                          ></div>
-                        </div>
-                        <div class="pillar-meta">
-                          <span>{item.insight}</span>
-                          <span>
-                            {item.accepted} applied · {item.dismissed} skipped
-                          </span>
-                        </div>
-                      </div>
-                    {/each}
-                  </div>
-                </div>
-
-                <div class="analytics-col">
-                  <div class="lexicon-subhead">
-                    <h4>7-Day Editorial Cadence</h4>
-                  </div>
-                  <div class="cadence-chart">
-                    {#each writingAnalytics.daily_activity as day (day.day_label)}
-                      {@const total = day.ai_passes + day.inline_edits}
-                      {@const pct = Math.max(8, Math.round((total / maxDailyActivity) * 100))}
-                      <div class="cadence-bar-col" title="{day.day_label}: {day.ai_passes} AI passes, {day.inline_edits} inline edits">
-                        <span class="cadence-val">{total > 0 ? total : ""}</span>
-                        <div class="cadence-bar-well">
-                          <div
-                            class="cadence-bar-fill"
-                            style="height: {pct}%;"
-                          ></div>
-                        </div>
-                        <span class="cadence-day">{day.day_label}</span>
-                      </div>
-                    {/each}
-                  </div>
-
-                  <div class="manuscript-vitals-box">
-                    <span class="learned-edits-heading">ACTIVE MANUSCRIPT VITAL SIGNS</span>
-                    <div class="vitals-mini-grid">
-                      <div>
-                        <strong>{editorLexicalDiversity}%</strong>
-                        <span>Vocabulary Variety</span>
-                      </div>
-                      <div>
-                        <strong>{editorAvgSentenceWords} wds</strong>
-                        <span>Avg Sentence</span>
-                      </div>
-                      <div>
-                        <strong>{editorReadingTimeLabel}</strong>
-                        <span>Reading Time</span>
-                      </div>
-                      <div>
-                        <strong>{editorTone}</strong>
-                        <span>Detected Tone</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 4. AI Model Efficiency Ledger (Responsive Table) -->
-              {#if writingAnalytics.model_breakdown.length > 0}
-                <div class="lexicon-subblock">
-                  <div class="lexicon-subhead">
-                    <h4 id="model-ledger-heading">AI Model Efficiency Ledger</h4>
-                  </div>
-                  <div
-                    role="region"
-                    aria-labelledby="model-ledger-heading"
-                    class="analytics-table-wrapper"
-                  >
-                    <table class="analytics-model-table">
-                      <thead>
-                        <tr>
-                          <th>Model Slug</th>
-                          <th>AI Passes</th>
-                          <th>Words Refined</th>
-                          <th>Tokens (In / Out)</th>
-                          <th>Spend</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {#each writingAnalytics.model_breakdown as m (m.model)}
-                          <tr>
-                            <th>{m.model}</th>
-                            <td>{m.requests.toLocaleString()}</td>
-                            <td>~{m.words_refined.toLocaleString()}</td>
-                            <td>
-                              {m.input_tokens.toLocaleString()} / {m.output_tokens.toLocaleString()}
-                            </td>
-                            <td>${m.cost_usd.toFixed(4)}</td>
-                          </tr>
-                        {/each}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              {/if}
-
-              <!-- 5. Signature Editorial Refinements -->
-              {#if writingAnalytics.top_transformations.length > 0}
-                <div class="lexicon-subblock">
-                  <div class="lexicon-subhead">
-                    <h4>Recent Signature Refinements</h4>
-                  </div>
-                  <div class="learned-edits-chips">
-                    {#each writingAnalytics.top_transformations as ev, idx (idx)}
-                      <span class="learned-edit-pill">
-                        <span class="ev-cat">{ev.category}</span>
-                        <del>{ev.original}</del> → <strong>{ev.replacement}</strong>
-                      </span>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-            {/if}
+            </footer>
           </section>
-        </div>
-      </main>
-    {:else if activeTab === "apps"}
-      <main class="settings-page scroller">
-        <div class="settings-container">
-          <section class="settings-card apps-folio-card">
-            <div class="card-split-header">
-              <div>
-                <div class="folio-eyebrow">
-                  <span>CONNECTED APPLICATIONS</span>
-                  <span class="eyebrow-dot">·</span>
-                  <span>
-                    {filteredIntegrations.filter((a) => a.enabled).length} OF {filteredIntegrations.length} ENABLED
-                  </span>
-                  {#if axStatus === "Granted"}
-                    <span class="eyebrow-dot">·</span>
-                    <span class="ax-granted-inline">✓ ACCESSIBILITY ACTIVE</span>
-                  {/if}
-                </div>
-                <h2 class="settings-folio-title">Where “elo” Writes With You</h2>
-                <p>
-                  Choose which macOS applications display inline underlines and
-                  the floating “elo” companion mark.
-                </p>
-              </div>
-              <label class="toggle-switch-label">
-                <span>Auto-enable new apps</span>
-                <input
-                  type="checkbox"
-                  {...({ switch: "" } as Record<string, string>)}
-                  checked={autoEnableNewApps}
-                  onchange={toggleAutoEnableApps}
-                />
-              </label>
-            </div>
 
-            {#if axStatus !== "Granted"}
-              <div class="ax-inline-strip">
-                <div class="ax-strip-left">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                  </svg>
-                  <span>
-                    macOS Accessibility access is needed to read and replace
-                    text in external apps.
-                  </span>
-                </div>
-                <div class="ax-strip-actions">
-                  <button
-                    type="button"
-                    class="ax-strip-link primary"
-                    onclick={handleGrantAccessibility}
-                  >
-                    Open System Settings →
-                  </button>
-                  <button
-                    type="button"
-                    class="ax-strip-link"
-                    onclick={loadAllSettings}
-                  >
-                    Recheck
-                  </button>
-                </div>
-              </div>
-            {/if}
-
-            <input
-              type="search"
-              class="settings-search"
-              placeholder="Search applications…"
-              bind:value={appSearchQuery}
-            />
-
-            <div class="app-grid">
-              {#each filteredIntegrations as app (app.bundle_id)}
-                <label class="app-row-card" class:is-disabled={!app.enabled}>
-                  <div class="app-row-left">
-                    <span class="app-monogram" aria-hidden="true">
-                      {app.display_name.trim().charAt(0).toUpperCase() || "A"}
+          <!-- RIGHT PANE: UNIFIED "PROOFREADER'S MARGIN" (Replaces Grammarly 3-Col Split) -->
+          <aside class="proofreader-margin">
+            <!-- 1. EDITORIAL INDEX CARD (Replaces Circular Score Ring & Progress Bars) -->
+            <div class="editorial-index-card">
+              <div class="index-card-top">
+                <div>
+                  <div class="index-eyebrow">EDITORIAL INDEX</div>
+                  <div class="index-score-row">
+                    <span class="index-score-num" style="color: {scoreColorHex(editorScore)};">
+                      {editorScore}
                     </span>
-                    <div class="app-row-info">
-                      <strong>{app.display_name}</strong>
-                      {#if appSearchQuery.trim()}
-                        <span>{app.bundle_id}</span>
-                      {/if}
-                    </div>
+                    <span
+                      class="index-status-pill"
+                      style="--pill-accent: {scoreColorHex(editorScore)};"
+                    >
+                      {editorLints.length === 0
+                        ? "Polished Draft"
+                        : editorScore >= 85
+                          ? "Crisp Prose"
+                          : "Needs Proofing"}
+                    </span>
                   </div>
-                  <input
-                    type="checkbox"
-                    {...({ switch: "" } as Record<string, string>)}
-                    checked={app.enabled}
-                    onchange={(e) =>
-                      toggleAppIntegration(
-                        app.bundle_id,
-                        (e.currentTarget as HTMLInputElement).checked
-                      )}
-                  />
-                </label>
-              {/each}
-            </div>
-          </section>
-        </div>
-      </main>
-    {:else if activeTab === "rules"}
-      <main class="settings-page scroller">
-        <div class="settings-container">
-          <section class="settings-card apps-folio-card lexicon-folio-card">
-            <!-- English Dialect -->
-            <div class="lexicon-subblock first-subblock">
-              <div class="lexicon-subhead">
-                <h4>English Dialect</h4>
+                </div>
+
+                <button
+                  type="button"
+                  class="goals-btn"
+                  onclick={() => (studioGoalsOpen = !studioGoalsOpen)}
+                >
+                  <span>✦</span>
+                  <span>Calibrate Goals</span>
+                </button>
               </div>
-              <div class="dialect-segmented-bar" role="group" aria-label="English Dialect">
-                {#each [
-                  { id: "US", code: "US", label: "American" },
-                  { id: "GB", code: "UK", label: "British" },
-                  { id: "CA", code: "CA", label: "Canadian" },
-                  { id: "AU", code: "AU", label: "Australian" },
-                  { id: "IN", code: "IN", label: "Indian" },
-                ] as d}
+
+              {#if studioGoalsOpen}
+                <div class="goals-drawer">
+                  <h4>Editorial Standard & Target Register</h4>
+                  <label class="goal-field">
+                    <span>English Dialect</span>
+                    <select
+                      value={dialectName}
+                      onchange={(e) => changeDialect((e.currentTarget as HTMLSelectElement).value)}
+                    >
+                      <option value="US">American (US)</option>
+                      <option value="GB">British (UK)</option>
+                      <option value="CA">Canadian (CA)</option>
+                      <option value="AU">Australian (AU)</option>
+                      <option value="IN">Indian (IN)</option>
+                    </select>
+                  </label>
+                  <label class="goal-field">
+                    <span>Target Register</span>
+                    <select bind:value={selectedRewriteTone}>
+                      <option value="improve">Editorial Polish</option>
+                      <option value="concise">Concise & Direct</option>
+                      <option value="formal">Executive & Formal</option>
+                      <option value="friendly">Warm & Conversational</option>
+                    </select>
+                  </label>
+                </div>
+              {/if}
+
+              <!-- 5 Interactive Dimension Tiles (Click to Filter Margin Notes) -->
+              <div class="dimension-grid">
+                {#each [{ id: "correctness", short: "Proof", label: "Correctness", color: "#C84B31" }, { id: "clarity", short: "Clarity", label: "Clarity", color: "#191F70" }, { id: "engagement", short: "Verve", label: "Engagement", color: "#1E6F5C" }, { id: "delivery", short: "Tone", label: "Delivery", color: "#6D28D9" }, { id: "style", short: "Style", label: "Style guide", color: "#191F70" }] as cat}
+                  {@const count = editorCategoryCounts[cat.id] ?? 0}
+                  {@const catScore = editorCategoryScores[cat.id] ?? 100}
                   <button
                     type="button"
-                    class="dialect-seg-btn"
-                    class:active={dialectName === d.id}
-                    onclick={() => changeDialect(d.id)}
+                    class="dimension-tile"
+                    class:active={editorCategoryFilter === cat.id}
+                    title="{cat.label}: {catScore}% ({count} {count === 1 ? 'note' : 'notes'})"
+                    onclick={() =>
+                      (editorCategoryFilter = editorCategoryFilter === cat.id ? "all" : cat.id)}
                   >
-                    <span class="dialect-code">{d.code}</span>
-                    <span class="dialect-name">{d.label}</span>
+                    <span class="dim-score" style="color: {count > 0 ? cat.color : '#191F70'};">
+                      {catScore}
+                    </span>
+                    <span class="dim-name">{cat.short}</span>
+                    {#if count > 0}
+                      <span class="dim-count-dot" style="background: {cat.color};">
+                        {count}
+                      </span>
+                    {/if}
                   </button>
                 {/each}
               </div>
             </div>
 
-            <!-- Personal Dictionary -->
-            <div class="lexicon-subblock">
-              <div class="lexicon-subhead">
-                <h4>
-                  Personal Dictionary
-                  <span class="lexicon-count-pill">
-                    {dictionaryWords.length} {dictionaryWords.length === 1 ? "word" : "words"}
+            <!-- 2. MARGIN ANNOTATIONS HEADER & FILTER BAR -->
+            <div class="margin-section-bar">
+              <div class="margin-section-left">
+                <button
+                  type="button"
+                  class="margin-filter-reset"
+                  class:is-filtered={editorCategoryFilter !== "all"}
+                  onclick={() => (editorCategoryFilter = "all")}
+                >
+                  <span>
+                    {editorCategoryFilter === "all"
+                      ? "MARGIN ANNOTATIONS"
+                      : `${editorCategoryFilter.toUpperCase()} NOTES`}
                   </span>
-                </h4>
-                <div class="dict-inline-form">
-                  <input
-                    type="text"
-                    class="settings-search dict-inline-input"
-                    placeholder={dictionaryWords.length > 8
-                      ? `Search or add to ${dictionaryWords.length} words…`
-                      : "Add a name, technical term, or brand word…"}
-                    bind:value={newDictWord}
-                    onkeydown={(e) => e.key === "Enter" && addNewDictionaryWord()}
-                  />
+                  <span class="margin-count-pill">{filteredEditorLints.length}</span>
+                </button>
+                {#if editorCategoryFilter !== "all"}
                   <button
                     type="button"
-                    class="elo-btn-accept dict-add-btn"
-                    onclick={addNewDictionaryWord}
+                    class="show-all-link"
+                    onclick={() => (editorCategoryFilter = "all")}
                   >
-                    Add Word
+                    Show all ({editorLints.length})
                   </button>
-                </div>
-              </div>
-
-              <div class="dict-scroll-well">
-                {#if dictionaryWords.length === 0}
-                  <span class="dict-empty-hint">
-                    No custom words added yet. Words added here are never flagged as spelling errors.
-                  </span>
-                {:else if filteredDictionaryWords.length === 0}
-                  <span class="dict-empty-hint">
-                    No matching word for "{newDictWord.trim()}" — press Enter or click Add Word to save it.
-                  </span>
-                {:else}
-                  <div class="dict-chips-container">
-                    {#each filteredDictionaryWords as word, idx (word)}
-                      <span
-                        class="dict-chip custom-chip"
-                        class:deferred-dict-chip={idx >= 40}
-                      >
-                        <span class="dict-chip-word">{word}</span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${word}`}
-                          onclick={() => removeDictionaryWord(word)}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    {/each}
-                  </div>
                 {/if}
               </div>
-            </div>
 
-            <!-- Editorial & Grammar Rules Grid -->
-            <div class="lexicon-subblock rules-subblock">
-              <div class="rules-toolbar">
-                <div class="rules-toolbar-left">
-                  <h4>Editorial Rules</h4>
-                  <div class="rules-filter-pills" role="group" aria-label="Filter rules">
-                    <button
-                      type="button"
-                      class="rule-filter-pill"
-                      class:active={ruleFilterMode === "all"}
-                      onclick={() => (ruleFilterMode = "all")}
-                    >
-                      All ({lintRules.length})
-                    </button>
-                    <button
-                      type="button"
-                      class="rule-filter-pill"
-                      class:active={ruleFilterMode === "enabled"}
-                      onclick={() => (ruleFilterMode = "enabled")}
-                    >
-                      Active ({enabledRulesCount})
-                    </button>
-                    <button
-                      type="button"
-                      class="rule-filter-pill"
-                      class:active={ruleFilterMode === "disabled"}
-                      onclick={() => (ruleFilterMode = "disabled")}
-                    >
-                      Muted ({disabledRulesCount})
-                    </button>
-                  </div>
-                </div>
-                <input
-                  type="search"
-                  class="settings-search rules-search-input"
-                  placeholder="Search rules…"
-                  bind:value={ruleSearchQuery}
-                />
-              </div>
-
-              {#if filteredRules.length === 0}
-                <div class="rules-empty-state">
-                  No editorial rules match your current filter.
-                </div>
-              {:else}
-                <div class="rules-grid">
-                  {#each filteredRules.slice(0, 120) as rule, idx (rule.key)}
-                    <label
-                      class="rule-card-row"
-                      class:is-disabled={!rule.enabled}
-                      class:deferred-rule-row={idx >= 16}
-                    >
-                      <div class="rule-card-info">
-                        <strong>{formatRuleDisplayName(rule.key)}</strong>
-                        {#if ruleSearchQuery.trim()}
-                          <span>{rule.key}</span>
-                        {/if}
-                      </div>
-                      <input
-                        type="checkbox"
-                        {...({ switch: "" } as Record<string, string>)}
-                        checked={rule.enabled}
-                        onchange={(e) =>
-                          toggleLintRule(
-                            rule.key,
-                            (e.currentTarget as HTMLInputElement).checked
-                          )}
-                      />
-                    </label>
-                  {/each}
-                </div>
+              {#if filteredEditorLints.length > 1}
+                <button type="button" class="accept-all-btn" onclick={acceptAllEditorSuggestions}>
+                  Apply all ({filteredEditorLints.length}) →
+                </button>
               {/if}
             </div>
-          </section>
-        </div>
-      </main>
-    {:else if activeTab === "voice"}
-      <main class="settings-page scroller">
-        <div class="settings-container">
-          <section class="settings-card apps-folio-card">
-            <div class="apps-folio-header">
-              <div>
-                <h3>Voice DNA</h3>
-                <p>
-                  Paste a writing sample or let Elocutio learn automatically as
-                  you accept and dismiss edits.
-                </p>
-              </div>
-              <label class="toggle-switch-label">
-                <span>Learn from edits</span>
-                <input
-                  type="checkbox"
-                  {...({ switch: "" } as Record<string, string>)}
-                  checked={learnFromEdits}
-                  onchange={async (e) => {
-                    learnFromEdits = await invoke<boolean>(
-                      "set_learn_from_edits",
-                      {
-                        enabled: (e.currentTarget as HTMLInputElement).checked,
-                      }
-                    );
-                    personalizationDb = await invoke<PersonalizationDbStatus>(
-                      "get_personalization_db_status"
-                    );
-                  }}
-                />
-              </label>
+
+            <!-- 3. LITERARY MARGIN NOTES FEED -->
+            <div class="margin-notes-feed scroller">
+              {#if filteredEditorLints.length === 0}
+                <div class="alerts-empty-card">
+                  {@render editorialWinkLogo(36, "#191F70", "#FFFFFF")}
+                  <h3>Impeccable Manuscript</h3>
+                  <p>
+                    No editorial notes in this view. Continue drafting on the manuscript sheet or
+                    use Rewrite Atelier below.
+                  </p>
+                </div>
+              {:else}
+                {#each filteredEditorLints as lint, idx (lint.id)}
+                  {@const isExpanded = activeEditorLint?.id === lint.id}
+                  {#if isExpanded}
+                    <article class="margin-note-card expanded" style="--card-accent: {lint.color};">
+                      <div class="note-card-top">
+                        <span class="note-eyebrow" style="color: {lint.color};">
+                          {lint.category_label.toUpperCase()} · {lint.subcategory}
+                        </span>
+                        <span class="note-index-tag">Note #{idx + 1}</span>
+                      </div>
+
+                      <div class="note-diff-box">
+                        {#if lint.suggestions.length > 0}
+                          <del class="feed-orig">{lint.original}</del>
+                          <span class="feed-arrow">→</span>
+                          {#each lint.suggestions.slice(0, 3) as sug}
+                            <button
+                              type="button"
+                              class="literary-replacement-btn"
+                              onclick={() => applyEditorSuggestion(lint, sug.text)}
+                            >
+                              {sug.kind === "remove" ? "Omit word" : sug.label}
+                            </button>
+                          {/each}
+                        {:else}
+                          <span class="feed-excerpt">{lint.original}</span>
+                        {/if}
+                      </div>
+
+                      <p class="feed-card-explanation">{lint.message}</p>
+
+                      <div class="feed-card-footer">
+                        <div class="feed-card-btns">
+                          {#if lint.suggestions[0]}
+                            <button
+                              type="button"
+                              class="elo-btn-accept"
+                              onclick={() => applyEditorSuggestion(lint, lint.suggestions[0].text)}
+                            >
+                              Apply Edit
+                            </button>
+                          {:else if lint.original.trim().split(/\s+/).length >= 8}
+                            <button
+                              type="button"
+                              class="elo-btn-accept"
+                              disabled={rewritingLintId === lint.id}
+                              onclick={() => rewriteSingleSentenceLint(lint)}
+                            >
+                              {rewritingLintId === lint.id ? "Tightening…" : "✦ Tighten Sentence"}
+                            </button>
+                          {/if}
+                          {#if canAddToLexicon(lint.original, lint.subcategory)}
+                            <button
+                              type="button"
+                              class="feed-dict-btn"
+                              onclick={() => addEditorWordToDictionary(lint.original, lint.id)}
+                            >
+                              + Lexicon
+                            </button>
+                          {/if}
+                        </div>
+
+                        <div class="feed-card-icons">
+                          <button
+                            type="button"
+                            class="note-text-action"
+                            title="Dismiss annotation"
+                            onclick={() => dismissEditorLint(lint.id)}
+                          >
+                            Dismiss
+                          </button>
+                          <button
+                            type="button"
+                            class="elo-icon-btn"
+                            title="Mute this editorial rule"
+                            onclick={() => disableEditorRule(lint.rule_name, lint.id)}
+                          >
+                            ⊘
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  {:else}
+                    <button
+                      type="button"
+                      class="margin-note-card compact"
+                      style="--card-accent: {lint.color};"
+                      onclick={() => selectAlertFromFeed(lint)}
+                    >
+                      <div class="compact-top">
+                        <span class="compact-cat" style="color: {lint.color};">
+                          {lint.category_label.toUpperCase()} · {lint.subcategory}
+                        </span>
+                        <span class="note-index-tag">#{idx + 1}</span>
+                      </div>
+                      <div class="compact-diff-row">
+                        {#if lint.suggestions[0]}
+                          <del class="compact-del">{lint.original}</del>
+                          <span class="compact-arrow">→</span>
+                          <span class="compact-repl">
+                            {lint.suggestions[0].label}
+                          </span>
+                        {:else}
+                          <span class="compact-excerpt">{lint.original}</span>
+                        {/if}
+                      </div>
+                    </button>
+                  {/if}
+                {/each}
+              {/if}
             </div>
 
-            {#if personalizationDb}
-              <div class="db-ledger-strip">
-                <div class="db-stat-grid">
-                  <div class="db-stat-tile">
-                    <span class="db-stat-num">{personalizationDb.learned_events_count}</span>
-                    <span class="db-stat-label">Learned Edits</span>
+            <!-- 4. PINNED BOTTOM "REWRITE ATELIER" DOCK -->
+            <div class="rewrite-atelier-dock">
+              <div class="atelier-dock-head">
+                <div class="atelier-dock-title">
+                  <span class="dock-spark">✦</span>
+                  <h4>Rewrite Atelier</h4>
+                </div>
+                <span class="dock-scope-tag">Full Passage</span>
+              </div>
+
+              {#if aiRewriteLoading}
+                <div class="rewrite-active-progress" role="status" aria-live="polite">
+                  <div class="rewrite-progress-row">
+                    <progress
+                      aria-label="Rewriting text with elo"
+                      class="loading-spinner elo-card-spinner"
+                    ></progress>
+                    <div class="rewrite-progress-copy">
+                      <strong>elo is rewriting your manuscript…</strong>
+                      <span>Refining clarity, tone, and rhythm</span>
+                    </div>
                   </div>
-                  <div class="db-stat-tile">
-                    <span class="db-stat-num">{dictionaryWords.length}</span>
-                    <span class="db-stat-label">Custom Words</span>
+                  <div class="rewrite-shimmer-lines" aria-hidden="true">
+                    <span class="shimmer-bar w-92"></span>
+                    <span class="shimmer-bar w-76"></span>
                   </div>
-                  <div class="db-stat-tile">
-                    <span class="db-stat-num">{disabledRulesCount}</span>
-                    <span class="db-stat-label">Muted Rules</span>
+                </div>
+              {:else if aiRewriteResult}
+                <div class="ai-result-card">
+                  <p>{aiRewriteResult}</p>
+                  <div class="ai-result-actions">
+                    <button
+                      type="button"
+                      class="elo-btn-accept sm"
+                      onclick={() => {
+                        if (aiRewriteResult) {
+                          editorText = aiRewriteResult;
+                          aiRewriteResult = null;
+                          runEditorCheck();
+                        }
+                      }}
+                    >
+                      Replace Manuscript
+                    </button>
+                    <button
+                      type="button"
+                      class="elo-btn-dismiss sm"
+                      onclick={() => (aiRewriteResult = null)}
+                    >
+                      Discard
+                    </button>
                   </div>
-                  <div class="db-stat-tile">
-                    <span class="db-stat-num">{voiceTraits.length}</span>
-                    <span class="db-stat-label">Voice Traits</span>
+                </div>
+              {:else}
+                <div class="atelier-preset-chips">
+                  <button
+                    type="button"
+                    class="atelier-chip"
+                    onclick={() => runStudioIdeaRewrite("improve")}
+                  >
+                    ✎ Polish flow
+                  </button>
+                  <button
+                    type="button"
+                    class="atelier-chip"
+                    onclick={() => runStudioIdeaRewrite("concise")}
+                  >
+                    🎯 Tighten
+                  </button>
+                  <button
+                    type="button"
+                    class="atelier-chip"
+                    onclick={() => runStudioIdeaRewrite("confident")}
+                  >
+                    🤝 Confident
+                  </button>
+                  <button
+                    type="button"
+                    class="atelier-chip"
+                    onclick={() => runStudioIdeaRewrite("formal")}
+                  >
+                    🎩 Executive
+                  </button>
+                  <button
+                    type="button"
+                    class="atelier-chip"
+                    onclick={() => runStudioIdeaRewrite("friendly")}
+                  >
+                    😊 Warm
+                  </button>
+                  <button
+                    type="button"
+                    class="atelier-chip"
+                    onclick={() => runStudioIdeaRewrite("bullets")}
+                  >
+                    • Bullets
+                  </button>
+                </div>
+
+                {#if aiRewriteError}
+                  <p class="ai-error-msg">{aiRewriteError}</p>
+                {/if}
+
+                <form
+                  class="rewrite-prompt-form"
+                  onsubmit={(e) => {
+                    e.preventDefault();
+                    if (!aiRewriteLoading && studioCustomPrompt.trim()) {
+                      const prompt = studioCustomPrompt.trim();
+                      studioCustomPrompt = "";
+                      runStudioIdeaRewrite("custom", prompt);
+                    }
+                  }}
+                >
+                  <input
+                    type="text"
+                    class="rewrite-prompt-input"
+                    placeholder="Direct elo to reshape this draft…"
+                    bind:value={studioCustomPrompt}
+                  />
+                  {#if studioCustomPrompt.trim()}
+                    <button type="submit" class="rewrite-prompt-send">→</button>
+                  {/if}
+                </form>
+              {/if}
+            </div>
+          </aside>
+        </main>
+      {:else if activeTab === "analytics"}
+        <main class="settings-page scroller">
+          <div class="settings-container">
+            <section class="settings-card apps-folio-card lexicon-folio-card">
+              <div class="apps-folio-header">
+                <div>
+                  <h3>Writing & AI Analytics</h3>
+                  <p>
+                    Track your prose craft, editorial velocity, and how on-device checks and AI
+                    rewrites elevate your writing.
+                  </p>
+                </div>
+                <button type="button" class="ax-strip-link" onclick={loadAllSettings}>
+                  ↻ Refresh Metrics
+                </button>
+              </div>
+
+              {#if writingAnalytics}
+                <!-- 1. Hero KPI Strip -->
+                <div class="analytics-kpi-grid">
+                  <div class="analytics-kpi-card highlight-kpi">
+                    <span class="kpi-eyebrow">PROSE CRAFT INDEX</span>
+                    <div class="kpi-main-row">
+                      <span class="kpi-big-num">{writingAnalytics.prose_craft_score}</span>
+                      <span class="kpi-unit">/ 100</span>
+                    </div>
+                    <span class="kpi-sub">
+                      {writingAnalytics.acceptance_rate_pct}% suggestion precision · {writingAnalytics.active_days_14d}d
+                      active
+                    </span>
+                  </div>
+
+                  <div class="analytics-kpi-card">
+                    <span class="kpi-eyebrow">EDITORIAL TIME SAVED</span>
+                    <div class="kpi-main-row">
+                      <span class="kpi-big-num">
+                        {writingAnalytics.estimated_minutes_saved >= 60
+                          ? `${Math.floor(writingAnalytics.estimated_minutes_saved / 60)}h ${writingAnalytics.estimated_minutes_saved % 60}m`
+                          : `${writingAnalytics.estimated_minutes_saved}m`}
+                      </span>
+                    </div>
+                    <span class="kpi-sub">
+                      {writingAnalytics.total_accepted_edits + writingAnalytics.total_ai_requests} total
+                      interventions
+                    </span>
+                  </div>
+
+                  <div class="analytics-kpi-card">
+                    <span class="kpi-eyebrow">AI CO-PILOT LIFT</span>
+                    <div class="kpi-main-row">
+                      <span class="kpi-big-num">
+                        {writingAnalytics.total_ai_words_refined.toLocaleString()}
+                      </span>
+                      <span class="kpi-unit">words</span>
+                    </div>
+                    <span class="kpi-sub">
+                      Refined across {writingAnalytics.total_ai_requests.toLocaleString()} AI passes
+                    </span>
+                  </div>
+
+                  <div class="analytics-kpi-card">
+                    <span class="kpi-eyebrow">AI COST EFFICIENCY</span>
+                    <div class="kpi-main-row">
+                      <span class="kpi-big-num">
+                        ${writingAnalytics.avg_cost_per_pass_usd.toFixed(5)}
+                      </span>
+                      <span class="kpi-unit">/ pass</span>
+                    </div>
+                    <span class="kpi-sub">
+                      ${writingAnalytics.total_cost_usd.toFixed(4)} cumulative spend
+                    </span>
                   </div>
                 </div>
 
-                {#if personalizationDb.recent_learned_edits.length > 0}
-                  <div class="learned-edits-list">
-                    <span class="learned-edits-heading">RECENTLY LEARNED</span>
+                <!-- 2. Hybrid Intelligence Balance: Local Engine vs. AI Co-Pilot -->
+                <div class="lexicon-subblock">
+                  <div class="lexicon-subhead">
+                    <h4>Hybrid Intelligence Split</h4>
+                    <span class="field-hint">
+                      {writingAnalytics.local_vs_ai_pct}% On-Device · {100 -
+                        writingAnalytics.local_vs_ai_pct}% Cloud AI Co-Pilot
+                    </span>
+                  </div>
+
+                  <div
+                    class="hybrid-split-bar"
+                    role="img"
+                    aria-label="On-device vs Cloud AI usage split"
+                  >
+                    <div
+                      class="hybrid-seg local-seg"
+                      style="width: {writingAnalytics.local_vs_ai_pct}%;"
+                    ></div>
+                    <div
+                      class="hybrid-seg ai-seg"
+                      style="width: {100 - writingAnalytics.local_vs_ai_pct}%;"
+                    ></div>
+                  </div>
+
+                  <div class="hybrid-cards-row">
+                    <div class="hybrid-stat-box">
+                      <div class="hybrid-box-head">
+                        <span class="hybrid-dot local-dot"></span>
+                        <strong>On-Device Harper Engine</strong>
+                        <span class="hybrid-pill">0 ms · $0.00</span>
+                      </div>
+                      <p>
+                        {writingAnalytics.total_accepted_edits} accepted inline fixes · {writingAnalytics.vocabulary_shield_words}
+                        protected lexicon words · {writingAnalytics.active_rules_count} active rules
+                      </p>
+                    </div>
+
+                    <div class="hybrid-stat-box">
+                      <div class="hybrid-box-head">
+                        <span class="hybrid-dot ai-dot"></span>
+                        <strong>AI Rewrite Co-Pilot</strong>
+                        <span class="hybrid-pill">
+                          {writingAnalytics.voice_traits_calibrated} Voice DNA traits
+                        </span>
+                      </div>
+                      <p>
+                        {writingAnalytics.total_ai_requests} deep passes · {(
+                          writingAnalytics.total_input_tokens + writingAnalytics.total_output_tokens
+                        ).toLocaleString()} total tokens processed
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 3. Writing Mastery Pillars & 7-Day Activity + Manuscript Vitals -->
+                <div class="analytics-two-col lexicon-subblock">
+                  <div class="analytics-col">
+                    <div class="lexicon-subhead">
+                      <h4>Writing Mastery by Pillar</h4>
+                    </div>
+                    <div class="pillar-list">
+                      {#each writingAnalytics.category_breakdown as item (item.category)}
+                        <div class="pillar-row">
+                          <div class="pillar-top">
+                            <strong>{item.category}</strong>
+                            <span class="pillar-score">{item.mastery_pct}%</span>
+                          </div>
+                          <div class="pillar-track">
+                            <div class="pillar-fill" style="width: {item.mastery_pct}%;"></div>
+                          </div>
+                          <div class="pillar-meta">
+                            <span>{item.insight}</span>
+                            <span>
+                              {item.accepted} applied · {item.dismissed} skipped
+                            </span>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+
+                  <div class="analytics-col">
+                    <div class="lexicon-subhead">
+                      <h4>7-Day Editorial Cadence</h4>
+                    </div>
+                    <div class="cadence-chart">
+                      {#each writingAnalytics.daily_activity as day (day.day_label)}
+                        {@const total = day.ai_passes + day.inline_edits}
+                        {@const pct = Math.max(8, Math.round((total / maxDailyActivity) * 100))}
+                        <div
+                          class="cadence-bar-col"
+                          title="{day.day_label}: {day.ai_passes} AI passes, {day.inline_edits} inline edits"
+                        >
+                          <span class="cadence-val">{total > 0 ? total : ""}</span>
+                          <div class="cadence-bar-well">
+                            <div class="cadence-bar-fill" style="height: {pct}%;"></div>
+                          </div>
+                          <span class="cadence-day">{day.day_label}</span>
+                        </div>
+                      {/each}
+                    </div>
+
+                    <div class="manuscript-vitals-box">
+                      <span class="learned-edits-heading">ACTIVE MANUSCRIPT VITAL SIGNS</span>
+                      <div class="vitals-mini-grid">
+                        <div>
+                          <strong>{editorLexicalDiversity}%</strong>
+                          <span>Vocabulary Variety</span>
+                        </div>
+                        <div>
+                          <strong>{editorAvgSentenceWords} wds</strong>
+                          <span>Avg Sentence</span>
+                        </div>
+                        <div>
+                          <strong>{editorReadingTimeLabel}</strong>
+                          <span>Reading Time</span>
+                        </div>
+                        <div>
+                          <strong>{editorTone}</strong>
+                          <span>Detected Tone</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 4. AI Model Efficiency Ledger (Responsive Table) -->
+                {#if writingAnalytics.model_breakdown.length > 0}
+                  <div class="lexicon-subblock">
+                    <div class="lexicon-subhead">
+                      <h4 id="model-ledger-heading">AI Model Efficiency Ledger</h4>
+                    </div>
+                    <div
+                      role="region"
+                      aria-labelledby="model-ledger-heading"
+                      class="analytics-table-wrapper"
+                    >
+                      <table class="analytics-model-table">
+                        <thead>
+                          <tr>
+                            <th>Model Slug</th>
+                            <th>AI Passes</th>
+                            <th>Words Refined</th>
+                            <th>Tokens (In / Out)</th>
+                            <th>Spend</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each writingAnalytics.model_breakdown as m (m.model)}
+                            <tr>
+                              <th>{m.model}</th>
+                              <td>{m.requests.toLocaleString()}</td>
+                              <td>~{m.words_refined.toLocaleString()}</td>
+                              <td>
+                                {m.input_tokens.toLocaleString()} / {m.output_tokens.toLocaleString()}
+                              </td>
+                              <td>${m.cost_usd.toFixed(4)}</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- 5. Signature Editorial Refinements -->
+                {#if writingAnalytics.top_transformations.length > 0}
+                  <div class="lexicon-subblock">
+                    <div class="lexicon-subhead">
+                      <h4>Recent Signature Refinements</h4>
+                    </div>
                     <div class="learned-edits-chips">
-                      {#each personalizationDb.recent_learned_edits.slice(0, 8) as ev}
-                        <span class="learned-edit-pill" class:is-dismissed={ev.kind === "dismissed"}>
+                      {#each writingAnalytics.top_transformations as ev, idx (idx)}
+                        <span class="learned-edit-pill">
                           <span class="ev-cat">{ev.category}</span>
-                          {#if ev.kind === "dismissed"}
-                            <span class="ev-pair">Kept "{ev.original}"</span>
-                          {:else}
-                            <span class="ev-pair">"{ev.original}" → "{ev.replacement || "∅"}"</span>
-                          {/if}
+                          <del>{ev.original}</del> → <strong>{ev.replacement}</strong>
                         </span>
                       {/each}
                     </div>
                   </div>
                 {/if}
-              </div>
-            {/if}
-
-            <textarea
-              class="voice-sample-box"
-              rows="4"
-              bind:value={voiceSampleText}
-              placeholder="Paste a sample of your own writing here to extract sentence cadence, formality, and vocabulary traits…"
-            ></textarea>
-            <div class="perm-actions">
-              <button
-                type="button"
-                class="elo-btn-accept"
-                onclick={handleLearnVoice}
-              >
-                Analyze & Learn Voice
-              </button>
-              {#if voiceStatusMsg}
-                <p class="status-feedback">{voiceStatusMsg}</p>
               {/if}
-            </div>
+            </section>
+          </div>
+        </main>
+      {:else if activeTab === "apps"}
+        <main class="settings-page scroller">
+          <div class="settings-container">
+            <section class="settings-card apps-folio-card">
+              <div class="card-split-header">
+                <div>
+                  <div class="folio-eyebrow">
+                    <span>CONNECTED APPLICATIONS</span>
+                    <span class="eyebrow-dot">·</span>
+                    <span>
+                      {filteredIntegrations.filter((a) => a.enabled).length} OF {filteredIntegrations.length}
+                      ENABLED
+                    </span>
+                    {#if axStatus === "Granted"}
+                      <span class="eyebrow-dot">·</span>
+                      <span class="ax-granted-inline">✓ ACCESSIBILITY ACTIVE</span>
+                    {/if}
+                  </div>
+                  <h2 class="settings-folio-title">Where “elo” Writes With You</h2>
+                  <p>
+                    Choose which macOS applications display inline underlines and the floating “elo”
+                    companion mark.
+                  </p>
+                </div>
+                <label class="toggle-switch-label">
+                  <span>Auto-enable new apps</span>
+                  <input
+                    type="checkbox"
+                    {...{ switch: "" } as Record<string, string>}
+                    checked={autoEnableNewApps}
+                    onchange={toggleAutoEnableApps}
+                  />
+                </label>
+              </div>
 
-            {#if voiceTraits.length > 0}
-              <div class="lexicon-subblock">
-                <h4>Learned Voice Traits</h4>
-                <div class="app-grid">
-                  {#each voiceTraits as t}
-                    <div class="app-row-card">
-                      <div class="app-row-info">
-                        <strong>{t.label || formatRuleDisplayName(t.key)}</strong>
-                        <span>{t.summary || t.evidence?.[0] || String(t.value ?? "")}</span>
-                      </div>
-                      <span class="perm-badge granted">
-                        {Math.round(t.confidence * 100)}%
+              {#if axStatus !== "Granted"}
+                <div class="ax-inline-strip">
+                  <div class="ax-strip-left">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <rect
+                        x="3"
+                        y="11"
+                        width="18"
+                        height="11"
+                        rx="2"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                      />
+                      <path
+                        d="M7 11V7a5 5 0 0 1 10 0v4"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    <span>
+                      macOS Accessibility access is needed to read and replace text in external
+                      apps.
+                    </span>
+                  </div>
+                  <div class="ax-strip-actions">
+                    <button
+                      type="button"
+                      class="ax-strip-link primary"
+                      onclick={handleGrantAccessibility}
+                    >
+                      Open System Settings →
+                    </button>
+                    <button type="button" class="ax-strip-link" onclick={loadAllSettings}>
+                      Recheck
+                    </button>
+                  </div>
+                </div>
+              {/if}
+
+              <input
+                type="search"
+                class="settings-search"
+                placeholder="Search applications…"
+                bind:value={appSearchQuery}
+              />
+
+              <div class="app-grid">
+                {#each filteredIntegrations as app (app.bundle_id)}
+                  <label class="app-row-card" class:is-disabled={!app.enabled}>
+                    <div class="app-row-left">
+                      <span class="app-monogram" aria-hidden="true">
+                        {app.display_name.trim().charAt(0).toUpperCase() || "A"}
                       </span>
+                      <div class="app-row-info">
+                        <strong>{app.display_name}</strong>
+                        {#if appSearchQuery.trim()}
+                          <span>{app.bundle_id}</span>
+                        {/if}
+                      </div>
                     </div>
+                    <input
+                      type="checkbox"
+                      {...{ switch: "" } as Record<string, string>}
+                      checked={app.enabled}
+                      onchange={(e) =>
+                        toggleAppIntegration(
+                          app.bundle_id,
+                          (e.currentTarget as HTMLInputElement).checked,
+                        )}
+                    />
+                  </label>
+                {/each}
+              </div>
+            </section>
+          </div>
+        </main>
+      {:else if activeTab === "rules"}
+        <main class="settings-page scroller">
+          <div class="settings-container">
+            <section class="settings-card apps-folio-card lexicon-folio-card">
+              <!-- English Dialect -->
+              <div class="lexicon-subblock first-subblock">
+                <div class="lexicon-subhead">
+                  <h4>English Dialect</h4>
+                </div>
+                <div class="dialect-segmented-bar" role="group" aria-label="English Dialect">
+                  {#each [{ id: "US", code: "US", label: "American" }, { id: "GB", code: "UK", label: "British" }, { id: "CA", code: "CA", label: "Canadian" }, { id: "AU", code: "AU", label: "Australian" }, { id: "IN", code: "IN", label: "Indian" }] as d}
+                    <button
+                      type="button"
+                      class="dialect-seg-btn"
+                      class:active={dialectName === d.id}
+                      onclick={() => changeDialect(d.id)}
+                    >
+                      <span class="dialect-code">{d.code}</span>
+                      <span class="dialect-name">{d.label}</span>
+                    </button>
                   {/each}
                 </div>
               </div>
-            {/if}
-          </section>
-        </div>
-      </main>
-    {:else if activeTab === "ai"}
-      <main class="settings-page scroller">
-        <div class="settings-container">
-          <section class="settings-card apps-folio-card lexicon-folio-card">
-            <div class="apps-folio-header">
-              <div>
-                <h3>Privacy & AI Engine</h3>
-                <p>
-                  Select an on-device or cloud AI provider, pick a model slug,
-                  and manage your token budget.
-                </p>
-              </div>
-              <label class="toggle-switch-label">
-                <span>{localOnlyMode ? "Local-Only ON" : "Cloud AI Enabled"}</span>
-                <input
-                  type="checkbox"
-                  {...({ switch: "" } as Record<string, string>)}
-                  checked={localOnlyMode}
-                  onchange={toggleLocalOnly}
-                />
-              </label>
-            </div>
 
-            <!-- AI Provider & Model Configuration -->
-            <div class="lexicon-subblock">
-              <div class="lexicon-subhead">
-                <h4>Provider & Model</h4>
-                <button
-                  type="button"
-                  class="ax-strip-link"
-                  onclick={() =>
-                    refreshPresetModels(selectedPresetId, providerSettings.base_url)}
-                >
-                  {fetchingModels
-                    ? "Fetching models…"
-                    : `↻ Refresh Models (${presetModelSlugs.length})`}
-                </button>
-              </div>
-
-              <div class="ai-form-grid">
-                <div class="form-field">
-                  <label for="provider-preset-select">
-                    <span>Provider Preset</span>
-                  </label>
-                  <select
-                    id="provider-preset-select"
-                    name="provider_preset"
-                    value={selectedPresetId}
-                    onchange={onPresetSelectChange}
-                  >
-                    {#each PROVIDER_PRESETS as preset (preset.id)}
-                      <option value={preset.id}>
-                        {preset.name} ({preset.tag})
-                      </option>
-                    {/each}
-                    <option value="custom">Custom OpenAI-Compatible Endpoint</option>
-                  </select>
-                </div>
-
-                <div class="form-field">
-                  <label for="model-slug-select">
-                    <span>
-                      Model Slug
-                      <em class="field-hint">{presetModelSlugs.length} available</em>
+              <!-- Personal Dictionary -->
+              <div class="lexicon-subblock">
+                <div class="lexicon-subhead">
+                  <h4>
+                    Personal Dictionary
+                    <span class="lexicon-count-pill">
+                      {dictionaryWords.length}
+                      {dictionaryWords.length === 1 ? "word" : "words"}
                     </span>
-                  </label>
-                  <select
-                    id="model-slug-select"
-                    name="model_slug"
-                    value={customModelSlugMode ? "__custom__" : providerSettings.model}
-                    onchange={onModelSlugSelectChange}
-                  >
-                    {#each presetModelSlugs as m (m.slug)}
-                      <option value={m.slug}>
-                        {m.slug} — {m.badge}
-                      </option>
-                    {/each}
-                    {#if providerSettings.model && !presetModelSlugs.some((m) => m.slug === providerSettings.model)}
-                      <option value={providerSettings.model}>
-                        {providerSettings.model} — Active
-                      </option>
-                    {/if}
-                    <option value="__custom__">Custom model slug…</option>
-                  </select>
-                </div>
-
-                <div class="form-field">
-                  <label for="provider-base-url">
-                    <span>Base URL</span>
-                  </label>
-                  <input
-                    id="provider-base-url"
-                    name="base_url"
-                    type="url"
-                    autocorrect="off"
-                    autocapitalize="off"
-                    spellcheck="false"
-                    bind:value={providerSettings.base_url}
-                    placeholder="https://openrouter.ai/api/v1"
-                  />
-                </div>
-
-                <div class="form-field">
-                  <label for="provider-api-key">
-                    <span>
-                      API Key
-                      {#if selectedPresetId === "ollama_local" || selectedPresetId === "apple_foundation"}
-                        <em class="field-hint">(Optional — On-Device)</em>
-                      {:else if providerSettings.key_present}
-                        <em class="field-hint encrypted-ok">
-                          ✓ Encrypted ({providerSettings.key_hint || "AES-256"})
-                        </em>
-                      {:else}
-                        <em class="field-hint">(Not set)</em>
-                      {/if}
-                    </span>
-                  </label>
-                  <input
-                    id="provider-api-key"
-                    name="api_key"
-                    type="password"
-                    autocomplete="off"
-                    bind:value={apiKeyInput}
-                    placeholder={providerSettings.key_present
-                      ? "•••••••••••••••• (leave blank to keep encrypted key)"
-                      : selectedPresetId === "ollama_local" ||
-                          selectedPresetId === "apple_foundation"
-                        ? "No key required for local endpoint"
-                        : "Enter API key (encrypted locally with AES-256)…"}
-                  />
-                </div>
-
-                {#if customModelSlugMode}
-                  <div class="form-field">
-                    <label for="custom-model-slug">
-                      <span>Custom Model Identifier (Slug)</span>
-                    </label>
+                  </h4>
+                  <div class="dict-inline-form">
                     <input
-                      id="custom-model-slug"
-                      name="custom_model_slug"
                       type="text"
-                      autocorrect="off"
-                      autocapitalize="off"
-                      spellcheck="false"
-                      bind:value={providerSettings.model}
-                      placeholder="e.g., anthropic/claude-haiku-4.5"
+                      class="settings-search dict-inline-input"
+                      placeholder={dictionaryWords.length > 8
+                        ? `Search or add to ${dictionaryWords.length} words…`
+                        : "Add a name, technical term, or brand word…"}
+                      bind:value={newDictWord}
+                      onkeydown={(e) => e.key === "Enter" && addNewDictionaryWord()}
                     />
+                    <button
+                      type="button"
+                      class="elo-btn-accept dict-add-btn"
+                      onclick={addNewDictionaryWord}
+                    >
+                      Add Word
+                    </button>
+                  </div>
+                </div>
+
+                <div class="dict-scroll-well">
+                  {#if dictionaryWords.length === 0}
+                    <span class="dict-empty-hint">
+                      No custom words added yet. Words added here are never flagged as spelling
+                      errors.
+                    </span>
+                  {:else if filteredDictionaryWords.length === 0}
+                    <span class="dict-empty-hint">
+                      No matching word for "{newDictWord.trim()}" — press Enter or click Add Word to
+                      save it.
+                    </span>
+                  {:else}
+                    <div class="dict-chips-container">
+                      {#each filteredDictionaryWords as word, idx (word)}
+                        <span class="dict-chip custom-chip" class:deferred-dict-chip={idx >= 40}>
+                          <span class="dict-chip-word">{word}</span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${word}`}
+                            onclick={() => removeDictionaryWord(word)}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Editorial & Grammar Rules Grid -->
+              <div class="lexicon-subblock rules-subblock">
+                <div class="rules-toolbar">
+                  <div class="rules-toolbar-left">
+                    <h4>Editorial Rules</h4>
+                    <div class="rules-filter-pills" role="group" aria-label="Filter rules">
+                      <button
+                        type="button"
+                        class="rule-filter-pill"
+                        class:active={ruleFilterMode === "all"}
+                        onclick={() => (ruleFilterMode = "all")}
+                      >
+                        All ({lintRules.length})
+                      </button>
+                      <button
+                        type="button"
+                        class="rule-filter-pill"
+                        class:active={ruleFilterMode === "enabled"}
+                        onclick={() => (ruleFilterMode = "enabled")}
+                      >
+                        Active ({enabledRulesCount})
+                      </button>
+                      <button
+                        type="button"
+                        class="rule-filter-pill"
+                        class:active={ruleFilterMode === "disabled"}
+                        onclick={() => (ruleFilterMode = "disabled")}
+                      >
+                        Muted ({disabledRulesCount})
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="search"
+                    class="settings-search rules-search-input"
+                    placeholder="Search rules…"
+                    bind:value={ruleSearchQuery}
+                  />
+                </div>
+
+                {#if filteredRules.length === 0}
+                  <div class="rules-empty-state">No editorial rules match your current filter.</div>
+                {:else}
+                  <div class="rules-grid">
+                    {#each filteredRules.slice(0, 120) as rule, idx (rule.key)}
+                      <label
+                        class="rule-card-row"
+                        class:is-disabled={!rule.enabled}
+                        class:deferred-rule-row={idx >= 16}
+                      >
+                        <div class="rule-card-info">
+                          <strong>{formatRuleDisplayName(rule.key)}</strong>
+                          {#if ruleSearchQuery.trim()}
+                            <span>{rule.key}</span>
+                          {/if}
+                        </div>
+                        <input
+                          type="checkbox"
+                          {...{ switch: "" } as Record<string, string>}
+                          checked={rule.enabled}
+                          onchange={(e) =>
+                            toggleLintRule(rule.key, (e.currentTarget as HTMLInputElement).checked)}
+                        />
+                      </label>
+                    {/each}
                   </div>
                 {/if}
-
-                <div class="form-field" class:span-full={!customModelSlugMode}>
-                  <label for="custom-editorial-instruction">
-                    <span>Custom Editorial Instruction</span>
-                  </label>
+              </div>
+            </section>
+          </div>
+        </main>
+      {:else if activeTab === "voice"}
+        <main class="settings-page scroller">
+          <div class="settings-container">
+            <section class="settings-card apps-folio-card">
+              <div class="apps-folio-header">
+                <div>
+                  <h3>Voice DNA</h3>
+                  <p>
+                    Paste a writing sample or let Elocutio learn automatically as you accept and
+                    dismiss edits.
+                  </p>
+                </div>
+                <label class="toggle-switch-label">
+                  <span>Learn from edits</span>
                   <input
-                    id="custom-editorial-instruction"
-                    name="custom_instruction"
-                    type="text"
-                    bind:value={customInstruction}
-                    placeholder="e.g., Prefer active verbs and concise sentences."
+                    type="checkbox"
+                    {...{ switch: "" } as Record<string, string>}
+                    checked={learnFromEdits}
+                    onchange={async (e) => {
+                      learnFromEdits = await invoke<boolean>("set_learn_from_edits", {
+                        enabled: (e.currentTarget as HTMLInputElement).checked,
+                      });
+                      personalizationDb = await invoke<PersonalizationDbStatus>(
+                        "get_personalization_db_status",
+                      );
+                    }}
                   />
-                </div>
-              </div>
-            </div>
-
-            <!-- Token Usage & Budget -->
-            <div class="lexicon-subblock">
-              <div class="lexicon-subhead">
-                <h4>Token Usage & Budget</h4>
+                </label>
               </div>
 
-              <div class="db-stat-grid">
-                <div class="db-stat-tile">
-                  <span class="db-stat-num">{usageSummary.requests.toLocaleString()}</span>
-                  <span class="db-stat-label">AI Requests</span>
-                </div>
-                <div class="db-stat-tile">
-                  <span class="db-stat-num">{usageSummary.input_tokens.toLocaleString()}</span>
-                  <span class="db-stat-label">Input Tokens</span>
-                </div>
-                <div class="db-stat-tile">
-                  <span class="db-stat-num">{usageSummary.output_tokens.toLocaleString()}</span>
-                  <span class="db-stat-label">Output Tokens</span>
-                </div>
-                <div class="db-stat-tile">
-                  <span class="db-stat-num">${usageSummary.cost_usd.toFixed(4)}</span>
-                  <span class="db-stat-label">Estimated Spend</span>
-                </div>
-              </div>
-
-              {#if budgetInput.trim() && Number(budgetInput) > 0}
-                <div class="budget-progress-wrap">
-                  <div class="budget-progress-labels">
-                    <span>Budget Used</span>
-                    <span>
-                      ${usageSummary.cost_usd.toFixed(4)} / ${Number(budgetInput).toFixed(2)}
-                    </span>
+              {#if personalizationDb}
+                <div class="db-ledger-strip">
+                  <div class="db-stat-grid">
+                    <div class="db-stat-tile">
+                      <span class="db-stat-num">{personalizationDb.learned_events_count}</span>
+                      <span class="db-stat-label">Learned Edits</span>
+                    </div>
+                    <div class="db-stat-tile">
+                      <span class="db-stat-num">{dictionaryWords.length}</span>
+                      <span class="db-stat-label">Custom Words</span>
+                    </div>
+                    <div class="db-stat-tile">
+                      <span class="db-stat-num">{disabledRulesCount}</span>
+                      <span class="db-stat-label">Muted Rules</span>
+                    </div>
+                    <div class="db-stat-tile">
+                      <span class="db-stat-num">{voiceTraits.length}</span>
+                      <span class="db-stat-label">Voice Traits</span>
+                    </div>
                   </div>
-                  <progress
-                    class="budget-progress-bar"
-                    max={Number(budgetInput)}
-                    value={Math.min(usageSummary.cost_usd, Number(budgetInput))}
-                  ></progress>
+
+                  {#if personalizationDb.recent_learned_edits.length > 0}
+                    <div class="learned-edits-list">
+                      <span class="learned-edits-heading">RECENTLY LEARNED</span>
+                      <div class="learned-edits-chips">
+                        {#each personalizationDb.recent_learned_edits.slice(0, 8) as ev}
+                          <span
+                            class="learned-edit-pill"
+                            class:is-dismissed={ev.kind === "dismissed"}
+                          >
+                            <span class="ev-cat">{ev.category}</span>
+                            {#if ev.kind === "dismissed"}
+                              <span class="ev-pair">Kept "{ev.original}"</span>
+                            {:else}
+                              <span class="ev-pair"
+                                >"{ev.original}" → "{ev.replacement || "∅"}"</span
+                              >
+                            {/if}
+                          </span>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
                 </div>
               {/if}
 
-              <div class="ai-form-grid">
-                <label class="form-field">
-                  <span>Monthly Budget Alert (USD)</span>
+              <textarea
+                class="voice-sample-box"
+                rows="4"
+                bind:value={voiceSampleText}
+                placeholder="Paste a sample of your own writing here to extract sentence cadence, formality, and vocabulary traits…"
+              ></textarea>
+              <div class="perm-actions">
+                <button type="button" class="elo-btn-accept" onclick={handleLearnVoice}>
+                  Analyze & Learn Voice
+                </button>
+                {#if voiceStatusMsg}
+                  <p class="status-feedback">{voiceStatusMsg}</p>
+                {/if}
+              </div>
+
+              {#if voiceTraits.length > 0}
+                <div class="lexicon-subblock">
+                  <h4>Learned Voice Traits</h4>
+                  <div class="app-grid">
+                    {#each voiceTraits as t}
+                      <div class="app-row-card">
+                        <div class="app-row-info">
+                          <strong>{t.label || formatRuleDisplayName(t.key)}</strong>
+                          <span>{t.summary || t.evidence?.[0] || String(t.value ?? "")}</span>
+                        </div>
+                        <span class="perm-badge granted">
+                          {Math.round(t.confidence * 100)}%
+                        </span>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </section>
+          </div>
+        </main>
+      {:else if activeTab === "ai"}
+        <main class="settings-page scroller">
+          <div class="settings-container">
+            <section class="settings-card apps-folio-card lexicon-folio-card">
+              <div class="apps-folio-header">
+                <div>
+                  <h3>Privacy & AI Engine</h3>
+                  <p>
+                    Select an on-device or cloud AI provider, pick a model slug, and manage your
+                    token budget.
+                  </p>
+                </div>
+                <label class="toggle-switch-label">
+                  <span>{localOnlyMode ? "Local-Only ON" : "Cloud AI Enabled"}</span>
                   <input
-                    type="number"
-                    min="0"
-                    step="0.50"
-                    bind:value={budgetInput}
-                    placeholder="e.g., 5.00 (optional)"
-                  />
-                </label>
-                <label class="form-field">
-                  <span>Per-Request Cost Cap (USD)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    bind:value={costCapInput}
-                    placeholder="e.g., 0.05 (optional hard ceiling)"
+                    type="checkbox"
+                    {...{ switch: "" } as Record<string, string>}
+                    checked={localOnlyMode}
+                    onchange={toggleLocalOnly}
                   />
                 </label>
               </div>
 
-              <div class="perm-actions">
-                <button
-                  type="button"
-                  class="elo-btn-accept"
-                  onclick={saveProviderSettings}
-                >
-                  Save Provider Configuration
-                </button>
-                <button
-                  type="button"
-                  class="elo-btn-secondary"
-                  onclick={testProviderConnection}
-                >
-                  Test Connection
-                </button>
-                {#if providerStatusMsg}
-                  <p class="status-feedback" class:is-error={providerStatusIsError}>
-                    {providerStatusMsg}
-                  </p>
-                {/if}
+              <!-- AI Provider & Model Configuration -->
+              <div class="lexicon-subblock">
+                <div class="lexicon-subhead">
+                  <h4>Provider & Model</h4>
+                  <button
+                    type="button"
+                    class="ax-strip-link"
+                    onclick={() => refreshPresetModels(selectedPresetId, providerSettings.base_url)}
+                  >
+                    {fetchingModels
+                      ? "Fetching models…"
+                      : `↻ Refresh Models (${presetModelSlugs.length})`}
+                  </button>
+                </div>
+
+                <div class="ai-form-grid">
+                  <div class="form-field">
+                    <label for="provider-preset-select">
+                      <span>Provider Preset</span>
+                    </label>
+                    <select
+                      id="provider-preset-select"
+                      name="provider_preset"
+                      value={selectedPresetId}
+                      onchange={onPresetSelectChange}
+                    >
+                      {#each PROVIDER_PRESETS as preset (preset.id)}
+                        <option value={preset.id}>
+                          {preset.name} ({preset.tag})
+                        </option>
+                      {/each}
+                      <option value="custom">Custom OpenAI-Compatible Endpoint</option>
+                    </select>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="model-slug-select">
+                      <span>
+                        Model Slug
+                        <em class="field-hint">{presetModelSlugs.length} available</em>
+                      </span>
+                    </label>
+                    <select
+                      id="model-slug-select"
+                      name="model_slug"
+                      value={customModelSlugMode ? "__custom__" : providerSettings.model}
+                      onchange={onModelSlugSelectChange}
+                    >
+                      {#each presetModelSlugs as m (m.slug)}
+                        <option value={m.slug}>
+                          {m.slug} — {m.badge}
+                        </option>
+                      {/each}
+                      {#if providerSettings.model && !presetModelSlugs.some((m) => m.slug === providerSettings.model)}
+                        <option value={providerSettings.model}>
+                          {providerSettings.model} — Active
+                        </option>
+                      {/if}
+                      <option value="__custom__">Custom model slug…</option>
+                    </select>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="provider-base-url">
+                      <span>Base URL</span>
+                    </label>
+                    <input
+                      id="provider-base-url"
+                      name="base_url"
+                      type="url"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                      bind:value={providerSettings.base_url}
+                      placeholder="https://openrouter.ai/api/v1"
+                    />
+                  </div>
+
+                  <div class="form-field">
+                    <label for="provider-api-key">
+                      <span>
+                        API Key
+                        {#if selectedPresetId === "ollama_local" || selectedPresetId === "apple_foundation"}
+                          <em class="field-hint">(Optional — On-Device)</em>
+                        {:else if providerSettings.key_present}
+                          <em class="field-hint encrypted-ok">
+                            ✓ Encrypted ({providerSettings.key_hint || "AES-256"})
+                          </em>
+                        {:else}
+                          <em class="field-hint">(Not set)</em>
+                        {/if}
+                      </span>
+                    </label>
+                    <input
+                      id="provider-api-key"
+                      name="api_key"
+                      type="password"
+                      autocomplete="off"
+                      bind:value={apiKeyInput}
+                      placeholder={providerSettings.key_present
+                        ? "•••••••••••••••• (leave blank to keep encrypted key)"
+                        : selectedPresetId === "ollama_local" ||
+                            selectedPresetId === "apple_foundation"
+                          ? "No key required for local endpoint"
+                          : "Enter API key (encrypted locally with AES-256)…"}
+                    />
+                  </div>
+
+                  {#if customModelSlugMode}
+                    <div class="form-field">
+                      <label for="custom-model-slug">
+                        <span>Custom Model Identifier (Slug)</span>
+                      </label>
+                      <input
+                        id="custom-model-slug"
+                        name="custom_model_slug"
+                        type="text"
+                        autocorrect="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        bind:value={providerSettings.model}
+                        placeholder="e.g., anthropic/claude-haiku-4.5"
+                      />
+                    </div>
+                  {/if}
+
+                  <div class="form-field" class:span-full={!customModelSlugMode}>
+                    <label for="custom-editorial-instruction">
+                      <span>Custom Editorial Instruction</span>
+                    </label>
+                    <input
+                      id="custom-editorial-instruction"
+                      name="custom_instruction"
+                      type="text"
+                      bind:value={customInstruction}
+                      placeholder="e.g., Prefer active verbs and concise sentences."
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-          </section>
-        </div>
-      </main>
+
+              <!-- Token Usage & Budget -->
+              <div class="lexicon-subblock">
+                <div class="lexicon-subhead">
+                  <h4>Token Usage & Budget</h4>
+                </div>
+
+                <div class="db-stat-grid">
+                  <div class="db-stat-tile">
+                    <span class="db-stat-num">{usageSummary.requests.toLocaleString()}</span>
+                    <span class="db-stat-label">AI Requests</span>
+                  </div>
+                  <div class="db-stat-tile">
+                    <span class="db-stat-num">{usageSummary.input_tokens.toLocaleString()}</span>
+                    <span class="db-stat-label">Input Tokens</span>
+                  </div>
+                  <div class="db-stat-tile">
+                    <span class="db-stat-num">{usageSummary.output_tokens.toLocaleString()}</span>
+                    <span class="db-stat-label">Output Tokens</span>
+                  </div>
+                  <div class="db-stat-tile">
+                    <span class="db-stat-num">${usageSummary.cost_usd.toFixed(4)}</span>
+                    <span class="db-stat-label">Estimated Spend</span>
+                  </div>
+                </div>
+
+                {#if budgetInput.trim() && Number(budgetInput) > 0}
+                  <div class="budget-progress-wrap">
+                    <div class="budget-progress-labels">
+                      <span>Budget Used</span>
+                      <span>
+                        ${usageSummary.cost_usd.toFixed(4)} / ${Number(budgetInput).toFixed(2)}
+                      </span>
+                    </div>
+                    <progress
+                      class="budget-progress-bar"
+                      max={Number(budgetInput)}
+                      value={Math.min(usageSummary.cost_usd, Number(budgetInput))}
+                    ></progress>
+                  </div>
+                {/if}
+
+                <div class="ai-form-grid">
+                  <label class="form-field">
+                    <span>Monthly Budget Alert (USD)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.50"
+                      bind:value={budgetInput}
+                      placeholder="e.g., 5.00 (optional)"
+                    />
+                  </label>
+                  <label class="form-field">
+                    <span>Per-Request Cost Cap (USD)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      bind:value={costCapInput}
+                      placeholder="e.g., 0.05 (optional hard ceiling)"
+                    />
+                  </label>
+                </div>
+
+                <div class="perm-actions">
+                  <button type="button" class="elo-btn-accept" onclick={saveProviderSettings}>
+                    Save Provider Configuration
+                  </button>
+                  <button type="button" class="elo-btn-secondary" onclick={testProviderConnection}>
+                    Test Connection
+                  </button>
+                  {#if providerStatusMsg}
+                    <p class="status-feedback" class:is-error={providerStatusIsError}>
+                      {providerStatusMsg}
+                    </p>
+                  {/if}
+                </div>
+              </div>
+            </section>
+          </div>
+        </main>
       {/if}
     </div>
   </div>
@@ -4968,11 +4822,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
   .elo-word-underline:hover,
   .elo-word-underline.is-active {
-    background: color-mix(
-      in srgb,
-      var(--underline-color, #e5484d) 18%,
-      transparent
-    );
+    background: color-mix(in srgb, var(--underline-color, #e5484d) 18%, transparent);
     border-bottom-width: 3px;
   }
 
@@ -5750,8 +5600,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     background: color-mix(in srgb, var(--score-accent, #191f70) 11%, #ffffff);
     padding: 2px 8px;
     border-radius: 999px;
-    border: 1px solid
-      color-mix(in srgb, var(--score-accent, #191f70) 24%, transparent);
+    border: 1px solid color-mix(in srgb, var(--score-accent, #191f70) 24%, transparent);
     font-variant-numeric: tabular-nums;
   }
 
@@ -6143,8 +5992,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   .atelier-monogram-word {
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -6340,8 +6188,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   .doc-title-input {
     border: none;
     background: transparent;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: clamp(1.1rem, 2.2vw, 1.55rem);
     font-weight: 700;
     color: #191f70;
@@ -6394,8 +6241,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     width: 100%;
     height: 100%;
     padding: 26px 34px 68px;
-    font-family:
-      "Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-family: "Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-size: 16.5px;
     line-height: 1.78;
     letter-spacing: 0.002em;
@@ -6530,8 +6376,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   .index-score-num {
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 30px;
     font-weight: 800;
     line-height: 1;
@@ -6754,8 +6599,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
   .alerts-empty-card h3 {
     margin: 4px 0 0;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 16px;
     color: #191f70;
   }
@@ -6812,8 +6656,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     align-items: center;
     flex-wrap: wrap;
     gap: 7px;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 15px;
   }
 
@@ -6833,8 +6676,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     border: 1px solid rgba(25, 31, 112, 0.22);
     background: #ffffff;
     color: #191f70;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-weight: 700;
     font-size: 14.5px;
     padding: 2px 10px;
@@ -6927,8 +6769,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     display: flex;
     align-items: center;
     gap: 6px;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 14px;
   }
 
@@ -7025,8 +6866,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     white-space: pre-wrap;
     word-break: break-word;
     color: #18181b;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 13.5px;
     line-height: 1.52;
     max-height: 150px;
@@ -7081,8 +6921,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   .settings-card h2,
   .settings-card h3 {
     margin: 0;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     color: #191f70;
   }
 
@@ -7245,8 +7084,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     background: color-mix(in oklab, #191f70 10%, #fbf9f5);
     border: 1px solid color-mix(in oklab, #191f70 18%, transparent);
     color: #191f70;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 13px;
     font-weight: 700;
     display: inline-flex;
@@ -7328,8 +7166,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
   .lexicon-subblock h4 {
     margin: 0;
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 15.5px;
     font-weight: 700;
     color: #191f70;
@@ -7339,8 +7176,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   .lexicon-count-pill {
-    font-family:
-      -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
     font-size: 11px;
     font-weight: 600;
     color: #5c584e;
@@ -7632,8 +7468,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   .db-stat-num {
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 18px;
     font-weight: 700;
     color: #191f70;
@@ -7866,8 +7701,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   .kpi-big-num {
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: clamp(1.25rem, 1rem + 0.9vw, 1.55rem);
     font-weight: 700;
     color: #191f70;
@@ -8211,8 +8045,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   .feed-excerpt {
-    font-family:
-      "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: 13px;
     line-height: 1.45;
     color: #27272a;

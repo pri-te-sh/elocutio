@@ -23,6 +23,13 @@
 
 ## What works today (macOS build)
 
+<p align="center">
+  <img src="assets/screenshots/screen-manuscript.png" alt="Elocutio Editorial Atelier — Manuscript View" width="880" />
+</p>
+<p align="center">
+  <img src="assets/screenshots/screen-analytics.png" alt="Elocutio Editorial Atelier — Writing & AI Analytics" width="880" />
+</p>
+
 Elocutio builds and runs on macOS as both a **non-activating menu-bar companion** and the **Elocutio Editorial Atelier** desktop studio (`apps/macos`), backed by shared Rust crates (`crates/elocutio-*`):
 
 - **Elocutio Editorial Atelier (Desktop Studio):**

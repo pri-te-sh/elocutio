@@ -16,3 +16,5 @@
 *.md text
 *.rs text
 *.ts text
+*.webp binary
+*.mp4 binary

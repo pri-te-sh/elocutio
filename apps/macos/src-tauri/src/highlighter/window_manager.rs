@@ -23,8 +23,15 @@ const CONFIG_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// How often the highlighter asks the main process for a card command.
 ///
 /// The card is a keyboard-driven surface, so the wait between a keypress and
-/// the card moving has to be imperceptible.
+/// the card moving has to be imperceptible. It is still a protocol round
+/// trip, so it is not done every frame.
 const CARD_POLL_INTERVAL: Duration = Duration::from_millis(40);
+
+/// How often the highlighter asks the main process for the widget's position.
+///
+/// The pinned position changes when the user changes it, not per frame, so a
+/// slower poll is enough.
+const WIDGET_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const RECT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Owns the winit event loop and the overlay windows created for each monitor.
@@ -180,6 +187,11 @@ struct WindowManagerApp {
     fetch_card_command: FetchCardCommandFn,
     report_state: ReportStateFn,
     last_card_poll: Instant,
+    last_widget_poll: Instant,
+    last_rect_poll: Instant,
+    /// The app the widget's anchor was last fetched for.
+    last_anchor_app: Option<String>,
+    last_reported_count: Option<usize>,
 }
 
 impl WindowManagerApp {
@@ -190,6 +202,7 @@ impl WindowManagerApp {
         os_broker: Box<dyn OsBroker>,
         callbacks: WindowManagerCallbacks,
     ) -> Self {
+        let now = Instant::now();
         Self {
             windows: Vec::new(),
             render_state: RenderState::new(
@@ -203,7 +216,7 @@ impl WindowManagerApp {
             ),
             os_broker,
             lint_text: callbacks.lint_text,
-            last_config_poll: Instant::now(),
+            last_config_poll: now,
             refresh_config: callbacks.refresh_config,
             hovered_lint: None,
             cursor_hittest_enabled: false,
@@ -212,7 +225,11 @@ impl WindowManagerApp {
             card_command: callbacks.card_command,
             fetch_card_command: callbacks.fetch_card_command,
             report_state: callbacks.report_state,
-            last_card_poll: Instant::now(),
+            last_card_poll: now,
+            last_widget_poll: now.checked_sub(WIDGET_POLL_INTERVAL).unwrap_or(now),
+            last_rect_poll: now.checked_sub(RECT_POLL_INTERVAL).unwrap_or(now),
+            last_anchor_app: None,
+            last_reported_count: None,
         }
     }
 
@@ -220,13 +237,27 @@ impl WindowManagerApp {
     /// the same thread that owns the overlay windows.
     fn read_rect_updates(&mut self) {
         let lints = self.os_broker.get_boxes(self.lint_text.as_mut());
+        let field_active = self.os_broker.has_active_field();
+        let field_rect = self.os_broker.active_field_rect();
         match lints {
             Some(lints) => {
-                self.render_state.set_field_active(true);
+                let has_lints = !lints.is_empty();
+                self.render_state
+                    .set_field_active(field_active || has_lints);
+                self.render_state.set_field_rect(field_rect);
                 self.render_state.set_lints(lints);
+                if has_lints
+                    && !self.render_state.has_active_popup()
+                    && !self.render_state.was_dismissed_by_user()
+                {
+                    self.render_state.open_widget();
+                }
             }
             None => {
-                self.render_state.set_field_active(false);
+                if !field_active && self.render_state.open_suggestion_count() == 0 {
+                    self.render_state.set_field_active(false);
+                    self.render_state.set_field_rect(None);
+                }
             }
         }
 
@@ -239,12 +270,24 @@ impl WindowManagerApp {
         // The pinned position belongs to the focused app and comes from the
         // parent process. The tone is detected locally while the tree is
         // walked, so it costs nothing and works offline.
+        let now = Instant::now();
         if let Ok(Some(bundle_id)) = self.os_broker.focused_bundle_id() {
-            let anchor = (self.widget_settings)(&bundle_id);
-            self.render_state.set_widget_anchor(anchor);
+            let app_changed = self.last_anchor_app.as_deref() != Some(bundle_id.as_str());
+            if app_changed || now.duration_since(self.last_widget_poll) >= WIDGET_POLL_INTERVAL {
+                let anchor = (self.widget_settings)(&bundle_id);
+                self.render_state.set_widget_anchor(anchor);
+                self.last_anchor_app = Some(bundle_id);
+                self.last_widget_poll = now;
+            }
         }
         self.render_state
             .set_tone_badge(self.os_broker.detected_tone());
+
+        let count = self.render_state.open_suggestion_count();
+        if self.last_reported_count != Some(count) {
+            self.last_reported_count = Some(count);
+            (self.report_state)(count);
+        }
 
         for window in &self.windows {
             window.request_redraw();
@@ -277,11 +320,15 @@ impl WindowManagerApp {
         // The main process shows how many suggestions the card has, so the
         // state is reported back after every change.
         self.report_card_state();
+        for window in &self.windows {
+            window.request_redraw();
+        }
     }
 
     /// Reports what the card is showing to the main process.
     fn report_card_state(&mut self) {
         let suggestions = self.render_state.open_suggestion_count();
+        self.last_reported_count = Some(suggestions);
         (self.report_state)(suggestions);
     }
 
@@ -293,11 +340,22 @@ impl WindowManagerApp {
         };
 
         let hit_target = self.render_state.hit_target_at_pos(cursor_pos);
+        let prev_hovered = self.hovered_lint;
 
         self.hovered_lint = match hit_target {
             HitTarget::Lint(index) => Some(index),
             HitTarget::Widget | HitTarget::Analyze | HitTarget::Popup | HitTarget::None => None,
         };
+
+        if self.hovered_lint != prev_hovered
+            && let Some(index) = self.hovered_lint
+            && !self.render_state.has_active_popup()
+        {
+            self.render_state.set_highlighted_lint(Some(index));
+            for window in &self.windows {
+                window.request_redraw();
+            }
+        }
 
         let should_enable_hittest = !matches!(hit_target, HitTarget::None);
 
@@ -342,7 +400,10 @@ impl ApplicationHandler for WindowManagerApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
 
-        self.read_rect_updates();
+        if now.duration_since(self.last_rect_poll) >= RECT_POLL_INTERVAL {
+            self.last_rect_poll = now;
+            self.read_rect_updates();
+        }
 
         if now.duration_since(self.last_config_poll) >= CONFIG_POLL_INTERVAL {
             self.refresh_config();
@@ -360,9 +421,8 @@ impl ApplicationHandler for WindowManagerApp {
 
         self.update_cursor_hittest(event_loop);
 
-        // Wake even when the user is not typing so a cache update from the
-        // main process (Analyze Field) becomes visible without an extra event.
-        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + RECT_POLL_INTERVAL));
+        // Wake regularly to poll card commands, cursor hit-testing, and rect updates.
+        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + CARD_POLL_INTERVAL));
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {

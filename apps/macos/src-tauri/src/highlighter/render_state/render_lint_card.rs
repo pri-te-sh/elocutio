@@ -388,7 +388,6 @@ fn render_flyout(
     markdown_cache: &mut CommonMarkCache,
     action: &mut Option<LintCardAction>,
 ) {
-    let mut overflow_open = false;
     render_kind_header(ui, lint.lint_kind);
 
     egui::Frame::new()
@@ -463,26 +462,12 @@ fn render_flyout(
                     *action = Some(LintCardAction::AddToDictionary);
                 }
 
-                // The "⋯" button, which holds the secondary actions.
-                if flyout_button(
-                    ui,
-                    ButtonContent::Text("⋯"),
-                    BUTTON_BACKGROUND,
-                    "More actions",
-                )
-                .clicked()
-                {
-                    overflow_open = true;
-                }
+                render_overflow_menu(ui, action);
             });
         });
 
     if disable_rule_row(ui).clicked() {
         *action = Some(LintCardAction::DisableRule);
-    }
-
-    if overflow_open {
-        render_overflow_menu(ui, action);
     }
 }
 
@@ -505,10 +490,6 @@ fn render_overflow_menu(ui: &mut egui::Ui, action: &mut Option<LintCardAction>) 
         BUTTON_BACKGROUND,
         "More actions",
     );
-
-    if !response.clicked() {
-        return;
-    }
 
     // The menu opens under the button. The card is a non-activating panel, so
     // the menu is drawn inside the overlay rather than as a native menu.
@@ -535,35 +516,66 @@ fn render_diff_preview(ui: &mut egui::Ui, problem_text: &str, suggestion: &Sugge
     let replacement = match suggestion {
         Suggestion::ReplaceWith(chars) => chars.iter().collect::<String>(),
         Suggestion::InsertAfter(chars) => {
-            format!("{} + {}", problem_text, chars.iter().collect::<String>())
+            format!("{}{}", problem_text, chars.iter().collect::<String>())
         }
-        Suggestion::Remove => String::new(),
+        Suggestion::Remove => "∅".to_string(),
     };
 
-    // The original, struck through.
-    let original_label = single_line_galley(ui, &original, 12.0, FLYOUT_WIDTH - 20.0);
-    ui.painter().line_segment(
+    let max_part_width = ((FLYOUT_WIDTH - 46.0) * 0.5).max(32.0);
+    let original_label = single_line_galley(ui, &original, 12.0, max_part_width);
+    let arrow_label = single_line_galley(ui, "→", 12.0, 20.0);
+    let replacement_label = single_line_galley(ui, &replacement, 12.0, max_part_width);
+
+    let row_height = original_label
+        .size()
+        .y
+        .max(replacement_label.size().y)
+        .max(20.0);
+    let (row_rect, _) = ui.allocate_exact_size(
+        egui::vec2(FLYOUT_WIDTH - 20.0, row_height),
+        egui::Sense::hover(),
+    );
+
+    let painter = ui.painter();
+    let center_y = row_rect.center().y;
+    let mut cursor_x = row_rect.left();
+
+    // Original text in muted crimson with strikethrough line.
+    let orig_size = original_label.size();
+    paint_text(
+        painter,
+        cursor_x,
+        center_y,
+        original_label,
+        egui::Color32::from_rgb(180, 60, 60),
+    );
+    painter.line_segment(
         [
-            egui::pos2(original_label.rect.left(), original_label.rect.center().y),
-            egui::pos2(original_label.rect.right(), original_label.rect.center().y),
+            egui::pos2(cursor_x, center_y),
+            egui::pos2(cursor_x + orig_size.x, center_y),
         ],
         egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 60, 60)),
     );
+    cursor_x += orig_size.x + 6.0;
 
-    ui.add_space(2.0);
+    // Arrow separator.
+    let arrow_size = arrow_label.size();
+    paint_text(painter, cursor_x, center_y, arrow_label, SUBTLE_TEXT_COLOR);
+    cursor_x += arrow_size.x + 6.0;
 
-    // The replacement, highlighted.
-    let replacement_label = single_line_galley(ui, &replacement, 12.0, FLYOUT_WIDTH - 20.0);
-    ui.painter().rect_filled(
-        egui::Rect::from_min_size(
-            replacement_label.rect.min,
-            egui::vec2(
-                replacement_label.rect.width(),
-                replacement_label.rect.height(),
-            ),
-        ),
-        2.0,
-        egui::Color32::from_rgb(220, 245, 220),
+    // Replacement text inside a soft green pill.
+    let repl_size = replacement_label.size();
+    let pill_rect = egui::Rect::from_min_size(
+        egui::pos2(cursor_x - 3.0, center_y - repl_size.y / 2.0 - 2.0),
+        egui::vec2(repl_size.x + 6.0, repl_size.y + 4.0),
+    );
+    painter.rect_filled(pill_rect, 3.0, egui::Color32::from_rgb(220, 245, 220));
+    paint_text(
+        painter,
+        cursor_x,
+        center_y,
+        replacement_label,
+        egui::Color32::from_rgb(22, 101, 52),
     );
 }
 

@@ -40,6 +40,7 @@ pub struct AccessibilityActivationState {
 }
 
 /// State of the focused app's accessibility activation attempt.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum AccessibilityActivationStatus {
     Pending {
@@ -93,22 +94,16 @@ pub fn set_enhanced_user_interface_preserving_previous(
     app: &AXUIElement,
     enabled: bool,
 ) -> Result<Option<bool>, i32> {
+    let manual_result = set_boolean_attribute(app, "AXManualAccessibility", enabled);
     match set_boolean_attribute_preserving_previous(app, "AXEnhancedUserInterface", enabled) {
         Ok(previous) => Ok(previous),
-        Err(error) => {
-            // Some apps (notably Electron/Chromium ones such as Slack) reject
-            // `AXEnhancedUserInterface` (e.g. with kAXErrorNotImplemented) but
-            // support the Electron-specific `AXManualAccessibility` attribute to
-            // enable their accessibility tree. Fall back to it. No restore value
-            // is preserved because restoration targets `AXEnhancedUserInterface`.
-            match set_boolean_attribute(app, "AXManualAccessibility", enabled) {
-                Ok(()) => {
-                    eprintln!("Activated accessibility via AXManualAccessibility fallback");
-                    Ok(None)
-                }
-                Err(_) => Err(error),
+        Err(error) => match manual_result {
+            Ok(()) => {
+                eprintln!("Activated accessibility via AXManualAccessibility fallback");
+                Ok(None)
             }
-        }
+            Err(_) => Err(error),
+        },
     }
 }
 
@@ -194,6 +189,17 @@ fn set_boolean_attribute(element: &AXUIElement, name: &str, value: bool) -> Resu
 pub fn verify_accessibility_activation(app: &AXUIElement) -> AccessibilityActivationVerification {
     let walker = TreeWalker::new();
     let probe = AccessibilityActivationProbe::new();
+
+    if let Ok(focused) = super::core_foundation_utilities::ax_element_attribute(
+        app,
+        accessibility_sys::kAXFocusedUIElementAttribute,
+    ) {
+        walker.walk(&focused, &probe);
+        let focused_result = probe.result();
+        if focused_result != AccessibilityActivationVerification::NoSupportedTextElement {
+            return focused_result;
+        }
+    }
 
     walker.walk(app, &probe);
 

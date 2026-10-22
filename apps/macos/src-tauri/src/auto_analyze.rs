@@ -19,31 +19,30 @@
 //!   up a bill.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 use crate::config::Config;
-use crate::os_broker::OsBroker;
-use crate::{PlatformBroker, llm_analysis, llm_cache, main_thread};
+use crate::{llm_analysis, llm_cache};
 
 /// How often the watcher looks at the focused field.
-const POLL_INTERVAL: Duration = Duration::from_millis(800);
+const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// How long the text must be unchanged before it is analyzed.
-const STABLE_DELAY: Duration = Duration::from_millis(1_400);
+const STABLE_DELAY: Duration = Duration::from_millis(850);
 
 /// The shortest gap between two analyses of the same app.
-const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(20);
+const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(2_500);
 
 /// The longest text the live watcher will send, in characters.
 const MAX_LIVE_CHARS: usize = 5_000;
 
 /// The shortest text worth sending. Below this the model has nothing to say.
-const MIN_LIVE_CHARS: usize = 20;
+const MIN_LIVE_CHARS: usize = 12;
 
 /// A per-app record of when the last request went out.
 #[derive(Debug, Clone, Copy)]
@@ -61,9 +60,6 @@ impl AppThrottle {
 #[derive(Default)]
 pub struct LiveState {
     throttles: HashMap<String, AppThrottle>,
-    /// The text each app was last analyzed at, so the next analysis can send
-    /// only what changed.
-    last_analyzed: HashMap<String, String>,
 }
 
 impl LiveState {
@@ -79,17 +75,6 @@ impl LiveState {
     pub fn record_request(&mut self, bundle_id: &str, now: Instant) {
         self.throttles
             .insert(bundle_id.to_string(), AppThrottle { last_request: now });
-    }
-
-    /// The text the app was last analyzed at.
-    pub fn last_analyzed(&self, bundle_id: &str) -> Option<&str> {
-        self.last_analyzed.get(bundle_id).map(String::as_str)
-    }
-
-    /// Record the text the app was analyzed at.
-    pub fn record_analyzed(&mut self, bundle_id: &str, text: &str) {
-        self.last_analyzed
-            .insert(bundle_id.to_string(), text.to_string());
     }
 }
 
@@ -158,34 +143,17 @@ pub fn start(app: AppHandle) {
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
 
-            let enabled = {
-                let config = app.state::<Arc<Mutex<Config>>>();
-                let config = config.lock().await;
-                config.auto_analyze && !config.local_only
-            };
-            if !enabled {
+            let snap = crate::elo_overlay::current_snapshot();
+            if !snap.field_active || snap.pid <= 0 || snap.source_text.trim().is_empty() {
                 last_seen_hash = 0;
                 continue;
             }
 
-            let focused = main_thread::run(&app, |app| {
-                let state = app.state::<RwLock<PlatformBroker>>();
-                let mut broker = state
-                    .write()
-                    .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
-                broker.focused_text()
-            });
-
-            let Ok(Ok(Some(focused))) = focused else {
-                last_seen_hash = 0;
-                continue;
-            };
-
-            if !is_worth_analyzing(&focused.text) {
+            if !is_worth_analyzing(&snap.source_text) {
                 continue;
             }
 
-            let hash = llm_cache::text_hash(&focused.text);
+            let hash = llm_cache::text_hash(&snap.source_text);
             if hash != last_seen_hash {
                 last_seen_hash = hash;
                 stable_since = std::time::Instant::now();
@@ -198,21 +166,38 @@ pub fn start(app: AppHandle) {
                 continue;
             }
 
+            if let Ok(Some(cached)) = llm_cache::read()
+                && cached.text_hash == hash
+            {
+                last_analyzed_hash = hash;
+                continue;
+            }
+
             // Throttle: a burst of edits must not become a burst of requests.
-            if !state.allows_request(&focused.bundle_id, Instant::now()) {
+            if !state.allows_request(&snap.app_bundle_id, Instant::now()) {
+                continue;
+            }
+
+            let enabled = {
+                let config = app.state::<Arc<Mutex<Config>>>();
+                let config = config.lock().await;
+                !config.local_only
+                    && (config.auto_analyze
+                        || crate::openrouter::key_status_for(config.provider_kind)
+                            .map(|s| s.present)
+                            .unwrap_or(false)
+                        || config.provider_kind
+                            == crate::openrouter::ProviderKind::OpenAiCompatible)
+            };
+            if !enabled {
                 continue;
             }
 
             last_analyzed_hash = hash;
-            state.record_request(&focused.bundle_id, Instant::now());
-
-            // Only the paragraphs that changed since the last analysis are
-            // sent, so a long document costs the same as a short one.
-            let previous = state.last_analyzed(&focused.bundle_id).map(str::to_string);
-            state.record_analyzed(&focused.bundle_id, &focused.text);
+            state.record_request(&snap.app_bundle_id, Instant::now());
 
             let this_generation = generation.begin();
-            match llm_analysis::analyze_focused_field_with(&app, previous.as_deref()).await {
+            match llm_analysis::analyze_focused_field_with(&app, None).await {
                 Err(error) => eprintln!("Automatic analysis skipped: {error}"),
                 Ok(_) if !generation.is_current(this_generation) => {
                     // The text moved on while the request was in flight, so the

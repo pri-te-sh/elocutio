@@ -43,6 +43,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         get_provider_model,
         set_provider_model,
         list_provider_models,
+        fetch_provider_preset_models,
         get_widget_anchors,
         get_network_log,
         get_app_matrix,
@@ -130,6 +131,24 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         stop_highlighter_service,
         launch_app,
         search_apps,
+        check_text_local,
+        analyze_studio_text,
+        get_elo_overlay_snapshot,
+        set_elo_overlay_regions,
+        save_elo_widget_offset,
+        apply_elo_alert,
+        dismiss_elo_alert,
+        disable_elo_rule,
+        set_lint_rule_enabled,
+        get_personalization_db_status,
+        get_writing_analytics,
+        record_studio_edit_feedback,
+        open_elocutio_studio,
+        take_studio_launch_state,
+        reset_and_request_accessibility,
+        elo_rewrite_focused_text,
+        apply_elo_field_rewrite,
+        set_elo_overlay_input_focus,
     ]
 }
 
@@ -246,6 +265,13 @@ struct ProviderSettings {
     base_url: String,
     model: String,
     key_present: bool,
+    key_hint: Option<String>,
+}
+
+fn key_hint_for_kind(kind: ProviderKind) -> Option<String> {
+    let service_key = format!("{}:api_key", kind.keychain_service());
+    crate::personalization_db::get_encrypted_key_hint(&service_key)
+        .or_else(|| crate::personalization_db::get_encrypted_key_hint(kind.keychain_service()))
 }
 
 #[tauri::command]
@@ -254,11 +280,13 @@ async fn get_provider_settings(
 ) -> Result<ProviderSettings, String> {
     let config = config.lock().await;
     let key_present = openrouter::key_status_for(config.provider_kind)?.present;
+    let key_hint = key_hint_for_kind(config.provider_kind);
     Ok(ProviderSettings {
         kind: config.provider_kind,
         base_url: config.provider_base_url.clone(),
         model: config.provider_model.clone(),
         key_present,
+        key_hint,
     })
 }
 
@@ -274,11 +302,13 @@ async fn set_provider_kind(
         .await
         .map_err(|error| error.to_string())?;
     let key_present = openrouter::key_status_for(config.provider_kind)?.present;
+    let key_hint = key_hint_for_kind(config.provider_kind);
     Ok(ProviderSettings {
         kind: config.provider_kind,
         base_url: config.provider_base_url.clone(),
         model: config.provider_model.clone(),
         key_present,
+        key_hint,
     })
 }
 
@@ -783,6 +813,14 @@ async fn list_provider_models(
     ))
 }
 
+#[tauri::command]
+async fn fetch_provider_preset_models(
+    preset_id: String,
+    base_url: String,
+) -> Result<Vec<crate::openrouter::PresetModelSlug>, String> {
+    Ok(crate::openrouter::fetch_preset_model_slugs(&preset_id, &base_url).await)
+}
+
 /// The default model id for the configured provider.
 #[tauri::command]
 async fn get_default_model(config: State<'_, Arc<Mutex<Config>>>) -> Result<String, String> {
@@ -1127,8 +1165,10 @@ async fn get_dictionary(config: State<'_, Arc<Mutex<Config>>>) -> Result<Vec<Str
         .mutable_dictionary
         .words_iter()
         .map(|word| word.iter().collect::<String>())
+        .filter(|word| crate::personalization_db::is_valid_dictionary_word(word))
         .collect::<Vec<_>>();
     words.sort();
+    words.dedup();
 
     Ok(words)
 }
@@ -1139,12 +1179,17 @@ async fn set_dictionary(
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<(), String> {
     let mut dictionary = MutableDictionary::new();
-    dictionary.extend_words(words.into_iter().map(|word| {
-        (
-            word.chars().collect::<Vec<_>>(),
-            DictWordMetadata::default(),
-        )
-    }));
+    dictionary.extend_words(
+        words
+            .into_iter()
+            .filter(|word| crate::personalization_db::is_valid_dictionary_word(word))
+            .map(|word| {
+                (
+                    word.trim().chars().collect::<Vec<_>>(),
+                    DictWordMetadata::default(),
+                )
+            }),
+    );
 
     let mut config = config.lock().await;
     config.mutable_dictionary = dictionary;
@@ -1179,10 +1224,17 @@ async fn add_to_dictionary(
     word: String,
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<(), String> {
+    let trimmed = word.trim();
+    if !crate::personalization_db::is_valid_dictionary_word(trimmed) {
+        return Err(
+            "Only single words (not phrases or sentences) can be added to the personal dictionary."
+                .to_string(),
+        );
+    }
     let mut config = config.lock().await;
     config
         .mutable_dictionary
-        .append_word_str(&word, DictWordMetadata::default());
+        .append_word_str(trimmed, DictWordMetadata::default());
     config
         .save_to_system()
         .await
@@ -1747,4 +1799,784 @@ fn search_apps(
         .read()
         .map_err(|error| format!("Failed to read platform broker: {error}"))?
         .search_apps(&query)
+}
+
+#[derive(serde::Serialize, Clone)]
+struct LocalLintSuggestion {
+    kind: String,
+    text: String,
+    label: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct LocalLintItem {
+    id: String,
+    rule_name: String,
+    kind: String,
+    category: String,
+    category_label: String,
+    subcategory: String,
+    color: String,
+    start: usize,
+    end: usize,
+    original: String,
+    message: String,
+    context_before: String,
+    context_after: String,
+    suggestions: Vec<LocalLintSuggestion>,
+}
+
+/// Runs the local Harper linter on `text` for the in-app Inline Writing Studio.
+#[tauri::command]
+async fn analyze_studio_text(
+    text: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<usize, String> {
+    if text.trim().chars().count() < 12 {
+        return Ok(0);
+    }
+    let current_hash = crate::llm_cache::text_hash(&text);
+    if let Ok(Some(cached)) = crate::llm_cache::read()
+        && cached.text_hash == current_hash
+    {
+        return Ok(cached.suggestions.len());
+    }
+    let focused = crate::os_broker::FocusedText {
+        pid: std::process::id() as i32,
+        bundle_id: "app.elocutio.desktop".to_string(),
+        text,
+    };
+    crate::llm_analysis::analyze_text_with_config(config.inner(), focused, None).await
+}
+
+#[tauri::command]
+async fn check_text_local(
+    text: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<Vec<LocalLintItem>, String> {
+    if text.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    type StudioLinterCacheEntry = (
+        harper_core::Dialect,
+        usize,
+        usize,
+        harper_core::linting::LintGroup,
+        Arc<harper_core::spell::MergedDictionary>,
+    );
+    static CACHED_STUDIO_LINTER: std::sync::OnceLock<
+        std::sync::Mutex<Option<StudioLinterCacheEntry>>,
+    > = std::sync::OnceLock::new();
+
+    let ignored_lints = {
+        use harper_core::spell::Dictionary;
+        let cfg = config.lock().await;
+        let dict_len = cfg.mutable_dictionary.word_count();
+        let dialect = cfg.dialect;
+        let rule_epoch = LINTER_RULE_EPOCH.load(std::sync::atomic::Ordering::Relaxed);
+        let cache_mutex = CACHED_STUDIO_LINTER.get_or_init(|| std::sync::Mutex::new(None));
+        if let Ok(mut guard) = cache_mutex.lock() {
+            let needs_rebuild = guard.as_ref().is_none_or(|(d, len, ep, _, _)| {
+                *d != dialect || *len != dict_len || *ep != rule_epoch
+            });
+            if needs_rebuild {
+                let dict = Config::dictionary_from_user_dictionary(cfg.mutable_dictionary.clone());
+                let linter = cfg.create_linter();
+                *guard = Some((dialect, dict_len, rule_epoch, linter, dict));
+            }
+        }
+        cfg.ignored_lints.clone()
+    };
+
+    let (mut organized_lints, doc) = {
+        let cache_mutex = CACHED_STUDIO_LINTER.get_or_init(|| std::sync::Mutex::new(None));
+        let mut guard = cache_mutex
+            .lock()
+            .map_err(|e| format!("Could not lock studio linter: {e}"))?;
+        let Some((_, _, _, ref mut linter, ref dictionary)) = *guard else {
+            return Ok(Vec::new());
+        };
+        let doc = harper_core::Document::new_markdown_default(&text, dictionary);
+        let organized = linter.organized_lints(&doc);
+        (organized, doc)
+    };
+
+    for lints in organized_lints.values_mut() {
+        ignored_lints.remove_ignored(lints, &doc);
+    }
+
+    let source_chars = doc.get_source();
+    let mut raw_items: Vec<LocalLintItem> = Vec::new();
+
+    // 1. Include cached AI suggestions first when fresh for this exact text hash
+    let current_hash = crate::llm_cache::text_hash(&text);
+    let cached_ai = crate::llm_cache::read()
+        .ok()
+        .flatten()
+        .filter(|c| c.text_hash == current_hash);
+    let has_fresh_llm_cache = cached_ai.is_some();
+
+    if let Some(cached) = cached_ai {
+        for suggestion in cached.suggestions {
+            if suggestion.char_end > source_chars.len()
+                || suggestion.char_start >= suggestion.char_end
+                || raw_items.iter().any(|existing| {
+                    existing.start < suggestion.char_end && suggestion.char_start < existing.end
+                })
+            {
+                continue;
+            }
+
+            let original: String = source_chars[suggestion.char_start..suggestion.char_end]
+                .iter()
+                .collect();
+            let (category, category_label, subcategory, color_hex) = match suggestion.category {
+                elocutio_core::Category::Spelling => {
+                    ("correctness", "Correctness", "Spelling", "#E5484D")
+                }
+                elocutio_core::Category::Punctuation => {
+                    ("correctness", "Correctness", "Punctuation", "#E5484D")
+                }
+                elocutio_core::Category::Capitalization => {
+                    ("correctness", "Correctness", "Capitalization", "#E5484D")
+                }
+                elocutio_core::Category::Grammar => {
+                    ("correctness", "Correctness", "Grammar", "#E5484D")
+                }
+                elocutio_core::Category::Conciseness | elocutio_core::Category::Clarity => {
+                    ("clarity", "Clarity", "Conciseness", "#2563EB")
+                }
+                elocutio_core::Category::WordChoice => {
+                    ("engagement", "Engagement", "Word choice", "#10B981")
+                }
+                elocutio_core::Category::Tone => ("delivery", "Delivery", "Tone", "#7C3AED"),
+                elocutio_core::Category::Style
+                | elocutio_core::Category::Consistency
+                | elocutio_core::Category::Formatting => {
+                    ("style", "Style guide", "Style", "#191F70")
+                }
+            };
+
+            let before_start = suggestion.char_start.saturating_sub(42);
+            let after_end = (suggestion.char_end + 42).min(source_chars.len());
+            let context_before: String = source_chars[before_start..suggestion.char_start]
+                .iter()
+                .collect::<String>()
+                .replace('\n', " ");
+            let context_after: String = source_chars[suggestion.char_end..after_end]
+                .iter()
+                .collect::<String>()
+                .replace('\n', " ");
+
+            let repl = suggestion.replacement.clone();
+            let suggestions = vec![if repl.is_empty() {
+                LocalLintSuggestion {
+                    kind: "remove".to_string(),
+                    label: "Remove".to_string(),
+                    text: String::new(),
+                }
+            } else {
+                LocalLintSuggestion {
+                    kind: "replace".to_string(),
+                    label: repl.clone(),
+                    text: repl,
+                }
+            }];
+
+            raw_items.push(LocalLintItem {
+                id: format!(
+                    "llm:{}:{}:{}",
+                    category, suggestion.char_start, suggestion.char_end
+                ),
+                rule_name: format!("llm:{category}"),
+                kind: subcategory.to_string(),
+                category: category.to_string(),
+                category_label: category_label.to_string(),
+                subcategory: subcategory.to_string(),
+                color: color_hex.to_string(),
+                start: suggestion.char_start,
+                end: suggestion.char_end,
+                original,
+                message: suggestion.explanation,
+                context_before,
+                context_after,
+                suggestions,
+            });
+        }
+    }
+
+    // 2. Local Harper lints (non-overlapping, with context-blind SpellCheck suppressed when AI cache is loaded)
+    for (rule_name, lints) in organized_lints {
+        if has_fresh_llm_cache && rule_name == "SpellCheck" {
+            continue;
+        }
+        for mut lint in lints {
+            if lint.span.is_empty() || lint.span.end > source_chars.len() {
+                continue;
+            }
+            if raw_items
+                .iter()
+                .any(|existing| existing.start < lint.span.end && lint.span.start < existing.end)
+            {
+                continue;
+            }
+            if rule_name == "SpellCheck" && lint.suggestions.len() > 3 {
+                lint.suggestions.truncate(3);
+            }
+            let original = lint.get_str(source_chars);
+            let (category, category_label, subcategory, color_hex) = match lint.lint_kind {
+                harper_core::linting::LintKind::Spelling | harper_core::linting::LintKind::Typo => {
+                    ("correctness", "Correctness", "Spelling", "#E5484D")
+                }
+                harper_core::linting::LintKind::Punctuation => {
+                    ("correctness", "Correctness", "Punctuation", "#E5484D")
+                }
+                harper_core::linting::LintKind::Capitalization => {
+                    ("correctness", "Correctness", "Capitalization", "#E5484D")
+                }
+                harper_core::linting::LintKind::Grammar
+                | harper_core::linting::LintKind::Agreement
+                | harper_core::linting::LintKind::BoundaryError
+                | harper_core::linting::LintKind::Eggcorn
+                | harper_core::linting::LintKind::Malapropism
+                | harper_core::linting::LintKind::Nonstandard
+                | harper_core::linting::LintKind::WordOrder => {
+                    ("correctness", "Correctness", "Grammar", "#E5484D")
+                }
+                harper_core::linting::LintKind::Redundancy
+                | harper_core::linting::LintKind::Repetition => {
+                    ("clarity", "Clarity", "Conciseness", "#2563EB")
+                }
+                harper_core::linting::LintKind::Readability => {
+                    ("clarity", "Clarity", "Readability", "#2563EB")
+                }
+                harper_core::linting::LintKind::WordChoice
+                | harper_core::linting::LintKind::Enhancement => {
+                    ("engagement", "Engagement", "Vocabulary", "#10B981")
+                }
+                harper_core::linting::LintKind::Usage
+                | harper_core::linting::LintKind::Regionalism => {
+                    ("delivery", "Delivery", "Conventions", "#7C3AED")
+                }
+                harper_core::linting::LintKind::Style
+                | harper_core::linting::LintKind::Formatting
+                | harper_core::linting::LintKind::Miscellaneous => {
+                    ("style", "Style guide", "Style", "#191F70")
+                }
+            };
+
+            let before_start = lint.span.start.saturating_sub(42);
+            let after_end = (lint.span.end + 42).min(source_chars.len());
+            let context_before: String = source_chars[before_start..lint.span.start]
+                .iter()
+                .collect::<String>()
+                .replace('\n', " ");
+            let context_after: String = source_chars[lint.span.end..after_end]
+                .iter()
+                .collect::<String>()
+                .replace('\n', " ");
+
+            let suggestions = lint
+                .suggestions
+                .iter()
+                .map(|suggestion| match suggestion {
+                    harper_core::linting::Suggestion::ReplaceWith(chars) => {
+                        let repl: String = chars.iter().collect();
+                        LocalLintSuggestion {
+                            kind: "replace".to_string(),
+                            label: if repl.is_empty() {
+                                "Remove".to_string()
+                            } else {
+                                repl.clone()
+                            },
+                            text: repl,
+                        }
+                    }
+                    harper_core::linting::Suggestion::InsertAfter(chars) => {
+                        let suffix: String = chars.iter().collect();
+                        LocalLintSuggestion {
+                            kind: "insert_after".to_string(),
+                            label: format!("{original}{suffix}"),
+                            text: format!("{original}{suffix}"),
+                        }
+                    }
+                    harper_core::linting::Suggestion::Remove => LocalLintSuggestion {
+                        kind: "remove".to_string(),
+                        label: "Remove".to_string(),
+                        text: String::new(),
+                    },
+                })
+                .collect();
+
+            raw_items.push(LocalLintItem {
+                id: format!("{}:{}:{}", rule_name, lint.span.start, lint.span.end),
+                rule_name: rule_name.clone(),
+                kind: lint.lint_kind.to_string(),
+                category: category.to_string(),
+                category_label: category_label.to_string(),
+                subcategory: subcategory.to_string(),
+                color: color_hex.to_string(),
+                start: lint.span.start,
+                end: lint.span.end,
+                original,
+                message: lint.message,
+                context_before,
+                context_after,
+                suggestions,
+            });
+        }
+    }
+
+    raw_items.sort_by(|a, b| a.start.cmp(&b.start).then_with(|| a.end.cmp(&b.end)));
+
+    let mut deduped: Vec<LocalLintItem> = Vec::with_capacity(raw_items.len());
+    for item in raw_items {
+        if let Some(prev) = deduped.last()
+            && item.start < prev.end
+        {
+            continue;
+        }
+        deduped.push(item);
+    }
+
+    Ok(deduped)
+}
+
+#[tauri::command]
+fn get_elo_overlay_snapshot() -> crate::elo_overlay::EloOverlaySnapshot {
+    crate::elo_overlay::current_snapshot()
+}
+
+#[tauri::command]
+fn set_elo_overlay_regions(
+    widget_rect: Option<crate::elo_overlay::EloRect>,
+    card_rect: Option<crate::elo_overlay::EloRect>,
+    is_dragging: bool,
+) {
+    crate::elo_overlay::update_interactive_regions(widget_rect, card_rect, is_dragging);
+}
+
+#[tauri::command]
+fn save_elo_widget_offset(bundle_id: String, offset_x: f64, offset_y: f64) {
+    crate::elo_overlay::save_widget_offset(&bundle_id, offset_x, offset_y);
+}
+
+#[tauri::command]
+fn apply_elo_alert(alert_id: String, suggestion_index: usize) -> Result<bool, String> {
+    crate::elo_overlay::request_apply_alert(alert_id, suggestion_index)
+}
+
+#[tauri::command]
+fn dismiss_elo_alert(alert_id: String) -> Result<bool, String> {
+    crate::elo_overlay::request_dismiss_alert(alert_id)
+}
+
+pub static LINTER_RULE_EPOCH: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(1);
+
+#[tauri::command]
+async fn disable_elo_rule(
+    rule_name: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<(), String> {
+    let mut cfg = config.lock().await;
+    cfg.lint_config.set_rule_enabled(rule_name, false);
+    cfg.save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    LINTER_RULE_EPOCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    crate::elo_overlay::request_refresh();
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_lint_rule_enabled(
+    rule_name: String,
+    enabled: bool,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<(), String> {
+    let mut cfg = config.lock().await;
+    cfg.lint_config.set_rule_enabled(rule_name, enabled);
+    cfg.save_to_system()
+        .await
+        .map_err(|error| error.to_string())?;
+    LINTER_RULE_EPOCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    crate::elo_overlay::request_refresh();
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_personalization_db_status(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<crate::personalization_db::PersonalizationDbStatus, String> {
+    let cfg = config.lock().await;
+    crate::personalization_db::sync_and_status(&cfg)
+}
+
+#[tauri::command]
+async fn get_writing_analytics(
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<crate::personalization_db::WritingAnalyticsSnapshot, String> {
+    let cfg = config.lock().await;
+    crate::personalization_db::get_writing_analytics(&cfg)
+}
+
+#[tauri::command]
+async fn record_studio_edit_feedback(
+    kind: String,
+    category: String,
+    original: String,
+    replacement: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<crate::personalization_db::PersonalizationDbStatus, String> {
+    match kind.as_str() {
+        "dismissed" => {
+            let _ = crate::voice::record_dismissed(&original, &replacement, &category);
+        }
+        _ => {
+            let _ = crate::voice::record_accepted(&original, &replacement, &category);
+        }
+    }
+    let _ = crate::voice::refresh_feedback();
+    let cfg = config.lock().await;
+    crate::personalization_db::sync_and_status(&cfg)
+}
+
+#[tauri::command]
+fn open_elocutio_studio(
+    tab: Option<String>,
+    import_focused_text: Option<bool>,
+) -> Result<(), String> {
+    crate::elo_overlay::open_studio_window(tab, import_focused_text.unwrap_or(false))
+}
+
+#[tauri::command]
+fn take_studio_launch_state() -> crate::elo_overlay::StudioLaunchState {
+    crate::elo_overlay::take_studio_launch_state()
+}
+
+#[tauri::command]
+fn reset_and_request_accessibility(
+    broker: State<'_, RwLock<PlatformBroker>>,
+) -> AccessibilityPermissionStatus {
+    crate::elo_overlay::reset_and_request_accessibility(&broker)
+}
+
+#[derive(serde::Serialize)]
+struct EloRewriteResponse {
+    original: String,
+    rewritten: String,
+    mode_label: String,
+    engine: String,
+}
+
+/// Applies all local Harper suggestions and tone-specific refinements so "Rewrite with elo"
+/// works instantaneously even without a cloud API key or in Local-Only mode.
+fn local_editorial_rewrite(
+    text: &str,
+    mode: &str,
+    custom_prompt: Option<&str>,
+    cfg: &Config,
+) -> String {
+    let mut linter = cfg.create_linter();
+    let dictionary = Config::dictionary_from_user_dictionary(cfg.mutable_dictionary.clone());
+    let doc = harper_core::Document::new_markdown_default(text, &dictionary);
+    let mut organized = linter.organized_lints(&doc);
+    for lints in organized.values_mut() {
+        cfg.ignored_lints.remove_ignored(lints, &doc);
+    }
+
+    let mut all_lints: Vec<harper_core::linting::Lint> =
+        organized.into_values().flatten().collect();
+    all_lints.sort_by(|a, b| {
+        a.span
+            .start
+            .cmp(&b.span.start)
+            .then_with(|| a.span.end.cmp(&b.span.end))
+    });
+
+    // Dedup overlapping spans, then apply from right to left
+    let mut non_overlapping: Vec<harper_core::linting::Lint> = Vec::new();
+    for lint in all_lints {
+        if lint.span.is_empty() || lint.suggestions.is_empty() {
+            continue;
+        }
+        if let Some(prev) = non_overlapping.last()
+            && lint.span.start < prev.span.end
+        {
+            continue;
+        }
+        non_overlapping.push(lint);
+    }
+
+    let mut chars: Vec<char> = text.chars().collect();
+    for lint in non_overlapping.into_iter().rev() {
+        if lint.span.end <= chars.len()
+            && let Some(first) = lint.suggestions.first()
+        {
+            first.apply(lint.span, &mut chars);
+        }
+    }
+
+    let mut result: String = chars.into_iter().collect();
+
+    // Common misspellings of product/brand terms
+    for (wrong, right) in [
+        ("grammerly", "Grammarly"),
+        ("Grammerly", "Grammarly"),
+        ("elocuto", "Elocutio"),
+    ] {
+        result = result.replace(wrong, right);
+    }
+
+    let effective_mode = if let Some(prompt) = custom_prompt.map(str::trim)
+        && !prompt.is_empty()
+    {
+        let lower = prompt.to_lowercase();
+        if lower.contains("confident") || lower.contains("assertive") || lower.contains("strong") {
+            "confident"
+        } else if lower.contains("short") || lower.contains("concise") || lower.contains("brief") {
+            "concise"
+        } else if lower.contains("formal") || lower.contains("professional") {
+            "formal"
+        } else if lower.contains("friend") || lower.contains("warm") {
+            "friendly"
+        } else if lower.contains("bullet") || lower.contains("list") {
+            "bullets"
+        } else {
+            mode
+        }
+    } else {
+        mode
+    };
+
+    match effective_mode {
+        "confident" => {
+            for (weak, strong) in [
+                (" just to see ", " to demonstrate "),
+                (" just ", " "),
+                ("I think ", ""),
+                ("I feel like ", ""),
+                ("maybe ", ""),
+                ("hopefully ", ""),
+                ("sort of ", ""),
+                ("kind of ", ""),
+                ("I was wondering if ", "Please let me know if "),
+            ] {
+                result = result.replace(weak, strong);
+            }
+        }
+        "concise" => {
+            for (wordy, tight) in [
+                (" just to see how ", " to test how "),
+                ("in order to ", "to "),
+                ("due to the fact that ", "because "),
+                ("at this point in time", "now"),
+                ("for the purpose of ", "for "),
+                ("very unique", "unique"),
+                (" just ", " "),
+            ] {
+                result = result.replace(wordy, tight);
+            }
+        }
+        "formal" => {
+            for (casual, formal) in [
+                (" just to see how ", " to evaluate how "),
+                (" can't ", " cannot "),
+                (" won't ", " will not "),
+                (" don't ", " do not "),
+                (" isn't ", " is not "),
+                (" doesn't ", " does not "),
+            ] {
+                result = result.replace(casual, formal);
+            }
+        }
+        "friendly" => {
+            if !result.ends_with('!') && !result.ends_with('?') {
+                result = result.trim_end_matches('.').to_string();
+                result.push('.');
+            }
+        }
+        "bullets" => {
+            let sentences: Vec<&str> = result
+                .split(['.', '\n'])
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            if sentences.len() > 1 {
+                result = sentences
+                    .into_iter()
+                    .map(|s| format!("• {s}."))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            }
+        }
+        _ => {}
+    }
+
+    // Capitalize first letter and ensure ending punctuation
+    let trimmed = result.trim();
+    if !trimmed.is_empty() {
+        let mut out_chars: Vec<char> = trimmed.chars().collect();
+        if let Some(first) = out_chars.first_mut() {
+            *first = first.to_uppercase().next().unwrap_or(*first);
+        }
+        let mut final_str: String = out_chars.into_iter().collect();
+        if !final_str.ends_with(['.', '!', '?']) {
+            final_str.push('.');
+        }
+        return final_str;
+    }
+
+    result
+}
+
+#[tauri::command]
+async fn elo_rewrite_focused_text(
+    mode: String,
+    custom_prompt: Option<String>,
+    source_override: Option<String>,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<EloRewriteResponse, String> {
+    let snap = crate::elo_overlay::current_snapshot();
+    let original = source_override
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| snap.source_text.clone());
+
+    if original.trim().is_empty() {
+        return Err("Type some text in the field first.".into());
+    }
+
+    let mode_label = match mode.as_str() {
+        "improve" => "Improve it",
+        "confident" => "Sound confident",
+        "concise" => "Make it concise",
+        "formal" => "Sound formal",
+        "friendly" => "Sound friendly",
+        "bullets" => "Bullet points",
+        _ => custom_prompt.as_deref().unwrap_or("Rewrite"),
+    }
+    .to_string();
+
+    let mode_directive = match mode.as_str() {
+        "improve" => Some(
+            "Improve clarity, flow, grammar, and word choice while keeping the meaning natural and engaging.",
+        ),
+        "confident" => Some(
+            "Rewrite in a direct, confident, assertive tone. Remove hedging, filler, and tentative phrasing, and use strong active verbs.",
+        ),
+        "concise" => Some(
+            "Make this significantly more concise and tight. Cut filler words, redundancies, and wordy phrasing so every word counts while keeping the core message.",
+        ),
+        "formal" => Some(
+            "Rewrite in a polished, formal, professional register suitable for executive or official communication. Avoid slang, casual phrasing, and conversational contractions.",
+        ),
+        "friendly" => Some(
+            "Rewrite in a warm, approachable, friendly, and conversational tone that feels welcoming and personable while keeping the message clear.",
+        ),
+        "bullets" => Some(
+            "Rewrite and organize the key points into a clean, easy-to-scan bulleted list using '• ' bullets.",
+        ),
+        _ => None,
+    };
+
+    let has_explicit_directive = custom_prompt
+        .as_deref()
+        .map(|p| !p.trim().is_empty())
+        .unwrap_or(false)
+        || mode_directive.is_some();
+
+    let (can_try_cloud, provider, model, tone, instruction) = {
+        let cfg = config.lock().await;
+        let is_local_endpoint = cfg.provider_kind == ProviderKind::OpenAiCompatible
+            && (cfg.provider_base_url.contains("localhost")
+                || cfg.provider_base_url.contains("127.0.0.1"));
+        let key_ok = is_local_endpoint
+            || openrouter::key_status_for(cfg.provider_kind)
+                .map(|s| s.present)
+                .unwrap_or(false);
+        let tone = match mode.as_str() {
+            "concise" => openrouter::RewriteTone::Concise,
+            "formal" => openrouter::RewriteTone::Formal,
+            "friendly" => openrouter::RewriteTone::Friendly,
+            "confident" => openrouter::RewriteTone::Confident,
+            "bullets" | "custom" => openrouter::RewriteTone::Neutral,
+            _ => cfg.rewrite_tone,
+        };
+        let extra_inst = if let Some(p) = custom_prompt.as_deref().filter(|p| !p.trim().is_empty())
+        {
+            p.trim().to_string()
+        } else if let Some(dir) = mode_directive {
+            dir.to_string()
+        } else {
+            cfg.custom_instruction.clone()
+        };
+        (
+            !cfg.local_only && key_ok,
+            ProviderConfig {
+                kind: cfg.provider_kind,
+                base_url: cfg.provider_base_url.clone(),
+            },
+            cfg.provider_model.clone(),
+            tone,
+            extra_inst,
+        )
+    };
+
+    if can_try_cloud {
+        let is_apple_on_device = model.starts_with("apple/") || provider.base_url.contains("11535");
+        let voice_guidance = if has_explicit_directive {
+            None
+        } else {
+            crate::voice::guidance()
+        };
+        let cloud_attempt = openrouter::rewrite_with(
+            &provider,
+            &original,
+            Some(model),
+            voice_guidance,
+            tone,
+            Some(instruction.as_str()),
+        )
+        .await;
+
+        match cloud_attempt {
+            Ok(cloud) => {
+                let _ = usage::record(&cloud);
+                return Ok(EloRewriteResponse {
+                    original,
+                    rewritten: cloud.text,
+                    mode_label,
+                    engine: "AI Companion".to_string(),
+                });
+            }
+            Err(err) if has_explicit_directive && !is_apple_on_device => {
+                return Err(err);
+            }
+            Err(_) => {}
+        }
+    }
+
+    let local_fallback = {
+        let cfg = config.lock().await;
+        local_editorial_rewrite(&original, &mode, custom_prompt.as_deref(), &cfg)
+    };
+
+    Ok(EloRewriteResponse {
+        original,
+        rewritten: local_fallback,
+        mode_label,
+        engine: "Local Engine".to_string(),
+    })
+}
+
+#[tauri::command]
+fn apply_elo_field_rewrite(text: String) -> Result<bool, String> {
+    crate::elo_overlay::request_replace_field_text(text)
+}
+
+#[tauri::command]
+fn set_elo_overlay_input_focus(focused: bool) {
+    crate::elo_overlay::set_overlay_input_focus(focused);
 }

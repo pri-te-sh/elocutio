@@ -18,6 +18,8 @@ impl Integration {
             "com.google.Chrome",
             "com.brave.Browser",
             "com.microsoft.edgemac",
+            "company.thebrowser.Browser",
+            "org.mozilla.firefox",
             "com.tinyspeck.slackmacgap",
             "com.hnc.Discord",
             "com.bloombuilt.dayone-mac",
@@ -25,6 +27,13 @@ impl Integration {
             "com.microsoft.Outlook",
             "com.microsoft.teams2",
             "com.microsoft.teams",
+            "com.microsoft.VSCode",
+            "com.google.antigravity",
+            "com.anthropic.claudefordesktop",
+            "com.deepseek.dsh",
+            "notion.id",
+            "md.obsidian",
+            "com.linear",
         ];
 
         #[cfg(target_os = "windows")]

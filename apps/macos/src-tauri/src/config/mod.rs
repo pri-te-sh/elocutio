@@ -6,7 +6,7 @@ pub use error::Error;
 use harper_core::{
     Dialect, IgnoredLints,
     linting::{FlatConfig, LintGroup},
-    spell::{FstDictionary, MergedDictionary, MutableDictionary},
+    spell::{Dictionary, FstDictionary, MergedDictionary, MutableDictionary},
 };
 use harper_dictionary_wordlist::{load_dict, save_dict};
 pub use integration::Integration;
@@ -147,7 +147,7 @@ impl Config {
             ignored_lints: IgnoredLints::new(),
             lint_config: FlatConfig::new_curated(),
             integrations: Integration::curated_integrations(),
-            auto_enable_new_apps: false,
+            auto_enable_new_apps: true,
             onboarding_completed: false,
             debounce_ms: 0,
             last_update_check: None,
@@ -291,13 +291,19 @@ impl Config {
     }
 
     pub async fn save_to_system(&self) -> Result<(), Error> {
+        #[cfg(test)]
+        let folder_path =
+            Some(std::env::temp_dir().join("elocutio-test")).ok_or(Error::ConfigDirUnavailable)?;
+        #[cfg(not(test))]
         let folder_path = Self::folder_path().ok_or(Error::ConfigDirUnavailable)?;
-        let main_path = Self::main_path().ok_or(Error::ConfigDirUnavailable)?;
-        let dictionary_path = Self::dictionary_path().ok_or(Error::ConfigDirUnavailable)?;
 
-        fs::create_dir_all(folder_path)?;
+        let main_path = folder_path.join("config.json");
+        let dictionary_path = folder_path.join("user_dictionary.txt");
+
+        fs::create_dir_all(&folder_path)?;
         fs::write(main_path, self.serialize_main()?)?;
-        save_dict(dictionary_path, &self.mutable_dictionary).await?;
+        save_dict(&dictionary_path, &self.mutable_dictionary).await?;
+        let _ = crate::personalization_db::sync_and_status(self);
 
         Ok(())
     }
@@ -318,7 +324,34 @@ impl Config {
         let serialized = fs::read_to_string(main_path)?;
         let mut config = Self::deserialize_main(&serialized)?;
         config.lint_config.fill_with_curated();
-        config.mutable_dictionary = load_dict(dictionary_path, config.dialect).await?;
+        let loaded_dict = load_dict(&dictionary_path, config.dialect).await?;
+        let mut clean_dict = MutableDictionary::new();
+        let mut had_invalid_entries = false;
+        for w in loaded_dict.words_iter() {
+            let word_str: String = w.iter().collect();
+            if crate::personalization_db::is_valid_dictionary_word(&word_str) {
+                clean_dict
+                    .append_word_str(word_str.trim(), harper_core::DictWordMetadata::default());
+            } else {
+                had_invalid_entries = true;
+            }
+        }
+        config.mutable_dictionary = clean_dict;
+        for db_word in crate::personalization_db::load_dictionary_words_from_db() {
+            let trimmed = db_word.trim();
+            if crate::personalization_db::is_valid_dictionary_word(trimmed) {
+                config
+                    .mutable_dictionary
+                    .append_word_str(trimmed, harper_core::DictWordMetadata::default());
+            }
+        }
+        if had_invalid_entries {
+            let _ = save_dict(&dictionary_path, &config.mutable_dictionary).await;
+        }
+        if crate::voice::is_learning_enabled() {
+            config.learn_from_edits = true;
+        }
+        let _ = crate::personalization_db::sync_and_status(&config);
 
         Ok(config)
     }
@@ -326,8 +359,54 @@ impl Config {
     pub fn dictionary_from_user_dictionary(
         user_dictionary: MutableDictionary,
     ) -> Arc<MergedDictionary> {
+        static BUILTIN_TERMS: std::sync::OnceLock<Arc<MutableDictionary>> =
+            std::sync::OnceLock::new();
+        let builtin = BUILTIN_TERMS
+            .get_or_init(|| {
+                let mut dict = MutableDictionary::new();
+                for word in [
+                    "elo",
+                    "Elo",
+                    "Elocutio",
+                    "Confluence",
+                    "confluence",
+                    "Jira",
+                    "GitHub",
+                    "OpenRouter",
+                    "Anthropic",
+                    "Claude",
+                    "ChatGPT",
+                    "Supabase",
+                    "Postgres",
+                    "Kubernetes",
+                    "TypeScript",
+                    "JavaScript",
+                    "Svelte",
+                    "Tauri",
+                    "upsert",
+                    "upserts",
+                    "upserted",
+                    "webhook",
+                    "webhooks",
+                    "repo",
+                    "repos",
+                    "config",
+                    "configs",
+                    "async",
+                    "frontend",
+                    "backend",
+                    "codebase",
+                    "onboarding",
+                ] {
+                    dict.append_word_str(word, harper_core::DictWordMetadata::default());
+                }
+                Arc::new(dict)
+            })
+            .clone();
+
         let mut dictionary = MergedDictionary::new();
         dictionary.add_dictionary(FstDictionary::curated());
+        dictionary.add_dictionary(builtin);
         dictionary.add_dictionary(Arc::new(user_dictionary));
 
         Arc::new(dictionary)
@@ -354,7 +433,15 @@ impl Config {
 
     #[allow(dead_code)]
     fn dictionary_path() -> Option<PathBuf> {
-        Self::folder_path().map(|path| path.join("dictionary.txt"))
+        Self::folder_path().map(|path| {
+            let user_dict = path.join("user_dictionary.txt");
+            if user_dict.exists() {
+                user_dict
+            } else {
+                let legacy = path.join("dictionary.txt");
+                if legacy.exists() { legacy } else { user_dict }
+            }
+        })
     }
 
     #[allow(dead_code)]
@@ -399,7 +486,7 @@ impl Config {
             integrations: deserialize_optional_field(object, "integrations")?
                 .unwrap_or_else(Integration::curated_integrations),
             auto_enable_new_apps: deserialize_optional_field(object, "auto_enable_new_apps")?
-                .unwrap_or(false),
+                .unwrap_or(true),
             onboarding_completed: deserialize_optional_field(object, "onboarding_completed")?
                 .unwrap_or(true),
             debounce_ms: deserialize_optional_field(object, "debounce_ms")?.unwrap_or(0),
@@ -651,7 +738,7 @@ mod tests {
     fn dictionary_path_points_to_harper_desktop_dictionary_file() {
         let path = Config::dictionary_path().unwrap();
 
-        assert_eq!(path.file_name().unwrap(), "dictionary.txt");
+        assert_eq!(path.file_name().unwrap(), "user_dictionary.txt");
         assert_eq!(path.parent().unwrap().file_name().unwrap(), "elocutio");
     }
 }

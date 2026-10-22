@@ -42,23 +42,25 @@ where
     }
 
     pub async fn receive_request(&mut self) -> Result<Option<Request>, ProtocolError> {
-        let mut line = String::new();
-        if self.reader.read_line(&mut line).await? == 0 {
-            return Ok(None);
+        loop {
+            let mut line = String::new();
+            if self.reader.read_line(&mut line).await? == 0 {
+                return Ok(None);
+            }
+
+            // The highlighter can send a request, which is answered, or a
+            // command, which is not. Both arrive on the same stream.
+            if let Ok(command) = serde_json::from_str::<Command>(&line) {
+                self.handle_command(&command).await;
+                continue;
+            }
+
+            let request = serde_json::from_str(&line)?;
+            let response = self.handle_request(&request).await;
+            write_message(&mut self.writer, &response).await?;
+
+            return Ok(Some(request));
         }
-
-        // The highlighter can send a request, which is answered, or a
-        // command, which is not. Both arrive on the same stream.
-        if let Ok(command) = serde_json::from_str::<Command>(&line) {
-            self.handle_command(&command).await;
-            return Ok(None);
-        }
-
-        let request = serde_json::from_str(&line)?;
-        let response = self.handle_request(&request).await;
-        write_message(&mut self.writer, &response).await?;
-
-        Ok(Some(request))
     }
 
     /// Handles a command from the highlighter.

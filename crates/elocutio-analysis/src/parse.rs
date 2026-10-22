@@ -80,14 +80,29 @@ pub fn parse_response(content: &str, paragraphs: &[Paragraph]) -> Result<Analysi
 }
 
 fn strip_code_fence(content: &str) -> &str {
-    let trimmed = content.trim();
-    if let Some(rest) = trimmed.strip_prefix("```json") {
-        rest.strip_suffix("```").unwrap_or(rest).trim()
-    } else if let Some(rest) = trimmed.strip_prefix("```") {
-        rest.strip_suffix("```").unwrap_or(rest).trim()
-    } else {
-        trimmed
+    let mut trimmed = content.trim();
+    while let Some(think_start) = trimmed.find("<think>") {
+        if let Some(think_end) = trimmed[think_start..].find("</think>") {
+            let after_think = think_start + think_end + "</think>".len();
+            if think_start == 0 {
+                trimmed = trimmed[after_think..].trim();
+                continue;
+            }
+        }
+        break;
     }
+    if let Some(rest) = trimmed.strip_prefix("```json") {
+        trimmed = rest.strip_suffix("```").unwrap_or(rest).trim();
+    } else if let Some(rest) = trimmed.strip_prefix("```") {
+        trimmed = rest.strip_suffix("```").unwrap_or(rest).trim();
+    }
+    if !trimmed.starts_with('{')
+        && let (Some(first_brace), Some(last_brace)) = (trimmed.find('{'), trimmed.rfind('}'))
+        && first_brace < last_brace
+    {
+        return &trimmed[first_brace..=last_brace];
+    }
+    trimmed
 }
 
 fn reject_reason(error: &ResolveError) -> String {

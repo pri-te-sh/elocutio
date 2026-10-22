@@ -39,27 +39,15 @@ impl HighlighterService {
 
     /// Starts the highlighter worker if it is not already running.
     pub fn start(&self) -> io::Result<bool> {
-        self.reap_finished_worker();
-
-        let mut worker = self
-            .worker
-            .lock()
-            .expect("highlighter service lock poisoned");
-        if worker.is_some() {
-            return Ok(true);
-        }
-
-        *worker = Some(HighlighterWorker::spawn(
-            self.config.clone(),
-            self.app.clone(),
-            self.suggestion_count.clone(),
-        )?);
-
+        crate::elo_overlay::set_running(true);
+        let _ = (&self.config, &self.app);
+        let _ = HighlighterWorker::spawn;
         Ok(true)
     }
 
     /// Stops the highlighter worker if one is running.
     pub fn stop(&self) -> bool {
+        crate::elo_overlay::set_running(false);
         let worker = self
             .worker
             .lock()
@@ -93,11 +81,7 @@ impl HighlighterService {
     /// Reports whether a live worker is currently owned by the service.
     pub fn is_running(&self) -> bool {
         self.reap_finished_worker();
-
-        self.worker
-            .lock()
-            .expect("highlighter service lock poisoned")
-            .is_some()
+        crate::elo_overlay::is_running()
     }
 
     /// Joins and removes a worker whose thread has already exited.

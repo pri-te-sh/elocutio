@@ -18,7 +18,31 @@
 
 **Elocutio** (el-oh-KOO-tee-oh) is a private writing companion that refines clarity, correctness, and tone while preserving your voice. It starts on macOS, where it lives in your menu bar and improves the text you are already writing — in Mail, Slack, Notes, Word, or your browser. Local rules catch the obvious mistakes instantly; your chosen model handles judgment: clarity, tone, rewrites, compose, translate, and humanize. Over time it learns **your voice** from the writing you upload and the edits you accept, so rewrites sound like *you*. You bring the API key; your text goes only to the provider you configured.
 
-> **Status: pre-alpha / M1 in progress.** The macOS app builds and runs on a rebranded [Harper](https://github.com/Automattic/harper) fork (Apache-2.0). Local checks and a floating suggestion card work in TextEdit, Notes, and Safari. OpenRouter is the default provider; OpenAI-compatible endpoints (OpenAI, Ollama, LM Studio) are supported, and a curated model catalog backs the picker. Structured LLM suggestions merge into the inherited card with a ranked, explained merge; **⌥⌘E** rewrites a selection, **⌥⌘A** analyzes the focused field, and **⌥⌘Z** undoes the last Elocutio edit. A local voice style card learns from 300+ word samples and, when opted in, from the edits you accept, dismiss, or change — with a copy guard that refuses any rewrite repeating your own samples. Tone detection runs entirely on your Mac. Chrome/Mail overlay geometry and a signed/notarized release remain open. See the [roadmap](ROADMAP.md), [build plan](docs/PLAN.md), and [progress dashboard](docs/PROGRESS.md). Expect breaking changes; there is no signed release yet.
+> **Status: pre-alpha / M1 in progress.** The macOS app builds and runs on a rebranded [Harper](https://github.com/Automattic/harper) fork (Apache-2.0) with the **Elocutio Editorial Atelier** desktop studio and a system-wide floating `"elo"` companion overlay. Local checks and inline suggestions work across macOS apps; **6 AI provider presets** (OpenRouter, Ollama Local, Ollama Cloud, Apple Foundation Models on-device bridge, OpenAI, and Groq Cloud) with live model slug discovery and AES-256-CBC encrypted SQLite + macOS Keychain credentials power rewrites and deep prose analysis. See the [roadmap](ROADMAP.md), [build plan](docs/PLAN.md), and [progress dashboard](docs/PROGRESS.md). Expect breaking changes; there is no signed release yet.
+
+## What works today (macOS build)
+
+Elocutio builds and runs on macOS as both a **non-activating menu-bar companion** and the **Elocutio Editorial Atelier** desktop studio (`apps/macos`), backed by shared Rust crates (`crates/elocutio-*`):
+
+- **Elocutio Editorial Atelier (Desktop Studio):**
+  - **Manuscript Atelier** — Rich live prose editor with real-time on-device Harper grammar/style linting, paragraph-level AI rewrites, voice resonance scoring, and a categorized Editorial Notes feed (with one-click `+ Lexicon` for single-word spelling tokens and `✦ Tighten Sentence` AI rewrites for long-sentence readability notes).
+  - **Writing & AI Analytics** — Executive telemetry dashboard tracking your **Prose Craft Index (0–100)**, **Editorial Time Saved**, **AI Co-Pilot Lift**, **AI Cost Efficiency**, **Hybrid Intelligence Split** (On-Device Harper vs. AI Co-Pilot), **4-Pillar Writing Mastery** (Orthography & Precision, Conciseness & Economy, Readability & Flow, Voice & Register), **7-Day Editorial Cadence**, **Active Manuscript Vital Signs** (Flesch Reading Ease, vocabulary diversity, sentence cadence), and an **AI Model Efficiency Ledger**.
+  - **Apps & Surface Matrix** — Per-application enable/disable controls and live Accessibility attachment status across macOS apps.
+  - **Personal Lexicon & Rules** — Virtualized, searchable dictionary manager designed for 1,000+ custom words with bulk import, inline editing, category filters, and Harper rule overrides.
+  - **Voice DNA** — Local stylistic fingerprinting (formality, cadence, lexical density, signature phrases, and banned AI-isms) learned from your writing samples and accepted/dismissed edits.
+  - **Privacy & AI Providers** — Dropdown preset selector and live model slug discovery for **6 AI providers**:
+    - **OpenRouter (Cloud)** (`anthropic/claude-haiku-4.5`, `openai/gpt-4o-mini`, `google/gemini-2.5-flash`, `meta-llama/llama-3.3-70b-instruct`)
+    - **Ollama (Local)** (`http://127.0.0.1:11434/v1` — discovers installed local tags via `/v1/models`)
+    - **Ollama Cloud** (`https://ollama.com/v1`)
+    - **Apple Foundation Models (On-Device)** (`http://127.0.0.1:11535/v1` — zero-setup native bridge powered by macOS `FoundationModels.framework` / `SystemLanguageModel.default`)
+    - **OpenAI Direct** (`https://api.openai.com/v1`)
+    - **Groq Cloud (Fast LPU)** (`https://api.groq.com/openai/v1`)
+- **System-wide `"elo"` floating overlay (`elo_overlay.rs`)** — Non-activating floating pill anchored near the active text field across macOS apps (Notes, TextEdit, Safari, Slack, Mail, VS Code, etc.) with inline error/style underlines, hover-expanded actions (**Fix N**, **Rewrite**, **Check**), and an interactive diff popover that applies edits without stealing focus.
+- **Dynamic template menu-bar icon (`tray.rs`)** — Uses macOS `NSImage` template rendering (`icon_as_template(true)`) so WindowServer automatically adapts the `"e"` mark to white on dark menu bars/wallpapers and ink-black on light menu bars, with a streamlined 4-item menu (`Open Elocutio Studio`, `Pause/Resume Overlay`, `Settings…`, `Quit Elocutio`).
+- **Local SQLite Personalization & Encrypted Credentials (`elocutio.sqlite3`)** — Stores your personal dictionary, rule overrides, edit history (`edit_events`), Voice DNA traits (`voice_profile`), per-request token & cost ledger (`ai_token_usage`), and **AES-256-CBC encrypted API keys (`encrypted_credentials`)** locally in `~/Library/Application Support/elocutio/elocutio.sqlite3` alongside macOS Keychain storage.
+- **System-wide selection rewrite (`⌥⌘E`), Analyze Field (`⌥⌘A`), and Undo (`⌥⌘Z`)** — Clipboard-safe pasteboard + `⌘V` write ladder with structural read-back verification and full multi-item pasteboard restoration.
+
+See [`docs/M0-VERIFICATION.md`](docs/M0-VERIFICATION.md) for the exact test matrix and known limitations.
 
 ## Why Elocutio
 

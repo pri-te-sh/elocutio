@@ -79,7 +79,15 @@ pub fn record_parts(
         .map_err(|error| format!("Could not open the usage log: {error}"))?;
     let line = serde_json::to_string(&entry)
         .map_err(|error| format!("Could not serialize usage: {error}"))?;
-    writeln!(file, "{line}").map_err(|error| format!("Could not append usage: {error}"))
+    writeln!(file, "{line}").map_err(|error| format!("Could not append usage: {error}"))?;
+    crate::personalization_db::record_token_usage_in_db(
+        entry.timestamp,
+        &entry.model,
+        entry.input_tokens,
+        entry.output_tokens,
+        entry.cost_usd,
+    );
+    Ok(())
 }
 
 pub fn summary(limit: usize) -> Result<UsageSummary, String> {

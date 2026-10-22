@@ -34,6 +34,29 @@ impl Rect {
     pub fn with_friendly_padding(&self) -> Self {
         self.with_padding(2.0)
     }
+
+    /// Returns the overlapping rectangle between `self` and `other`, if non-empty.
+    pub fn intersection(&self, other: Rect) -> Option<Rect> {
+        let x1 = self.x.max(other.x);
+        let y1 = self.y.max(other.y);
+        let x2 = (self.x + self.width).min(other.x + other.width);
+        let y2 = (self.y + self.height).min(other.y + other.height);
+        if x2 > x1 && y2 > y1 {
+            Some(Rect {
+                x: x1,
+                y: y1,
+                width: x2 - x1,
+                height: y2 - y1,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Returns whether `self` overlaps `other` by at least 1 square point.
+    pub fn intersects(&self, other: Rect) -> bool {
+        self.intersection(other).is_some()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

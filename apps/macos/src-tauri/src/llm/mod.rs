@@ -25,7 +25,7 @@ pub const MAX_ATTEMPTS: u32 = 3;
 pub const RETRY_BASE_DELAY: Duration = Duration::from_millis(250);
 
 /// The ceiling on a single provider request.
-pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// A model the app can offer in a picker.
 ///

@@ -35,8 +35,15 @@ fn join_all_spaces(window: &WinitWindow) {
         if let Some(ns_window) = view.window() {
             let behavior = ns_window.collectionBehavior()
                 | objc2_app_kit::NSWindowCollectionBehavior::CanJoinAllSpaces
-                | objc2_app_kit::NSWindowCollectionBehavior::Stationary;
+                | objc2_app_kit::NSWindowCollectionBehavior::Stationary
+                | objc2_app_kit::NSWindowCollectionBehavior::FullScreenAuxiliary
+                | objc2_app_kit::NSWindowCollectionBehavior::IgnoresCycle;
             ns_window.setCollectionBehavior(behavior);
+            ns_window.setHasShadow(false);
+            ns_window.setOpaque(false);
+            // Raise above normal floating utility windows (NSStatusWindowLevel = 25).
+            ns_window.setLevel(25);
+            ns_window.orderFrontRegardless();
         }
     }
 }
@@ -88,7 +95,7 @@ impl Window {
         let mut painter = Painter::new(
             context,
             WgpuConfiguration {
-                present_mode: PresentMode::Fifo,
+                present_mode: PresentMode::AutoNoVsync,
                 wgpu_setup: WgpuSetup::from_display_handle(event_loop.owned_display_handle()),
                 ..Default::default()
             },
@@ -99,6 +106,13 @@ impl Window {
         painter
             .set_window(viewport_id, Some(window.clone()))
             .await?;
+        let inner_size = window.inner_size();
+        if let (Some(width), Some(height)) = (
+            NonZeroU32::new(inner_size.width),
+            NonZeroU32::new(inner_size.height),
+        ) {
+            painter.on_window_resized(viewport_id, width, height);
+        }
         window.request_redraw();
 
         Ok(Self {
@@ -147,7 +161,28 @@ impl Window {
 
     pub fn render(&mut self, render_state: &mut RenderState) {
         let context = self.egui_state.egui_ctx().clone();
-        let input = self.egui_state.take_egui_input(&self.inner);
+        let scale = self.inner.scale_factor() as f32;
+        let origin = self
+            .inner
+            .inner_position()
+            .map(|pos| egui::vec2(pos.x as f32 / scale, pos.y as f32 / scale))
+            .unwrap_or(egui::Vec2::ZERO);
+
+        let mut input = self.egui_state.take_egui_input(&self.inner);
+        if origin != egui::Vec2::ZERO {
+            if let Some(rect) = &mut input.screen_rect {
+                *rect = rect.translate(origin);
+            }
+            for event in &mut input.events {
+                match event {
+                    egui::Event::PointerMoved(pos) => *pos += origin,
+                    egui::Event::PointerButton { pos, .. } => *pos += origin,
+                    egui::Event::Touch { pos, .. } => *pos += origin,
+                    _ => {}
+                }
+            }
+        }
+
         let output = context.run_ui(input, |ui| {
             render_state.render(ui);
         });
@@ -155,7 +190,16 @@ impl Window {
         self.egui_state
             .handle_platform_output(&self.inner, output.platform_output);
 
-        let clipped_primitives = context.tessellate(output.shapes, output.pixels_per_point);
+        let mut shapes = output.shapes;
+        if origin != egui::Vec2::ZERO {
+            let to_local = egui::emath::TSTransform::from_translation(-origin);
+            for clipped in &mut shapes {
+                clipped.clip_rect = clipped.clip_rect.translate(-origin);
+                clipped.shape.transform(to_local);
+            }
+        }
+
+        let clipped_primitives = context.tessellate(shapes, output.pixels_per_point);
         self.painter.paint_and_update_textures(
             self.viewport_id,
             output.pixels_per_point,

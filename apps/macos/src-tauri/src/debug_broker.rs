@@ -38,6 +38,14 @@ impl OsBroker for DebugBroker {
         Some(Pos2 { x: 105.0, y: 105.0 })
     }
 
+    fn has_active_field(&self) -> bool {
+        true
+    }
+
+    fn active_field_rect(&self) -> Option<crate::rect::Rect> {
+        Some(crate::rect::Rect::new(80.0, 80.0, 420.0, 180.0))
+    }
+
     fn accessibility_permission_status(&self) -> AccessibilityPermissionStatus {
         AccessibilityPermissionStatus::Granted
     }

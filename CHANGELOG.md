@@ -8,6 +8,15 @@ to follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Elocutio Editorial Atelier UI (`apps/macos/src/App.svelte`)**:
+  - Redesigned the macOS studio into a 6-pillar workspace: **Manuscript**, **Analytics**, **Apps**, **Lexicon**, **Voice DNA**, and **Privacy & AI**.
+  - **Writing & AI Analytics (`get_writing_analytics`)**: Added an executive writing & AI telemetry dashboard featuring the **Prose Craft Index (0–100)**, **Editorial Time Saved**, **AI Co-Pilot Lift**, **AI Cost Efficiency**, **Hybrid Intelligence Split** (On-Device Harper vs. AI Co-Pilot), **4-Pillar Writing Mastery**, **7-Day Editorial Cadence**, **Active Manuscript Vital Signs**, **AI Model Efficiency Ledger**, and **Signature Refinements**.
+  - **AI Provider Presets & Model Slug Discovery**: Added compact dropdown selectors for **OpenRouter**, **Ollama (Local)**, **Ollama Cloud**, **Apple Foundation Models (On-Device)**, **OpenAI Direct**, and **Groq Cloud**, with automatic model slug discovery via `/v1/models` and curated platform fallbacks.
+  - **Apple Foundation Models On-Device Bridge (`apple_fm_bridge.rs`)**: Embedded a zero-configuration local OpenAI-compatible HTTP bridge (`127.0.0.1:11535/v1`) powered directly by macOS `FoundationModels.framework` (`SystemLanguageModel.default` and `LanguageModelSession`).
+  - **Local SQLite Personalization & Encrypted Credentials (`personalization_db.rs`)**: Added `~/Library/Application Support/elocutio/elocutio.sqlite3` with tables for `dictionary_words`, `editorial_rules`, `edit_events`, `voice_profile`, `app_preferences`, `encrypted_credentials` (AES-256-CBC encrypted API keys with per-installation random salt + PBKDF2-HMAC-SHA256), `ai_provider_configs`, and `ai_token_usage` (prompt/completion tokens, estimated USD cost, latency, and monthly budget tracking).
+  - **System-Wide Floating `"elo"` Companion (`elo_overlay.rs`)**: Added a non-activating macOS overlay window with inline error/style underlines, hover-expanded quick actions (`Fix`, `Rewrite`, `Check`), and an inline diff popover.
+  - **Dynamic Template Menu-Bar Icon & Streamlined Tray (`tray.rs`)**: Enabled macOS template icon rendering (`icon_as_template(true)`) for automatic dark/light menu-bar contrast and simplified the menu bar dropdown to 4 core actions (`Open Elocutio Studio`, `Pause/Resume Overlay`, `Settings…`, `Quit Elocutio`).
+  - **Virtualized Personal Lexicon & Single-Word Guard**: Added a paginated, searchable Lexicon view supporting 1,000+ words with bulk import, inline editing, and strict single-word validation so sentence-level readability lints offer `✦ Tighten Sentence` AI rewrites instead of `+ Lexicon`.
 - Product audit, build plan, architecture, feature matrix, decision records,
   prompt library, and voice-learning design.
 - Apache-2.0 license, NOTICE with Harper attribution, and open-source

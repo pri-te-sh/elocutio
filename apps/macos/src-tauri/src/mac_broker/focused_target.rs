@@ -13,10 +13,8 @@ pub struct FocusedTarget {
 }
 
 impl FocusedTarget {
-    /// Selects the remembered element, allowing application-wide fallback only during external focus.
-    pub fn traversal_root(&self, highlighter_focused: bool) -> Option<AXUIElement> {
-        self.element
-            .clone()
-            .or_else(|| (!highlighter_focused).then(|| AXUIElement::application(self.pid)))
+    /// Returns the focused editable text element if one is active.
+    pub fn traversal_root(&self) -> Option<AXUIElement> {
+        self.element.clone()
     }
 }

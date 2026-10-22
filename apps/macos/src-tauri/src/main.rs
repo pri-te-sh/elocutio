@@ -51,6 +51,7 @@ mod commands;
 pub mod communication;
 pub mod config;
 mod debounce;
+pub mod elo_overlay;
 pub mod events;
 pub mod gate;
 pub mod highlighter;
@@ -63,6 +64,7 @@ pub mod matrix;
 pub mod network_log;
 mod openrouter;
 mod os_broker;
+pub mod personalization_db;
 pub mod preview;
 pub mod quality;
 pub mod rect;
@@ -70,6 +72,8 @@ mod rewrite;
 mod usage;
 pub mod widget_anchor;
 
+#[cfg(target_os = "macos")]
+pub mod apple_fm_bridge;
 #[cfg(target_os = "macos")]
 mod mac_broker;
 #[cfg(target_os = "macos")]
@@ -332,6 +336,20 @@ fn watch_highlighter(app: tauri::AppHandle) {
                 continue;
             }
 
+            let granted = {
+                let broker = app.state::<RwLock<PlatformBroker>>();
+                broker
+                    .read()
+                    .map(|broker| {
+                        broker.accessibility_permission_status()
+                            == AccessibilityPermissionStatus::Granted
+                    })
+                    .unwrap_or(false)
+            };
+            if !granted {
+                continue;
+            }
+
             if restarts >= MAX_RESTARTS {
                 continue;
             }
@@ -411,6 +429,10 @@ pub fn run_tauri() {
         eprintln!("failed to save merged integrations: {error}");
     }
 
+    if let Err(error) = personalization_db::sync_and_status(&config) {
+        eprintln!("failed to sync personalization sqlite db on startup: {error}");
+    }
+
     let broker = platform_broker(|_| false);
 
     let accessibility_status = broker.accessibility_permission_status();
@@ -439,25 +461,31 @@ pub fn run_tauri() {
         .invoke_handler(commands::application_message_handler())
         .setup(move |app| {
             let suggestion_count = std::sync::Arc::new(crate::config::SuggestionCount::default());
-            let highlighter_service =
-                HighlighterService::new(config, app.handle().clone(), suggestion_count);
+            let highlighter_service = HighlighterService::new(
+                config.clone(),
+                app.handle().clone(),
+                suggestion_count.clone(),
+            );
+            elo_overlay::start(app.handle().clone(), config, suggestion_count);
             if should_start_highlighter {
                 match highlighter_service.start() {
-                    Ok(started) => tracing::info!(started, "highlighter service started"),
-                    Err(err) => error!("Unable to start highlighter: {err}"),
+                    Ok(started) => tracing::info!(started, "elo overlay service started"),
+                    Err(err) => error!("Unable to start elo overlay: {err}"),
                 }
             }
             app.manage(highlighter_service);
 
             set_up_tray_menu(app.handle())?;
             register_shortcuts(app.handle());
+            #[cfg(target_os = "macos")]
+            apple_fm_bridge::start();
             auto_analyze::start(app.handle().clone());
             warm_app_search_cache(app.handle().clone());
             watch_highlighter(app.handle().clone());
 
-            if is_first_launch || !onboarding_completed {
-                windows::show_settings_window(app.handle())?;
-            }
+            let _ = is_first_launch;
+            let _ = onboarding_completed;
+            windows::show_settings_window(app.handle())?;
 
             #[cfg(target_os = "macos")]
             windows::sync_dock_visibility(app.handle(), None)?;
@@ -665,7 +693,7 @@ pub fn run_highlighter(has_parent: bool) {
             ignored_lints: IgnoredLints::new(),
             lint_config,
             integrations: Vec::new(),
-            auto_enable_new_apps: false,
+            auto_enable_new_apps: true,
             onboarding_completed: false,
             debounce_ms: *dictionary_debounce_ms.borrow(),
             last_update_check: None,

@@ -2,10 +2,12 @@ use accessibility::attribute::AXUIElementAttributes;
 use accessibility::ui_element::AXUIElement;
 use accessibility::{Error, TreeVisitor, TreeWalker, TreeWalkerFlow};
 use accessibility_sys::{
-    AXUIElementCopyParameterizedAttributeValue, AXUIElementGetPid, AXValueCreate, AXValueGetType,
-    AXValueGetValue, AXValueRef, kAXBoundsForRangeParameterizedAttribute, kAXErrorIllegalArgument,
-    kAXErrorNoValue, kAXErrorParameterizedAttributeUnsupported, kAXErrorSuccess,
-    kAXValueTypeCFRange, kAXValueTypeCGRect, pid_t,
+    AXUIElementCopyAttributeValue, AXUIElementCopyParameterizedAttributeValue, AXUIElementGetPid,
+    AXUIElementSetAttributeValue, AXValueCreate, AXValueGetType, AXValueGetValue, AXValueRef,
+    kAXBoundsForRangeParameterizedAttribute, kAXErrorIllegalArgument, kAXErrorNoValue,
+    kAXErrorParameterizedAttributeUnsupported, kAXErrorSuccess, kAXPositionAttribute,
+    kAXSelectedTextRangeAttribute, kAXSizeAttribute, kAXValueTypeCFRange, kAXValueTypeCGPoint,
+    kAXValueTypeCGRect, kAXValueTypeCGSize, pid_t,
 };
 use core::{ffi::c_void, mem::MaybeUninit};
 use core_foundation::base::{CFRange, CFType, TCFType};
@@ -14,7 +16,7 @@ use harper_core::{
     Span,
     linting::{Lint, LintKind, Suggestion},
 };
-use objc2_foundation::NSRect;
+use objc2_foundation::{NSPoint, NSRect, NSSize};
 use std::{
     cell::{Cell, RefCell},
     ptr,
@@ -142,11 +144,167 @@ fn rect_has_usable_text_metrics(rect: Rect) -> bool {
     rect.width > 0.0 && rect.height > 0.0
 }
 
+/// Reads the screen-space frame (`AXPosition` and `AXSize`) of an accessibility element.
+pub fn element_frame(element: &AXUIElement) -> Option<Rect> {
+    let pos_attr = CFString::new(kAXPositionAttribute);
+    let mut pos_ref = ptr::null();
+    let pos_err = unsafe {
+        AXUIElementCopyAttributeValue(
+            element.as_concrete_TypeRef(),
+            pos_attr.as_concrete_TypeRef(),
+            &mut pos_ref,
+        )
+    };
+    if pos_err != kAXErrorSuccess || pos_ref.is_null() {
+        return None;
+    }
+    let pos_val = unsafe { CFType::wrap_under_create_rule(pos_ref) };
+    let pos_ax = pos_val.as_CFTypeRef() as AXValueRef;
+    if unsafe { AXValueGetType(pos_ax) } != kAXValueTypeCGPoint {
+        return None;
+    }
+    let mut point = MaybeUninit::<NSPoint>::uninit();
+    let pos_ok = unsafe {
+        AXValueGetValue(
+            pos_ax,
+            kAXValueTypeCGPoint,
+            point.as_mut_ptr() as *mut c_void,
+        )
+    };
+    if !pos_ok {
+        return None;
+    }
+    let point = unsafe { point.assume_init() };
+
+    let size_attr = CFString::new(kAXSizeAttribute);
+    let mut size_ref = ptr::null();
+    let size_err = unsafe {
+        AXUIElementCopyAttributeValue(
+            element.as_concrete_TypeRef(),
+            size_attr.as_concrete_TypeRef(),
+            &mut size_ref,
+        )
+    };
+    if size_err != kAXErrorSuccess || size_ref.is_null() {
+        return None;
+    }
+    let size_val = unsafe { CFType::wrap_under_create_rule(size_ref) };
+    let size_ax = size_val.as_CFTypeRef() as AXValueRef;
+    if unsafe { AXValueGetType(size_ax) } != kAXValueTypeCGSize {
+        return None;
+    }
+    let mut size = MaybeUninit::<NSSize>::uninit();
+    let size_ok = unsafe {
+        AXValueGetValue(
+            size_ax,
+            kAXValueTypeCGSize,
+            size.as_mut_ptr() as *mut c_void,
+        )
+    };
+    if !size_ok {
+        return None;
+    }
+    let size = unsafe { size.assume_init() };
+
+    let rect = Rect {
+        x: point.x,
+        y: point.y,
+        width: size.width,
+        height: size.height,
+    };
+    rect_has_usable_text_metrics(rect).then_some(rect)
+}
+
+/// Computes the visible screen-space viewport of `element` by intersecting its frame
+/// with all enclosing ancestor frames (`AXScrollArea`, `AXClipView`, `AXWindow`, etc.).
+/// This prevents text ranges that have scrolled out of view or overflowed horizontally
+/// from bleeding outside the visible text container.
+pub fn visible_element_frame(element: &AXUIElement) -> Option<Rect> {
+    let mut visible = element_frame(element)?;
+    let mut current = element.clone();
+    for _ in 0..10 {
+        let Ok(parent) =
+            super::core_foundation_utilities::ax_element_attribute(&current, "AXParent")
+        else {
+            break;
+        };
+        if let Ok(role) = parent.role() {
+            let role_str = role.to_string();
+            if role_str == "AXApplication" {
+                break;
+            }
+            if matches!(
+                role_str.as_str(),
+                "AXScrollArea" | "AXClipView" | "AXWindow"
+            ) && let Some(parent_rect) = element_frame(&parent)
+                && let Some(clipped) = visible.intersection(parent_rect)
+                && rect_has_usable_text_metrics(clipped)
+            {
+                visible = clipped;
+            }
+        }
+        current = parent;
+    }
+    rect_has_usable_text_metrics(visible).then_some(visible)
+}
+
+/// Estimates a character range's bounds inside an element frame when `AXBoundsForRange` is unavailable.
+fn estimate_rect_within_frame(
+    frame: Rect,
+    full_text: &str,
+    start_index: usize,
+    length: usize,
+) -> Option<Rect> {
+    if !rect_has_usable_text_metrics(frame) || length == 0 {
+        return None;
+    }
+    let padding_x = 8.0_f64;
+    let padding_y = 6.0_f64;
+    let char_width = 7.6_f64;
+    let line_height = 18.0_f64;
+    let usable_width = (frame.width - 2.0 * padding_x).max(40.0);
+    let chars_per_line = ((usable_width / char_width).floor() as usize).max(10);
+
+    let mut line = 0usize;
+    let mut col = 0usize;
+    for (idx, ch) in full_text.chars().enumerate() {
+        if idx >= start_index {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+            if col >= chars_per_line {
+                line += 1;
+                col = 0;
+            }
+        }
+    }
+
+    let x = (frame.x + padding_x + (col as f64) * char_width)
+        .min((frame.x + frame.width - 16.0).max(frame.x));
+    let y = (frame.y + padding_y + (line as f64) * line_height)
+        .min((frame.y + frame.height - line_height).max(frame.y));
+    let width = ((length as f64) * char_width).clamp(12.0, (frame.x + frame.width - x).max(12.0));
+    let height = line_height.min(frame.height.max(12.0));
+
+    Some(Rect {
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
 /// Collects lint rectangles while walking supported text elements in an AX tree.
 pub struct RectCollector<'a> {
     rects: RefCell<Vec<ActionableLint>>,
     expected_rect_count: Cell<usize>,
     read_failed: Cell<bool>,
+    found_text_element: Cell<bool>,
+    field_rect: RefCell<Option<Rect>>,
     visited: Cell<usize>,
     started: Instant,
     pid: i32,
@@ -157,6 +315,8 @@ pub struct RectCollector<'a> {
     /// Detection is local and deterministic, so the badge on the widget costs
     /// nothing and works offline.
     tone: RefCell<Option<String>>,
+    /// Text of the first supported editable text element visited.
+    source_text: RefCell<Option<String>>,
 }
 
 impl TreeVisitor for RectCollector<'_> {
@@ -171,53 +331,45 @@ impl TreeVisitor for RectCollector<'_> {
             return TreeWalkerFlow::Continue;
         }
 
-        let Ok(value) = element.value() else {
-            self.read_failed.set(true);
+        if super::core_foundation_utilities::ax_string_attribute(element, "AXSubrole")
+            .is_ok_and(|subrole| subrole == "AXSecureTextField")
+        {
             return TreeWalkerFlow::Continue;
-        };
-
-        let string =
-            unsafe { CFString::wrap_under_get_rule(value.as_CFTypeRef() as _).to_string() };
-        let mut rects = self.rects.borrow_mut();
-        let organized_lints = (self.lint_text.borrow_mut())(&string);
-
-        for (rule_name, lints) in organized_lints {
-            for lint in lints {
-                self.expected_rect_count
-                    .set(self.expected_rect_count.get() + 1);
-
-                if let Some(rect) = element_rect_for_text_range_with_fallback(
-                    element,
-                    &string,
-                    lint.span.start,
-                    lint.span.len(),
-                ) {
-                    let element = element.clone();
-                    let source_text = string.clone();
-                    let suggestion_source_text = string.clone();
-                    let suggestion_lint = lint.clone();
-
-                    rects.push(ActionableLint::new(
-                        rect,
-                        rule_name.clone(),
-                        lint,
-                        source_text,
-                        move |suggestion| {
-                            apply_suggestion_to_element(
-                                element,
-                                suggestion_source_text,
-                                suggestion_lint,
-                                suggestion,
-                            );
-                        },
-                    ));
-                }
-            }
         }
 
+        self.found_text_element.set(true);
+        let element_visible_rect =
+            visible_element_frame(element).or_else(|| element_frame(element));
+        if self.field_rect.borrow().is_none() {
+            *self.field_rect.borrow_mut() = element_visible_rect;
+        }
+
+        let string = match read_element_text(element) {
+            Some(s) if !s.is_empty() => s,
+            _ => return TreeWalkerFlow::Exit,
+        };
+
+        if self.source_text.borrow().is_none() {
+            *self.source_text.borrow_mut() = Some(string.clone());
+        }
+
+        if !string.trim().is_empty() && self.tone.borrow().is_none() {
+            let signal = elocutio_analysis::detect_tone(&string);
+            *self.tone.borrow_mut() = Some(signal.tone.label().to_string());
+        }
+
+        let mut rects = self.rects.borrow_mut();
+
+        // 1. When a fresh AI provider analysis exists for this exact field and text hash,
+        // prioritize the AI's context-aware suggestions first so they always supersede
+        // context-blind dictionary/rule guesses.
+        let has_fresh_llm_cache = self
+            .cached
+            .as_ref()
+            .is_some_and(|c| c.pid == self.pid && c.text_hash == llm_cache::text_hash(&string));
+
         if let Some(cached) = &self.cached
-            && cached.pid == self.pid
-            && cached.text_hash == llm_cache::text_hash(&string)
+            && has_fresh_llm_cache
         {
             for suggestion in &cached.suggestions {
                 if suggestion.char_end > string.chars().count()
@@ -230,7 +382,10 @@ impl TreeVisitor for RectCollector<'_> {
                     continue;
                 }
 
-                let Some(rect) = element_rect_for_text_range_with_fallback(
+                self.expected_rect_count
+                    .set(self.expected_rect_count.get() + 1);
+
+                let Some(raw_rect) = element_rect_for_text_range_with_fallback(
                     element,
                     &string,
                     suggestion.char_start,
@@ -238,6 +393,16 @@ impl TreeVisitor for RectCollector<'_> {
                 ) else {
                     continue;
                 };
+
+                let Some(rect) = (match element_visible_rect {
+                    Some(vf) => raw_rect.intersection(vf),
+                    None => Some(raw_rect),
+                }) else {
+                    continue;
+                };
+                if rect.width < 6.0 || rect.height < 8.0 {
+                    continue;
+                }
 
                 let lint = cached_lint(suggestion);
                 let element = element.clone();
@@ -262,7 +427,71 @@ impl TreeVisitor for RectCollector<'_> {
             }
         }
 
-        TreeWalkerFlow::Continue
+        // 2. Run local Harper lints:
+        //    - When `has_fresh_llm_cache` is true, skip Harper's context-blind `SpellCheck`
+        //      and any lint that overlaps an AI suggestion, keeping only deterministic
+        //      non-overlapping rules (e.g. `RepeatedWords`, `AnA`).
+        //    - When offline or before the AI response arrives, cap `SpellCheck` suggestions
+        //      to at most 3 candidates so Harper never dumps long out-of-context word lists.
+        let organized_lints = (self.lint_text.borrow_mut())(&string);
+
+        for (rule_name, lints) in organized_lints {
+            if has_fresh_llm_cache && rule_name == "SpellCheck" {
+                continue;
+            }
+            for mut lint in lints {
+                if rects.iter().any(|existing| {
+                    existing.lint.span.start < lint.span.end
+                        && lint.span.start < existing.lint.span.end
+                }) {
+                    continue;
+                }
+                if rule_name == "SpellCheck" && lint.suggestions.len() > 3 {
+                    lint.suggestions.truncate(3);
+                }
+
+                self.expected_rect_count
+                    .set(self.expected_rect_count.get() + 1);
+
+                if let Some(raw_rect) = element_rect_for_text_range_with_fallback(
+                    element,
+                    &string,
+                    lint.span.start,
+                    lint.span.len(),
+                ) {
+                    let Some(rect) = (match element_visible_rect {
+                        Some(vf) => raw_rect.intersection(vf),
+                        None => Some(raw_rect),
+                    }) else {
+                        continue;
+                    };
+                    if rect.width < 6.0 || rect.height < 8.0 {
+                        continue;
+                    }
+                    let element = element.clone();
+                    let source_text = string.clone();
+                    let suggestion_source_text = string.clone();
+                    let suggestion_lint = lint.clone();
+
+                    rects.push(ActionableLint::new(
+                        rect,
+                        rule_name.clone(),
+                        lint,
+                        source_text,
+                        move |suggestion| {
+                            apply_suggestion_to_element(
+                                element,
+                                suggestion_source_text,
+                                suggestion_lint,
+                                suggestion,
+                            );
+                        },
+                    ));
+                }
+            }
+        }
+
+        TreeWalkerFlow::Exit
     }
     fn exit_element(&self, _element: &AXUIElement) {}
 }
@@ -273,18 +502,36 @@ impl<'a> RectCollector<'a> {
             rects: RefCell::new(Vec::new()),
             expected_rect_count: Cell::new(0),
             read_failed: Cell::new(false),
+            found_text_element: Cell::new(false),
+            field_rect: RefCell::new(None),
             visited: Cell::new(0),
             started: Instant::now(),
             pid,
             cached,
             lint_text: RefCell::new(lint_text),
             tone: RefCell::new(None),
+            source_text: RefCell::new(None),
         }
+    }
+
+    /// Whether at least one supported editable text element was visited.
+    pub fn found_text_element(&self) -> bool {
+        self.found_text_element.get()
+    }
+
+    /// Screen bounds of the first supported editable text element visited.
+    pub fn field_rect(&self) -> Option<Rect> {
+        *self.field_rect.borrow()
     }
 
     /// The tone detected for the field, if it was clear enough to name.
     pub fn detected_tone(&self) -> Option<String> {
         self.tone.borrow().clone()
+    }
+
+    /// The text of the active field, even when it has zero lints.
+    pub fn source_text(&self) -> Option<String> {
+        self.source_text.borrow().clone()
     }
 
     pub fn unwrap_rects(self) -> Option<Vec<ActionableLint>> {
@@ -360,6 +607,116 @@ fn category_name(suggestion: &CachedSuggestion) -> &'static str {
     }
 }
 
+/// Reads the full text of a supported accessibility text element, falling back to
+/// `AXStaticText` descendants when `AXValue` is empty or unavailable (e.g. rich `contenteditable` views).
+pub fn read_element_text(element: &AXUIElement) -> Option<String> {
+    let direct = element.value().ok().and_then(|v| cf_type_to_string(&v));
+    if let Some(ref s) = direct
+        && !s.is_empty()
+    {
+        return direct;
+    }
+    let walker = TreeWalker::new();
+    let collector = StaticTextCollector::new();
+    walker.walk(element, &collector);
+    let parts: Vec<String> = collector
+        .into_texts()
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect();
+    if !parts.is_empty() {
+        Some(parts.join("\n"))
+    } else {
+        direct
+    }
+}
+
+fn get_selected_utf16_range(element: &AXUIElement) -> Option<(isize, isize)> {
+    let attr = CFString::new(kAXSelectedTextRangeAttribute);
+    let mut value = ptr::null();
+    let error = unsafe {
+        AXUIElementCopyAttributeValue(
+            element.as_concrete_TypeRef(),
+            attr.as_concrete_TypeRef(),
+            &mut value,
+        )
+    };
+    if error != kAXErrorSuccess || value.is_null() {
+        return None;
+    }
+    let value = unsafe { CFType::wrap_under_create_rule(value) };
+    let ax_value = value.as_CFTypeRef() as AXValueRef;
+    if unsafe { AXValueGetType(ax_value) } != kAXValueTypeCFRange {
+        return None;
+    }
+    let mut range = MaybeUninit::<CFRange>::uninit();
+    let ok = unsafe {
+        AXValueGetValue(
+            ax_value,
+            kAXValueTypeCFRange,
+            range.as_mut_ptr() as *mut c_void,
+        )
+    };
+    if !ok {
+        return None;
+    }
+    let range = unsafe { range.assume_init() };
+    Some((range.location, range.length))
+}
+
+fn set_selected_utf16_range(element: &AXUIElement, start: isize, length: isize) -> bool {
+    let range = CFRange {
+        location: start,
+        length,
+    };
+    let range_value_ref = unsafe {
+        AXValueCreate(
+            kAXValueTypeCFRange,
+            &range as *const CFRange as *const c_void,
+        )
+    };
+    if range_value_ref.is_null() {
+        return false;
+    }
+    let range_value = unsafe { CFType::wrap_under_create_rule(range_value_ref as _) };
+    let attr = CFString::new(kAXSelectedTextRangeAttribute);
+    let error = unsafe {
+        AXUIElementSetAttributeValue(
+            element.as_concrete_TypeRef(),
+            attr.as_concrete_TypeRef(),
+            range_value.as_CFTypeRef(),
+        )
+    };
+    error == kAXErrorSuccess
+}
+
+fn set_selected_text_attribute(element: &AXUIElement, replacement: &str) -> bool {
+    let attr = CFString::new("AXSelectedText");
+    let val = CFString::new(replacement);
+    let error = unsafe {
+        AXUIElementSetAttributeValue(
+            element.as_concrete_TypeRef(),
+            attr.as_concrete_TypeRef(),
+            val.as_CFTypeRef(),
+        )
+    };
+    error == kAXErrorSuccess
+}
+
+fn activate_target_app(pid: pid_t) {
+    if pid <= 0 {
+        return;
+    }
+    if let Some(app) =
+        objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+    {
+        #[allow(deprecated)]
+        let _ = app.activateWithOptions(
+            objc2_app_kit::NSApplicationActivationOptions::ActivateIgnoringOtherApps,
+        );
+    }
+}
+
 fn apply_suggestion_to_element(
     element: AXUIElement,
     source_text: String,
@@ -373,12 +730,47 @@ fn apply_suggestion_to_element(
         Suggestion::Remove => Some(String::new()),
         Suggestion::InsertAfter(_) => None,
     };
+    let span_paste_text = match &suggestion {
+        Suggestion::ReplaceWith(chars) => chars.iter().collect::<String>(),
+        Suggestion::Remove => String::new(),
+        Suggestion::InsertAfter(chars) => {
+            format!("{original}{}", chars.iter().collect::<String>())
+        }
+    };
     let category = format!("{:?}", lint.lint_kind);
+
+    let span_start = lint.span.start.min(source_chars.len());
+    let span_end = lint.span.end.min(source_chars.len()).max(span_start);
+    let utf16_start: isize = source_chars[..span_start]
+        .iter()
+        .map(|c| c.len_utf16() as isize)
+        .sum();
+    let utf16_len: isize = source_chars[span_start..span_end]
+        .iter()
+        .map(|c| c.len_utf16() as isize)
+        .sum();
+    let replacement_utf16_len: isize = span_paste_text
+        .chars()
+        .map(|c| c.len_utf16() as isize)
+        .sum();
+
+    let prev_selection = get_selected_utf16_range(&element);
 
     let mut chars = source_chars;
     suggestion.apply(lint.span, &mut chars);
     let updated = chars.into_iter().collect::<String>();
+    let total_updated_utf16_len: isize = updated.chars().map(|c| c.len_utf16() as isize).sum();
+    let target_caret = match prev_selection {
+        Some((loc, 0)) if loc >= utf16_start + utf16_len => {
+            (loc - utf16_len + replacement_utf16_len).clamp(0, total_updated_utf16_len)
+        }
+        Some((loc, 0)) if loc > 0 && loc <= utf16_start => loc.clamp(0, total_updated_utf16_len),
+        _ => total_updated_utf16_len,
+    };
     let value = CFString::new(&updated);
+
+    let mut pid: pid_t = 0;
+    let pid_error = unsafe { AXUIElementGetPid(element.as_concrete_TypeRef(), &mut pid) };
 
     eprintln!(
         "Applying suggestion via AX write (span {}:{}, replacement {} chars)",
@@ -387,39 +779,181 @@ fn apply_suggestion_to_element(
         updated.chars().count()
     );
 
-    match element.set_value(value.as_CFType()) {
-        Ok(()) => {
-            let mut pid: pid_t = 0;
-            let pid_error = unsafe { AXUIElementGetPid(element.as_concrete_TypeRef(), &mut pid) };
-            let after = element
-                .value()
-                .ok()
-                .and_then(|value| cf_type_to_string(&value))
-                .unwrap_or_else(|| updated.clone());
-            if after != updated {
-                eprintln!("AX write verification mismatch; not recording undo");
-                return;
+    let mut applied = false;
+    let mut mutated_by_ax = false;
+
+    if element.set_value(value.as_CFType()).is_ok() {
+        // Chromium / Electron / WebKit apply AXValue writes asynchronously across IPC (~15-80ms).
+        // Poll read_element_text up to 8 times so we never mistake an in-flight async AXValue
+        // write for a failure and double-apply the suggestion via Cmd+V.
+        for attempt in 0..8 {
+            if attempt > 0 {
+                std::thread::sleep(Duration::from_millis(22));
             }
-            if pid_error == kAXErrorSuccess {
-                if let Err(error) = crate::undo::record(pid, &source_text, &after) {
-                    eprintln!("Could not record undo: {error}");
+            match read_element_text(&element) {
+                Some(after) if after == updated => {
+                    applied = true;
+                    mutated_by_ax = true;
+                    break;
                 }
-                if let Some(replacement) = replacement
-                    && let Err(error) =
-                        crate::voice::record_accepted(&original, &replacement, &category)
+                Some(after) if after != source_text => {
+                    applied = true;
+                    mutated_by_ax = true;
+                    break;
+                }
+                None if attempt >= 3 => {
+                    applied = true;
+                    mutated_by_ax = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if applied {
+            activate_target_app(pid);
+            let _ = set_selected_utf16_range(&element, target_caret, 0);
+        }
+    }
+
+    if !applied && !mutated_by_ax {
+        activate_target_app(pid);
+        if set_selected_utf16_range(&element, utf16_start, utf16_len) {
+            // Verify that the target span `original` is actually selected before attempting
+            // any selection-based replacement; otherwise pasting `span_paste_text` would
+            // insert a duplicate word at the current cursor position.
+            let selected_matches = (0..4).any(|attempt| {
+                if attempt > 0 {
+                    std::thread::sleep(Duration::from_millis(18));
+                }
+                super::core_foundation_utilities::ax_string_attribute(&element, "AXSelectedText")
+                    .is_ok_and(|sel| sel == original)
+            });
+
+            if selected_matches {
+                if set_selected_text_attribute(&element, &span_paste_text) {
+                    for attempt in 0..5 {
+                        if attempt > 0 {
+                            std::thread::sleep(Duration::from_millis(20));
+                        }
+                        if let Some(after) = read_element_text(&element)
+                            && (after == updated || after != source_text)
+                        {
+                            applied = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !applied
+                    && super::core_foundation_utilities::ax_string_attribute(
+                        &element,
+                        "AXSelectedText",
+                    )
+                    .is_ok_and(|sel| sel == original)
+                    && let Ok(snapshot) = crate::pasteboard::write_transient(&span_paste_text)
                 {
-                    eprintln!("Could not record accepted edit: {error}");
+                    if super::paste_command_v().is_ok() {
+                        std::thread::sleep(Duration::from_millis(120));
+                        let after = read_element_text(&element);
+                        applied = after.as_deref() == Some(updated.as_str())
+                            || after.as_deref().is_some_and(|a| a != source_text);
+                    }
+                    crate::pasteboard::restore(snapshot);
                 }
             }
         }
-        Err(error) => eprintln!("Unable to apply suggestion: {error}"),
     }
+
+    if applied && pid_error == kAXErrorSuccess {
+        if let Err(error) = crate::undo::record(pid, &source_text, &updated) {
+            eprintln!("Could not record undo: {error}");
+        }
+        if let Some(replacement) = replacement
+            && let Err(error) = crate::voice::record_accepted(&original, &replacement, &category)
+        {
+            eprintln!("Could not record accepted edit: {error}");
+        }
+    } else if !applied {
+        eprintln!("Unable to apply suggestion via AX write or pasteboard fallback");
+    }
+}
+
+/// Returns whether an accessibility element has a boolean `AXEditable` attribute set to true.
+fn is_ax_editable(el: &AXUIElement) -> bool {
+    let attribute = CFString::new("AXEditable");
+    let mut value = ptr::null();
+    let error = unsafe {
+        AXUIElementCopyAttributeValue(
+            el.as_concrete_TypeRef(),
+            attribute.as_concrete_TypeRef(),
+            &mut value,
+        )
+    };
+    if error != kAXErrorSuccess || value.is_null() {
+        return false;
+    }
+    let value = unsafe { CFType::wrap_under_create_rule(value) };
+    if !value.instance_of::<core_foundation::boolean::CFBoolean>() {
+        return false;
+    }
+    let b = unsafe {
+        core_foundation::boolean::CFBoolean::wrap_under_get_rule(value.as_CFTypeRef() as _)
+    };
+    bool::from(b)
+}
+
+/// Walks up `AXParent` (up to 8 levels) or `AXHighestEditableAncestor` / `AXEditableAncestor`
+/// to find an enclosing supported editable text element.
+pub fn enclosing_supported_text_element(el: &AXUIElement) -> Option<AXUIElement> {
+    if super::core_foundation_utilities::ax_string_attribute(el, "AXSubrole")
+        .is_ok_and(|subrole| subrole == "AXSecureTextField")
+    {
+        return None;
+    }
+    if is_supported_text_element(el) {
+        return Some(el.clone());
+    }
+    if let Ok(highest) =
+        super::core_foundation_utilities::ax_element_attribute(el, "AXHighestEditableAncestor")
+        && is_supported_text_element(&highest)
+    {
+        return Some(highest);
+    }
+    if let Ok(editable) =
+        super::core_foundation_utilities::ax_element_attribute(el, "AXEditableAncestor")
+        && is_supported_text_element(&editable)
+    {
+        return Some(editable);
+    }
+    let mut current = el.clone();
+    for _ in 0..8 {
+        let Ok(parent) =
+            super::core_foundation_utilities::ax_element_attribute(&current, "AXParent")
+        else {
+            break;
+        };
+        if is_supported_text_element(&parent) {
+            return Some(parent);
+        }
+        current = parent;
+    }
+    None
 }
 
 /// Returns whether an accessibility element has a text role Elocutio can lint.
 pub fn is_supported_text_element(el: &AXUIElement) -> bool {
     if let Ok(role) = el.role() {
-        return is_supported_text_role(&role.to_string());
+        let role_str = role.to_string();
+        if is_supported_text_role(&role_str) {
+            return true;
+        }
+        if matches!(
+            role_str.as_str(),
+            "AXWebArea" | "AXGroup" | "AXDocument" | "AXLayoutArea"
+        ) && is_ax_editable(el)
+        {
+            return true;
+        }
     }
 
     false
@@ -427,7 +961,10 @@ pub fn is_supported_text_element(el: &AXUIElement) -> bool {
 
 /// Returns whether an AX role represents editable text supported by the highlighter.
 fn is_supported_text_role(role: &str) -> bool {
-    matches!(role, "AXTextArea" | "AXTextField")
+    matches!(
+        role,
+        "AXTextArea" | "AXTextField" | "AXSearchField" | "AXComboBox"
+    )
 }
 
 /// Collects `AXStaticText` descendants with their string values.
@@ -454,7 +991,12 @@ impl StaticTextCollector {
 impl TreeVisitor for StaticTextCollector {
     fn enter_element(&self, element: &AXUIElement) -> TreeWalkerFlow {
         if let Ok(role) = element.role()
-            && role == "AXStaticText"
+            // Some apps (Mail's compose body, for one) expose their text as a
+            // static-text child of the editable element rather than as the
+            // element's own value, and the editable element reports no range
+            // bounds of its own. The fallback therefore accepts the roles
+            // that actually carry rendered text.
+            && matches!(&*role.to_string(), "AXStaticText" | "AXText")
             && let Ok(value) = element.value()
             && let Some(string) = cf_type_to_string(&value)
             && !string.is_empty()
@@ -520,6 +1062,10 @@ pub fn element_rect_for_text_range_with_fallback(
         }
 
         cursor = child_end;
+    }
+
+    if let Some(frame) = element_frame(element) {
+        return estimate_rect_within_frame(frame, full_text, start_index, length);
     }
 
     None

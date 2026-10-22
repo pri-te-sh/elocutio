@@ -14,13 +14,14 @@ row names a file you can find in
 
 | Data | Where it goes | When | User control |
 | --- | --- | --- | --- |
-| Text being checked | Your chosen provider (or nowhere in local-only mode) | When you trigger analysis or opt into Analyze as I write | Per-app mode, block list, local-only toggle |
+| Text being checked | Your chosen provider (or nowhere in local-only mode / Apple Foundation Models / Ollama Local) | When you trigger analysis or opt into Analyze as I write | Per-app mode, block list, local-only toggle |
 | Selected text / context | Your chosen provider | When you use Rewrite Selection | Tone preset, voice toggle, local-only mode |
-| API keys | macOS Keychain (`app.elocutio.provider.*`) | On entry | Delete/replace in Settings |
-| Usage (tokens, cost, model) | `usage.jsonl` | After each request | View in Settings; delete the file |
-| Suggestion events (rule, category, edit size) | `suggestion-events.jsonl` | When you act on a suggestion, if enabled | Off by default; delete in Settings |
-| Voice samples (uploads/pastes) | Never stored; analyzed in memory | When you add them | Delete the profile |
-| Voice style card | `voice-profile.json`; sent to your provider on voice-aware tasks | When you use "Use my voice" | Preview the exact payload, strength, style-card-only mode |
+| API keys | macOS Keychain (`app.elocutio.provider.*`) + AES-256-CBC encrypted `encrypted_credentials` table in `elocutio.sqlite3` | On entry | Delete/replace in Settings |
+| Usage & token ledger (tokens, cost, model, latency) | `usage.jsonl` + `ai_token_usage` table in `elocutio.sqlite3` (**no user text stored**) | After each request | View in Privacy & AI or Analytics; reset anytime |
+| Personal dictionary & rule overrides | `user_dictionary.txt` + `dictionary_words` & `editorial_rules` tables in `elocutio.sqlite3` | When you add words or toggle rules | Search, edit, bulk-import, or delete in Lexicon |
+| Suggestion & edit events (rule, category, snippet) | `suggestion-events.jsonl` + `edit_events` table in `elocutio.sqlite3` | When you act on a suggestion | Clear history in Settings |
+| Voice samples (uploads/pastes) | Never stored raw; analyzed in memory | When you add them | Delete the profile |
+| Voice style card & DNA traits | `voice-profile.json` + `voice_profile` table in `elocutio.sqlite3`; sent to your provider on voice-aware tasks | When you use "Use my voice" | Preview the exact payload, strength, style-card-only mode |
 | Voice feedback (accepted edits) | `voice-feedback.jsonl` | Only when voice learning is on | Disable learning; clear |
 | Undo snapshot (before/after field text) | `last-edit-undo.json` | When a suggestion is applied | Deleted after one undo |
 | LLM suggestion cache | `llm-cache.json` | After an analysis | Overwritten on the next analysis |
@@ -29,10 +30,7 @@ row names a file you can find in
 **Not collected:** analytics, device identifiers, advertising IDs, location,
 contacts, calendar, screen contents, or keystrokes.
 
-**Still to build:** a request log with per-request detail, provenance events, a
-documents editor, and exemplar sending are **not implemented yet**. They are listed in the plan as M2–M4 work. The
-`elocutio-store` crate reserves the SQLite schema and file name, but the
-current build stores everything in the plain files listed above.
+**Local SQLite database (`elocutio.sqlite3`):** All personal dictionary entries, rule overrides, learned Voice DNA traits, edit telemetry (`edit_events`), per-request token & USD cost logs (`ai_token_usage`), and AES-256-CBC encrypted API credentials (`encrypted_credentials`) are stored locally in `~/Library/Application Support/elocutio/elocutio.sqlite3`. API keys encrypted in SQLite use a per-installation random salt (`elocutio_keystore.salt`) and 10,000-iteration PBKDF2-HMAC-SHA256 key derivation alongside macOS Keychain storage.
 
 ---
 

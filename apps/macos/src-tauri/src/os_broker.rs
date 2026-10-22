@@ -105,6 +105,16 @@ pub trait OsBroker {
         None
     }
 
+    /// Whether a supported editable text field is currently focused in an enabled app.
+    fn has_active_field(&self) -> bool {
+        false
+    }
+
+    /// Screen bounds of the currently focused editable text field, if known.
+    fn active_field_rect(&self) -> Option<crate::rect::Rect> {
+        None
+    }
+
     /// The bundle identifier of the app in front, if it can be determined.
     ///
     /// The highlighter needs this to ask for the settings of the app the user

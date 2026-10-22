@@ -14,12 +14,35 @@ use crate::config::Config;
 use crate::llm_cache::{CachedAnalysis, CachedSuggestion, text_hash};
 
 /// The shortest gap between two analyses of the same text.
-const MIN_ANALYSIS_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
-use crate::os_broker::OsBroker;
+const MIN_ANALYSIS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1_200);
+use crate::os_broker::{FocusedText, OsBroker};
 use crate::{PlatformBroker, llm_cache, main_thread, openrouter, rewrite, usage};
 
 pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
     analyze_focused_field_with(app, None).await
+}
+
+/// Reads the active text field from the live `"elo"` overlay snapshot first, falling back
+/// to the main-thread `PlatformBroker` when needed.
+pub fn current_focused_text(app: &AppHandle) -> Result<Option<FocusedText>, String> {
+    let snap = crate::elo_overlay::current_snapshot();
+    if snap.field_active && snap.pid > 0 && !snap.source_text.trim().is_empty() {
+        return Ok(Some(FocusedText {
+            pid: snap.pid,
+            bundle_id: snap.app_bundle_id,
+            text: snap.source_text,
+        }));
+    }
+    if crate::elo_overlay::is_running() {
+        return Ok(None);
+    }
+    main_thread::run(app, |app| {
+        let state = app.state::<RwLock<PlatformBroker>>();
+        let mut broker = state
+            .write()
+            .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
+        broker.focused_text()
+    })?
 }
 
 /// Analyze the focused field, optionally sending only what changed.
@@ -28,22 +51,12 @@ pub async fn analyze_focused_field(app: &AppHandle) -> Result<String, String> {
 /// mode: when the caller knows what the field looked like at the last
 /// analysis, only the paragraphs that changed since then are sent. The cost
 /// of a long document then stops growing with its length.
-pub async fn analyze_focused_field_with(
-    app: &AppHandle,
+pub async fn analyze_text_with_config(
+    config: &Arc<Mutex<Config>>,
+    focused: FocusedText,
     previous_text: Option<&str>,
-) -> Result<String, String> {
-    let focused = main_thread::run(app, |app| {
-        let state = app.state::<RwLock<PlatformBroker>>();
-        let mut broker = state
-            .write()
-            .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
-        broker.focused_text()
-    })??;
-
-    let focused = focused.ok_or_else(|| "Focus a text field in any app first.".to_string())?;
-
-    let (provider, model) = {
-        let config = app.state::<Arc<Mutex<Config>>>();
+) -> Result<usize, String> {
+    let (provider, model, custom_instruction, dialect_code) = {
         let config = config.lock().await;
         if config.local_only {
             return Err(
@@ -51,12 +64,21 @@ pub async fn analyze_focused_field_with(
                     .to_string(),
             );
         }
+        let dialect_str = match config.dialect {
+            harper_core::Dialect::British => "en-GB",
+            harper_core::Dialect::Canadian => "en-CA",
+            harper_core::Dialect::Australian => "en-AU",
+            harper_core::Dialect::Indian => "en-IN",
+            harper_core::Dialect::American => "en-US",
+        };
         (
             openrouter::ProviderConfig {
                 kind: config.provider_kind,
                 base_url: config.provider_base_url.clone(),
             },
             config.provider_model.clone(),
+            config.custom_instruction.clone(),
+            dialect_str,
         )
     };
 
@@ -65,9 +87,6 @@ pub async fn analyze_focused_field_with(
         return Err("The focused field is empty.".into());
     }
 
-    // In live mode only the changed paragraphs are sent. The offsets are still
-    // resolved against the full text, so a suggestion lands in the right place
-    // even when it came from a partial request.
     let paragraphs: Vec<_> = match previous_text {
         Some(previous) => {
             let changed = crate::auto_analyze::changed_paragraphs(&focused.text, Some(previous));
@@ -80,28 +99,26 @@ pub async fn analyze_focused_field_with(
     };
 
     if paragraphs.is_empty() {
-        return Ok("Nothing changed since the last analysis.".to_string());
+        return Ok(0);
     }
 
-    // Coalesce: the same text, model, and dialect share one request, and a
-    // burst of requests for the same key is throttled. A key that arrives
-    // while another request is in flight waits for the newer one rather than
-    // adding to the storm.
-    let key = crate::coalesce::RequestKey::new(&model, &focused.text, "en-US");
+    let key = crate::coalesce::RequestKey::new(&model, &focused.text, dialect_code);
     let coalescer = crate::coalesce::shared();
     if !coalescer.allows(&key, MIN_ANALYSIS_INTERVAL) {
-        return Ok("That text was just analyzed.".to_string());
+        return Ok(0);
     }
     let generation = coalescer.record(&key);
 
+    let custom_opt = (!custom_instruction.trim().is_empty()).then_some(custom_instruction.as_str());
     let mut suggestions = Vec::new();
-    for paragraph in paragraphs.iter().take(3) {
-        let completion = openrouter::analyze_with(
+    for paragraph in paragraphs.iter().take(4) {
+        let completion = openrouter::analyze_with_context(
             &provider,
             &paragraph.id,
             &paragraph.text,
             Some(model.clone()),
-            "en-US",
+            dialect_code,
+            custom_opt,
         )
         .await?;
         let parsed = parse_response(&completion.content, &paragraphs)?;
@@ -136,9 +153,10 @@ pub async fn analyze_focused_field_with(
         }
     }
 
-    // Rank and cap with the shared merge module, then convert to the cache's
-    // character offsets. The merge has to compare spans from different
-    // paragraphs, so it works on document-level UTF-16 spans.
+    if !coalescer.is_current(&key, generation) {
+        return Ok(0);
+    }
+
     let suggestions = rank_suggestions(&focused.text, suggestions);
     let count = suggestions.len();
     let cache = CachedAnalysis {
@@ -153,13 +171,19 @@ pub async fn analyze_focused_field_with(
         suggestions,
     };
     llm_cache::write(&cache)?;
+    crate::elo_overlay::request_refresh();
 
-    // A result that was superseded while the request was in flight describes
-    // text the user is no longer looking at, so it is discarded.
-    if !coalescer.is_current(&key, generation) {
-        return Ok("A newer analysis replaced this one.".to_string());
-    }
+    Ok(count)
+}
 
+pub async fn analyze_focused_field_with(
+    app: &AppHandle,
+    previous_text: Option<&str>,
+) -> Result<String, String> {
+    let focused = current_focused_text(app)?;
+    let focused = focused.ok_or_else(|| "Focus a text field in any app first.".to_string())?;
+    let config = app.state::<Arc<Mutex<Config>>>();
+    let count = analyze_text_with_config(&config, focused, previous_text).await?;
     if count == 0 {
         Ok("No safe LLM suggestions for the focused field.".to_string())
     } else {
@@ -244,17 +268,120 @@ fn cache_suggestion(
     char_start: usize,
     char_end: usize,
 ) -> CachedSuggestion {
-    CachedSuggestion {
-        id: format!("llm:{}", suggestion.id),
+    let (trimmed_start, trimmed_end, trimmed_orig, trimmed_repl) = trim_unchanged_context(
         char_start,
         char_end,
-        original: suggestion.original,
-        replacement: suggestion.replacement,
+        &suggestion.original,
+        &suggestion.replacement,
+    );
+    CachedSuggestion {
+        id: format!("llm:{}", suggestion.id),
+        char_start: trimmed_start,
+        char_end: trimmed_end,
+        original: trimmed_orig,
+        replacement: trimmed_repl,
         category: suggestion.category,
         severity: suggestion.severity,
         explanation: suggestion.explanation,
         resolution: suggestion.resolution,
     }
+}
+
+/// Trims unchanged leading/trailing whole-word context that the LLM included to
+/// disambiguate `original` within a paragraph (e.g. `"corrections does"` -> `"corrections do"`
+/// trims to `"does"` -> `"do"`), so the inline underline and replacement pill highlight
+/// only the exact changed word(s).
+fn trim_unchanged_context(
+    mut char_start: usize,
+    mut char_end: usize,
+    original: &str,
+    replacement: &str,
+) -> (usize, usize, String, String) {
+    if original.is_empty()
+        || replacement.is_empty()
+        || char_start >= char_end
+        || original.chars().count() != char_end - char_start
+    {
+        return (
+            char_start,
+            char_end,
+            original.to_string(),
+            replacement.to_string(),
+        );
+    }
+
+    let mut orig = original;
+    let mut repl = replacement;
+
+    // 1. Strip identical trailing whitespace + word tokens (`" word"`)
+    while let Some(ws_byte) = orig.rfind(char::is_whitespace) {
+        let suffix = &orig[ws_byte..];
+        if !repl.ends_with(suffix) {
+            break;
+        }
+        let next_orig = &orig[..ws_byte];
+        let next_repl = &repl[..repl.len() - suffix.len()];
+        if next_orig.is_empty()
+            || next_repl.is_empty()
+            || next_orig == next_repl
+            || next_orig.ends_with(char::is_whitespace)
+            || next_repl.ends_with(char::is_whitespace)
+            || !next_orig.chars().any(char::is_alphanumeric)
+        {
+            break;
+        }
+        char_end = char_end.saturating_sub(suffix.chars().count());
+        orig = next_orig;
+        repl = next_repl;
+    }
+
+    // 2. Strip identical leading word + whitespace tokens (`"word "`)
+    while let Some(ws_byte) = orig.find(char::is_whitespace) {
+        let ws_char_len = orig[ws_byte..]
+            .chars()
+            .take_while(|c| c.is_whitespace())
+            .map(char::len_utf8)
+            .sum::<usize>();
+        let prefix_end = ws_byte + ws_char_len;
+        let prefix = &orig[..prefix_end];
+        if !repl.starts_with(prefix) {
+            break;
+        }
+        let next_orig = &orig[prefix_end..];
+        let next_repl = &repl[prefix_end..];
+        if next_orig.is_empty()
+            || next_repl.is_empty()
+            || next_orig == next_repl
+            || next_orig.starts_with(char::is_whitespace)
+            || next_repl.starts_with(char::is_whitespace)
+            || !next_orig.chars().any(char::is_alphanumeric)
+        {
+            break;
+        }
+        char_start += prefix.chars().count();
+        orig = next_orig;
+        repl = next_repl;
+    }
+
+    // 3. Strip identical trailing punctuation character (e.g. `"spell,"` -> `"spelling,"`)
+    if let (Some(o_last), Some(r_last)) = (orig.chars().last(), repl.chars().last())
+        && o_last == r_last
+        && matches!(o_last, ',' | '.' | ';' | ':' | '!' | '?')
+    {
+        let next_orig = &orig[..orig.len() - o_last.len_utf8()];
+        let next_repl = &repl[..repl.len() - r_last.len_utf8()];
+        if !next_orig.is_empty()
+            && !next_repl.is_empty()
+            && next_orig != next_repl
+            && next_orig.chars().any(char::is_alphanumeric)
+        {
+            char_end = char_end.saturating_sub(1);
+            orig = next_orig;
+            repl = next_repl;
+        }
+    }
+
+    (char_start, char_end, orig.to_string(), repl.to_string())
 }
 
 fn utf16_to_char(text: &str, utf16_index: usize) -> usize {

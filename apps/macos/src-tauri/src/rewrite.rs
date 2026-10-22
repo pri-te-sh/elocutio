@@ -12,7 +12,7 @@
 use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::main_thread;
@@ -107,7 +107,8 @@ pub async fn preview_selection(app: &tauri::AppHandle) -> Result<PendingRewrite,
         cost_cap,
     )?;
 
-    let result = openrouter::rewrite_with(
+    let _ = app.emit("elo-rewrite-state", serde_json::json!({ "active": true }));
+    let rewrite_res = openrouter::rewrite_with(
         &provider,
         &text,
         Some(model),
@@ -115,7 +116,9 @@ pub async fn preview_selection(app: &tauri::AppHandle) -> Result<PendingRewrite,
         tone,
         Some(instruction.as_str()),
     )
-    .await?;
+    .await;
+    let _ = app.emit("elo-rewrite-state", serde_json::json!({ "active": false }));
+    let result = rewrite_res?;
     if let Err(error) = usage::record(&result) {
         eprintln!("Could not record usage: {error}");
     }
@@ -192,6 +195,7 @@ async fn selected_text(app: &tauri::AppHandle) -> Result<String, String> {
 }
 
 /// Rewrite the selection and apply it straight away.
+#[allow(dead_code)]
 pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String> {
     let text = selected_text(app).await?;
 
@@ -218,7 +222,8 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
         openrouter::REWRITE_MAX_TOKENS,
         cost_cap,
     )?;
-    let result = openrouter::rewrite_with(
+    let _ = app.emit("elo-rewrite-state", serde_json::json!({ "active": true }));
+    let rewrite_res = openrouter::rewrite_with(
         &provider,
         &text,
         Some(model),
@@ -226,7 +231,9 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
         tone,
         Some(instruction.as_str()),
     )
-    .await?;
+    .await;
+    let _ = app.emit("elo-rewrite-state", serde_json::json!({ "active": false }));
+    let result = rewrite_res?;
     if let Err(error) = usage::record(&result) {
         eprintln!("Could not record usage: {error}");
     }

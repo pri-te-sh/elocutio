@@ -50,13 +50,14 @@ fn restore_dock_icon() {
     unsafe { NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&image)) };
 }
 
-/// Select the activation policy from open window labels, ignoring a destroyed window.
+/// Select the activation policy from open window labels, ignoring a destroyed window
+/// and the background `elo-overlay` window.
 #[cfg(target_os = "macos")]
 fn activation_policy_for_windows<'a>(
     mut labels: impl Iterator<Item = &'a str>,
     destroyed_label: Option<&str>,
 ) -> tauri::ActivationPolicy {
-    if labels.any(|label| Some(label) != destroyed_label) {
+    if labels.any(|label| label != "elo-overlay" && Some(label) != destroyed_label) {
         tauri::ActivationPolicy::Regular
     } else {
         tauri::ActivationPolicy::Accessory
@@ -68,6 +69,7 @@ fn activation_policy_for_windows<'a>(
 /// New windows are built hidden so activation policy changes precede showing and
 /// focusing them. Failed window creation therefore leaves the policy unchanged.
 fn show_window(window: WebviewWindow) -> tauri::Result<()> {
+    crate::elo_overlay::set_overlay_input_focus(false);
     #[cfg(target_os = "macos")]
     sync_dock_visibility(window.app_handle(), None)?;
 
@@ -75,31 +77,21 @@ fn show_window(window: WebviewWindow) -> tauri::Result<()> {
     window.set_focus()
 }
 
-/// Open the editor window, focusing it if it already exists.
+/// Open the editor window, focusing the main Elocutio Studio window.
 pub fn show_editor_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window("editor") {
-        return show_window(window);
-    }
-
-    let window = WebviewWindowBuilder::new(app, "editor", WebviewUrl::App("index.html".into()))
-        .title("Elocutio")
-        .inner_size(800.0, 600.0)
-        .visible(false)
-        .build()?;
-
-    show_window(window)
+    show_settings_window(app)
 }
 
-/// Open the settings window, focusing it if it already exists.
+/// Open the main Elocutio Studio & Settings window, focusing it if it already exists.
 pub fn show_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("settings") {
         return show_window(window);
     }
 
     let window = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
-        .title("Elocutio Settings")
-        .inner_size(920.0, 680.0)
-        .min_inner_size(780.0, 520.0)
+        .title("Elocutio — Writing Studio & Settings")
+        .inner_size(1240.0, 820.0)
+        .min_inner_size(940.0, 620.0)
         .center()
         .visible(false)
         .build()?;
@@ -108,6 +100,7 @@ pub fn show_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 }
 
 /// Open the browser to an issue report page.
+#[allow(dead_code)]
 pub fn open_issue_report(app: &AppHandle) {
     let _ = app
         .opener()

@@ -16,12 +16,6 @@ use self::{
     },
 };
 use super::{AddToDictionary, AnalyzeField, DisableRule, IgnoreLint, OpenSettings, PreviewRequest};
-
-/// The collapsed widget's size, in points.
-const DOT_SIZE: f32 = 14.0;
-
-/// The collapsed widget's radius, in points.
-const DOT_RADIUS: f32 = 4.0;
 use crate::{
     lint_kind_color::lint_kind_color,
     rect::{ActionableLint, Rect},
@@ -71,6 +65,12 @@ pub struct RenderState {
     /// Whether a supported editable field is currently focused.
     field_active: bool,
 
+    /// Screen-space bounds of the currently focused editable field (or its window).
+    field_rect: Option<Rect>,
+
+    /// Whether the user explicitly closed the popup for the current lint set.
+    user_dismissed_popup: bool,
+
     /// The flyout card's drawn offset from the list card's top, in points.
     current_sidebar_position: f32,
 
@@ -118,6 +118,8 @@ impl RenderState {
             widget_anchor: None,
             tone_badge: None,
             field_active: false,
+            field_rect: None,
+            user_dismissed_popup: false,
             last_render: None,
             markdown_cache: CommonMarkCache::default(),
             ignore_lint,
@@ -136,6 +138,10 @@ impl RenderState {
     /// Closes the popup when its lint disappeared, and forgets the shown suggestion when the
     /// refreshed lint has fewer rows.
     pub fn set_lints(&mut self, lints: Vec<ActionableLint>) {
+        let prev_count = self.lints().len();
+        if lints.len() != prev_count {
+            self.user_dismissed_popup = false;
+        }
         self.last_lints = Some(lints);
 
         if self
@@ -161,6 +167,21 @@ impl RenderState {
 
     pub fn set_field_active(&mut self, active: bool) {
         self.field_active = active;
+        if !active {
+            self.close_popup();
+        }
+    }
+
+    pub fn set_field_rect(&mut self, rect: Option<Rect>) {
+        self.field_rect = rect;
+    }
+
+    pub fn has_active_popup(&self) -> bool {
+        self.highlighted_lint.is_some()
+    }
+
+    pub fn was_dismissed_by_user(&self) -> bool {
+        self.user_dismissed_popup
     }
 
     /// Pin the widget for the current app, or return it to the default.
@@ -186,6 +207,9 @@ impl RenderState {
     /// Like the Chrome extension, each new selection starts again from the first suggestion row.
     pub fn set_highlighted_lint(&mut self, highlighted_lint: Option<usize>) {
         self.highlighted_lint = highlighted_lint.filter(|index| *index < self.lints().len());
+        if self.highlighted_lint.is_some() {
+            self.user_dismissed_popup = false;
+        }
         self.shown_suggestion = None;
         self.current_sidebar_position = FIRST_ROW_OFFSET;
     }
@@ -267,7 +291,7 @@ impl RenderState {
     pub fn shown_replacement(&self) -> Option<harper_core::linting::Suggestion> {
         let index = self.highlighted_lint?;
         let lint = self.lints().get(index)?;
-        let row = self.shown_suggestion?;
+        let row = self.shown_suggestion.unwrap_or(0);
         lint.lint.suggestions.get(row).cloned()
     }
 
@@ -324,6 +348,11 @@ impl RenderState {
         (self.ignore_lint)(&lint, &document);
 
         let _ = rule_name;
+        if let Some(lints) = &mut self.last_lints
+            && index < lints.len()
+        {
+            lints.remove(index);
+        }
         self.close_popup();
         true
     }
@@ -336,12 +365,11 @@ impl RenderState {
         let Some(index) = self.highlighted_lint else {
             return false;
         };
-        if let Some(actionable_lint) = self
-            .last_lints
-            .as_mut()
-            .and_then(|lints| lints.get_mut(index))
+        if let Some(lints) = &mut self.last_lints
+            && let Some(actionable_lint) = lints.get_mut(index)
         {
             actionable_lint.apply_suggestion(suggestion);
+            lints.remove(index);
         }
         self.close_popup();
         true
@@ -439,7 +467,10 @@ impl RenderState {
                 self.current_sidebar_position,
                 &mut self.markdown_cache,
             ) {
-                Some(LintCardAction::Close) => self.close_popup(),
+                Some(LintCardAction::Close) => {
+                    self.user_dismissed_popup = true;
+                    self.close_popup();
+                }
                 Some(LintCardAction::OpenSettings) => {
                     (self.open_settings)();
                     self.close_popup();
@@ -448,10 +479,8 @@ impl RenderState {
                     self.shown_suggestion = Some(suggestion);
                 }
                 Some(LintCardAction::ApplySuggestion(suggestion)) => {
-                    if let Some(actionable_lint) = self
-                        .last_lints
-                        .as_mut()
-                        .and_then(|lints| lints.get_mut(index))
+                    if let Some(lints) = &mut self.last_lints
+                        && let Some(actionable_lint) = lints.get_mut(index)
                     {
                         record_interaction(
                             actionable_lint,
@@ -459,6 +488,7 @@ impl RenderState {
                             &suggestion,
                         );
                         actionable_lint.apply_suggestion(suggestion);
+                        lints.remove(index);
                     }
 
                     self.close_popup();
@@ -496,6 +526,11 @@ impl RenderState {
                         let document = Document::new_markdown_default_curated(&source_text);
                         (self.ignore_lint)(&lint, &document);
                     }
+                    if let Some(lints) = &mut self.last_lints
+                        && index < lints.len()
+                    {
+                        lints.remove(index);
+                    }
 
                     self.close_popup();
                 }
@@ -511,6 +546,11 @@ impl RenderState {
                         let document = Document::new_markdown_default_curated(&source_text);
                         let word = lint.get_str(document.get_source());
                         (self.add_to_dictionary)(&word);
+                    }
+                    if let Some(lints) = &mut self.last_lints
+                        && index < lints.len()
+                    {
+                        lints.remove(index);
                     }
 
                     self.close_popup();
@@ -529,6 +569,11 @@ impl RenderState {
                     {
                         (self.disable_rule)(&rule_name);
                     }
+                    if let Some(lints) = &mut self.last_lints
+                        && index < lints.len()
+                    {
+                        lints.remove(index);
+                    }
 
                     self.close_popup();
                 }
@@ -537,24 +582,26 @@ impl RenderState {
         }
 
         if self.field_active {
-            // The widget collapses to a dot when there is nothing to say, so
-            // it does not sit in the corner of every window the user types in.
-            // The plan asks for this: "Appears after the first suggestion;
-            // collapses to a dot when idle."
-            let collapsed = self.lints().is_empty();
-            let size = if collapsed {
-                egui::vec2(DOT_SIZE, DOT_SIZE)
-            } else {
-                egui::vec2(148.0, 36.0)
-            };
+            let lint_count = self.lints().len();
+            let size = egui::vec2(156.0, 34.0);
             let screen = ui.ctx().content_rect();
-            // A pinned anchor wins. Otherwise the widget sits beside the first
-            // underline, or in the bottom-right corner when there is nothing
-            // to underline.
+            // A pinned anchor wins. Otherwise place the widget inside the
+            // bottom-right corner of the active text field (or beside the first
+            // underline if field bounds are unavailable).
             let mut pos = match self.widget_anchor {
                 Some(anchor) => anchor.position(screen, size),
                 None => {
-                    if let Some(first) = self.lints().first() {
+                    if let Some(field) = self.field_rect {
+                        let fx = field.x as f32;
+                        let fy = field.y as f32;
+                        let fw = field.width as f32;
+                        let fh = field.height as f32;
+                        if fh >= 54.0 {
+                            egui::pos2(fx + fw - size.x - 16.0, fy + fh - size.y - 12.0)
+                        } else {
+                            egui::pos2(fx + fw - size.x - 4.0, fy + fh + 6.0)
+                        }
+                    } else if let Some(first) = self.lints().first() {
                         let anchor = rect_bounds(&first.rect);
                         let above = anchor.top() - size.y - 6.0;
                         let y = if above >= screen.top() + 8.0 {
@@ -581,29 +628,9 @@ impl RenderState {
             let rect = egui::Rect::from_min_size(pos, size);
             self.widget_rect = Some(rect);
 
-            if collapsed {
-                // The dot: a small mark that says Elocutio is watching.
-                ui.painter().circle_filled(
-                    rect.center(),
-                    DOT_RADIUS,
-                    egui::Color32::from_rgb(0x8A, 0x8F, 0x9C),
-                );
-                let response = ui.interact(
-                    rect,
-                    ui.id().with("elocutio-suggestion-widget"),
-                    egui::Sense::click(),
-                );
-                if response.clicked() {
-                    self.open_widget();
-                }
-                // The collapsed widget has no AI action.
-                self.analyze_rect = None;
-                return;
-            }
-
             let analyze_rect = egui::Rect::from_min_max(
-                egui::pos2(rect.right() - 46.0, rect.top()),
-                rect.right_bottom(),
+                egui::pos2(rect.right() - 42.0, rect.top() + 4.0),
+                egui::pos2(rect.right() - 4.0, rect.bottom() - 4.0),
             );
             self.analyze_rect = Some(analyze_rect);
 
@@ -618,73 +645,89 @@ impl RenderState {
                 egui::Sense::click(),
             );
             let fill = if response.hovered() {
-                egui::Color32::from_rgb(0xf2, 0xf3, 0xff)
+                egui::Color32::from_rgb(0xf6, 0xf7, 0xff)
             } else {
                 egui::Color32::WHITE
             };
             let border = egui::Color32::from_rgb(0xd0, 0xd7, 0xde);
             ui.painter()
-                .rect_filled(rect, egui::CornerRadius::same(8), fill);
+                .rect_filled(rect, egui::CornerRadius::same(17), fill);
             ui.painter().rect_stroke(
                 rect,
-                egui::CornerRadius::same(8),
+                egui::CornerRadius::same(17),
                 egui::Stroke::new(1.0_f32, border),
                 egui::StrokeKind::Inside,
             );
+
+            // Status pill badge on the left: red/coral count when issues exist,
+            // emerald checkmark when clean.
+            let badge_center = egui::pos2(rect.left() + 17.0, rect.center().y);
+            let (badge_color, badge_label) = if lint_count > 0 {
+                (
+                    egui::Color32::from_rgb(0xe5, 0x48, 0x4d),
+                    lint_count.to_string(),
+                )
+            } else {
+                (egui::Color32::from_rgb(0x16, 0xa3, 0x4a), "✓".to_string())
+            };
+            ui.painter().circle_filled(badge_center, 11.0, badge_color);
             ui.painter().text(
-                egui::pos2(rect.left() + 14.0, rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                "\"",
-                egui::FontId::proportional(24.0),
-                egui::Color32::from_rgb(0x19, 0x1f, 0x70),
+                badge_center,
+                egui::Align2::CENTER_CENTER,
+                badge_label,
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE,
+            );
+
+            // Middle label: detected tone or status summary.
+            let middle_label = self.tone_badge.as_deref().unwrap_or(if lint_count == 1 {
+                "1 issue"
+            } else if lint_count > 1 {
+                "Issues"
+            } else {
+                "Ready"
+            });
+            let tone_rect = egui::Rect::from_min_max(
+                egui::pos2(rect.left() + 33.0, rect.top() + 4.0),
+                egui::pos2(analyze_rect.left() - 4.0, rect.bottom() - 4.0),
             );
             ui.painter().text(
-                egui::pos2(analyze_rect.left() - 12.0, rect.center().y),
-                egui::Align2::RIGHT_CENTER,
-                self.lints().len().to_string(),
-                egui::FontId::proportional(14.0),
-                egui::Color32::from_rgb(0x1f, 0x23, 0x28),
+                tone_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                middle_label,
+                egui::FontId::proportional(11.5),
+                egui::Color32::from_rgb(0x3b, 0x42, 0x52),
             );
-            if analyze_response.hovered() {
-                ui.painter()
-                    .rect_filled(analyze_rect, egui::CornerRadius::same(8), fill);
-                ui.painter().rect_stroke(
-                    analyze_rect,
-                    egui::CornerRadius::same(8),
-                    egui::Stroke::new(1.0_f32, border),
-                    egui::StrokeKind::Inside,
-                );
-            }
+
+            let ai_fill = if analyze_response.hovered() {
+                egui::Color32::from_rgb(0xdf, 0xe3, 0xff)
+            } else {
+                egui::Color32::from_rgb(0xee, 0xf0, 0xff)
+            };
+            ui.painter()
+                .rect_filled(analyze_rect, egui::CornerRadius::same(13), ai_fill);
             ui.painter().text(
                 analyze_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 "AI",
-                egui::FontId::proportional(13.0),
+                egui::FontId::proportional(11.5),
                 egui::Color32::from_rgb(0x19, 0x1f, 0x70),
             );
 
-            // The tone badge sits between the count and the AI action, and
-            // only when a tone was actually detected.
-            if let Some(tone) = &self.tone_badge {
-                let tone_rect = egui::Rect::from_min_max(
-                    egui::pos2(rect.left() + 46.0, rect.top() + 8.0),
-                    egui::pos2(rect.left() + 96.0, rect.bottom() - 8.0),
-                );
-                ui.painter().text(
-                    tone_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    tone,
-                    egui::FontId::proportional(11.0),
-                    egui::Color32::from_rgb(0x4a, 0x52, 0x66),
-                );
-            }
-
-            if response
+            if analyze_response
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
-                && !analyze_response.clicked()
             {
-                self.open_widget();
+                self.request_analyze();
+            } else if response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                if lint_count > 0 {
+                    self.open_widget();
+                } else {
+                    self.request_analyze();
+                }
             }
         } else {
             self.widget_rect = None;

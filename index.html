@@ -2,1760 +2,2454 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- MANDATORY: Declare support for both light and dark themes -->
-    <meta name="color-scheme" content="light dark" />
-    <script>
-      try {
-        document.querySelector('meta[name="color-scheme"]').content =
-          localStorage.getItem("color-scheme") ?? "light dark";
-      } catch (e) {
-        /* localStorage may be restricted; default light dark remains active */
-      }
-    </script>
-    <title>Elocutio — Your voice. Clearly expressed.</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="theme-color" content="#F8F7F3" />
+    <title>Elocutio · Your voice. Clearly expressed.</title>
     <meta
       name="description"
-      content="A private, open-source writing companion for macOS. Instant local checks, bring-your-own-key rewrites, and a local voice profile."
+      content="Elocutio is a private, open-source writing companion for macOS. Local checks, clear explanations, and rewrites from the model you choose, in your own voice."
     />
-    <meta property="og:title" content="Elocutio — Your voice. Clearly expressed." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Elocutio · Your voice. Clearly expressed." />
     <meta
       property="og:description"
-      content="A private, open-source writing companion for macOS — local-first, model-agnostic, no vendor in the middle."
+      content="A private, open-source writing companion for macOS. Bring your own model, or run fully on-device."
     />
-    <meta property="og:image" content="assets/icons/social-preview.png" />
-    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://pri-te-sh.github.io/elocutio/" />
+    <meta
+      property="og:image"
+      content="https://pri-te-sh.github.io/elocutio/assets/icons/social-preview.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="assets/icons/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="assets/icons/app-icon-256.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      @layer reset, base, theme, layout, components;
+      :root {
+        /* Brand tokens: assets/brand/tokens.json */
+        --indigo: #191f70;
+        --indigo-deep: #10144f;
+        --soft-indigo: #b8beff;
+        --indigo-tint: #eceefe;
+        --ink: #171717;
+        --paper: #f8f7f3;
+        --paper-deep: #efece4;
+        --white: #ffffff;
 
-      @layer reset {
-        :where(*, *::before, *::after) {
-          box-sizing: border-box;
+        --text: #171717;
+        --text-2: #4d4a44;
+        --text-3: #77736b;
+        --line: #e4e0d6;
+        --line-strong: #cfc9bb;
+
+        /* Suggestion categories (match the app) */
+        --cat-correct: #c8442a;
+        --cat-correct-bg: #fbe4dd;
+        --cat-clarity: #b45f06;
+        --cat-clarity-bg: #fbeedb;
+        --cat-style: #191f70;
+        --cat-style-bg: #e6e8fb;
+        --ok: #17734a;
+
+        --sans:
+          "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+          sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+        --r-control: 8px;
+        --r-card: 12px;
+        --r-panel: 16px;
+        --wrap: 1120px;
+        --gutter: clamp(16px, 4vw, 32px);
+        --shadow-window:
+          0 1px 0 rgba(23, 23, 23, 0.04), 0 18px 48px -20px rgba(25, 31, 112, 0.28),
+          0 4px 12px -6px rgba(23, 23, 23, 0.12);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 17px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        overflow-x: hidden;
+      }
+      img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+      a {
+        color: var(--indigo);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1,
+      h2,
+      h3 {
+        font-weight: 600;
+        color: var(--ink);
+        letter-spacing: -0.025em;
+        line-height: 1.08;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      :focus-visible {
+        outline: 2px solid var(--indigo);
+        outline-offset: 3px;
+        border-radius: 4px;
+      }
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+      .skip:focus {
+        left: 16px;
+        top: 12px;
+        z-index: 100;
+        background: var(--white);
+        padding: 8px 12px;
+        border-radius: var(--r-control);
+      }
+      .wrap {
+        max-width: var(--wrap);
+        margin: 0 auto;
+        padding: 0 var(--gutter);
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
+      .section {
+        padding: clamp(72px, 10vw, 128px) 0;
+      }
+      .section-head {
+        max-width: 680px;
+        margin-bottom: clamp(36px, 5vw, 56px);
+      }
+      .section-head h2 {
+        font-size: clamp(32px, 4.4vw, 48px);
+        margin-top: 14px;
+      }
+      .section-head p {
+        margin-top: 18px;
+        font-size: 19px;
+        color: var(--text-2);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 46px;
+        padding: 0 20px;
+        border-radius: 999px;
+        font-size: 16px;
+        font-weight: 500;
+        text-decoration: none;
+        border: 1px solid transparent;
+        transition:
+          background-color 0.15s,
+          border-color 0.15s,
+          color 0.15s;
+        white-space: nowrap;
+      }
+      .btn-primary {
+        background: var(--indigo);
+        color: var(--white);
+      }
+      .btn-primary:hover {
+        background: var(--indigo-deep);
+      }
+      .btn-ghost {
+        background: var(--white);
+        color: var(--ink);
+        border-color: var(--line-strong);
+      }
+      .btn-ghost:hover {
+        border-color: var(--indigo);
+        color: var(--indigo);
+      }
+      .btn svg {
+        width: 18px;
+        height: 18px;
+        flex: none;
+      }
+      kbd {
+        font-family: var(--sans);
+        font-size: 0.85em;
+        font-weight: 500;
+        background: var(--white);
+        border: 1px solid var(--line-strong);
+        border-bottom-width: 2px;
+        border-radius: 6px;
+        padding: 1px 7px;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+
+      /* ---------- Nav ---------- */
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: rgba(248, 247, 243, 0.86);
+        backdrop-filter: saturate(1.4) blur(12px);
+        -webkit-backdrop-filter: saturate(1.4) blur(12px);
+        border-bottom: 1px solid transparent;
+        transition: border-color 0.15s;
+      }
+      .nav.scrolled {
+        border-bottom-color: var(--line);
+      }
+      .nav .wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 68px;
+        gap: 24px;
+      }
+      .nav-logo img {
+        height: 34px;
+        width: auto;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        font-size: 15px;
+      }
+      .nav-links a:not(.btn) {
+        color: var(--text-2);
+        text-decoration: none;
+      }
+      .nav-links a:not(.btn):hover {
+        color: var(--indigo);
+      }
+      .nav .btn {
+        height: 38px;
+        padding: 0 16px;
+        font-size: 15px;
+      }
+      @media (max-width: 760px) {
+        .nav-links a:not(.btn) {
+          display: none;
         }
+      }
 
-        :where(body, h1, h2, h3, p, figure, blockquote, dl, dd) {
-          margin: 0;
+      /* ---------- Hero ---------- */
+      .hero {
+        padding: clamp(40px, 7vw, 88px) 0 clamp(64px, 8vw, 104px);
+      }
+      .hero .wrap {
+        display: grid;
+        grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+        gap: clamp(40px, 5vw, 72px);
+        align-items: center;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--indigo);
+        background: var(--indigo-tint);
+        border-radius: 999px;
+        padding: 6px 12px;
+      }
+      .pill .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--indigo);
+      }
+      .hero h1 {
+        font-size: clamp(44px, 6.4vw, 76px);
+        margin-top: 22px;
+        letter-spacing: -0.035em;
+        line-height: 1.02;
+      }
+      .hero h1 span {
+        color: var(--indigo);
+      }
+      .hero .lede {
+        margin-top: 24px;
+        font-size: clamp(18px, 1.6vw, 20px);
+        color: var(--text-2);
+        max-width: 30em;
+      }
+      .hero-cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 32px;
+      }
+      .hero-meta {
+        margin-top: 22px;
+        font-size: 14px;
+        color: var(--text-3);
+      }
+      @media (max-width: 920px) {
+        .hero .wrap {
+          grid-template-columns: 1fr;
         }
+      }
 
-        :where(img, picture, svg) {
+      /* Hero demo: a compose window with live suggestions */
+      .stage {
+        position: relative;
+        padding: 28px 0 76px 28px;
+      }
+      .stage::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 0 0;
+        left: 0;
+        background: var(--soft-indigo);
+        opacity: 0.38;
+        border-radius: 28px;
+      }
+      .window {
+        position: relative;
+        background: var(--white);
+        border-radius: var(--r-panel);
+        box-shadow: var(--shadow-window);
+        border: 1px solid rgba(23, 23, 23, 0.06);
+        margin-right: -28px;
+      }
+      @media (max-width: 920px) {
+        .window {
+          margin-right: 0;
+        }
+        .stage {
+          padding: 18px 18px 76px;
+        }
+      }
+      .window-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .window-bar i {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #e3dfd5;
+      }
+      .window-bar b {
+        margin-left: 10px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-3);
+      }
+      .mail-fields {
+        padding: 6px 22px;
+        font-size: 14px;
+        color: var(--text-3);
+        border-bottom: 1px solid var(--line);
+      }
+      .mail-fields div {
+        padding: 7px 0;
+      }
+      .mail-fields div + div {
+        border-top: 1px solid var(--line);
+      }
+      .mail-fields span {
+        color: var(--ink);
+      }
+      .mail-body {
+        position: relative;
+        padding: 22px 22px 128px;
+        font-size: 16px;
+        line-height: 1.75;
+        color: var(--ink);
+        min-height: 300px;
+      }
+      .mail-body p + p {
+        margin-top: 12px;
+      }
+      .flag {
+        all: unset;
+        cursor: pointer;
+        border-radius: 3px;
+        background-image: linear-gradient(currentColor, currentColor);
+        background-repeat: no-repeat;
+        background-position: 0 100%;
+        background-size: 100% 2px;
+        padding-bottom: 1px;
+        transition: background-color 0.15s;
+      }
+      .flag[data-cat="correct"] {
+        color: var(--cat-correct);
+      }
+      .flag[data-cat="clarity"] {
+        color: var(--cat-clarity);
+      }
+      .flag[data-cat="style"] {
+        color: var(--cat-style);
+      }
+      .flag > span {
+        color: var(--ink);
+      }
+      .flag[data-cat="correct"].active,
+      .flag[data-cat="correct"]:hover {
+        background-color: var(--cat-correct-bg);
+      }
+      .flag[data-cat="clarity"].active,
+      .flag[data-cat="clarity"]:hover {
+        background-color: var(--cat-clarity-bg);
+      }
+      .flag[data-cat="style"].active,
+      .flag[data-cat="style"]:hover {
+        background-color: var(--cat-style-bg);
+      }
+      .flag.fixed {
+        background-size: 0 0;
+        background-color: transparent !important;
+        cursor: default;
+      }
+      .flag.fixed > span {
+        color: var(--ink);
+      }
+
+      .card {
+        position: absolute;
+        left: 0;
+        bottom: 22px;
+        width: min(360px, calc(100% - 24px));
+        background: var(--white);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--cat-clarity);
+        border-radius: var(--r-card);
+        box-shadow: 0 14px 34px -14px rgba(23, 23, 23, 0.3);
+        padding: 14px 16px 14px;
+        font-size: 14px;
+        line-height: 1.5;
+        transition:
+          opacity 0.15s,
+          transform 0.15s;
+      }
+      .card[hidden] {
+        display: block;
+        opacity: 0;
+        transform: translateY(6px);
+        pointer-events: none;
+      }
+      .card-label {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: var(--cat-clarity);
+      }
+      .card-diff {
+        margin-top: 8px;
+        font-size: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 8px;
+      }
+      .card-diff del {
+        color: var(--text-3);
+        text-decoration-color: var(--cat-correct);
+      }
+      .card-diff ins {
+        text-decoration: none;
+        font-weight: 600;
+        color: var(--indigo);
+        background: var(--indigo-tint);
+        border-radius: 4px;
+        padding: 0 6px;
+      }
+      .card-why {
+        margin-top: 6px;
+        color: var(--text-2);
+      }
+      .card-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .card-actions button {
+        border-radius: var(--r-control);
+        border: 1px solid var(--line-strong);
+        background: var(--white);
+        padding: 6px 12px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .card-actions .apply {
+        background: var(--indigo);
+        color: var(--white);
+        border-color: var(--indigo);
+      }
+      .card-actions .apply:hover {
+        background: var(--indigo-deep);
+      }
+      .card-actions button:not(.apply):hover {
+        border-color: var(--indigo);
+        color: var(--indigo);
+      }
+
+      .elo {
+        position: absolute;
+        right: 18px;
+        bottom: 18px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px 6px 12px;
+        border-radius: 999px;
+        background: var(--white);
+        border: 1px solid var(--line);
+        box-shadow: 0 8px 20px -10px rgba(23, 23, 23, 0.35);
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-2);
+      }
+      .elo img {
+        width: 22px;
+      }
+      .elo-count {
+        min-width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: var(--cat-correct);
+        color: var(--white);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 7px;
+        transition: background-color 0.15s;
+      }
+      .elo.clear .elo-count {
+        background: var(--ok);
+      }
+      .elo-reset {
+        all: unset;
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--indigo);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        margin-right: 4px;
+      }
+      .elo-reset[hidden] {
+        display: none;
+      }
+      @media (max-width: 560px) {
+        .stage {
+          padding-bottom: 18px;
+        }
+        .mail-body {
+          padding-bottom: 64px;
+        }
+        .card {
+          position: relative;
+          left: auto;
+          bottom: auto;
+          width: auto;
+          margin: -44px 8px 0;
+        }
+        .elo {
+          bottom: auto;
+          top: 12px;
+          right: 12px;
+        }
+      }
+      .demo-hint {
+        position: relative;
+        margin-top: 14px;
+        font-size: 13px;
+        color: var(--text-2);
+        text-align: center;
+      }
+
+      /* ---------- Tour video ---------- */
+      .tour {
+        padding-top: 0;
+      }
+      .video {
+        position: relative;
+        aspect-ratio: 16 / 9;
+        border-radius: 20px;
+        overflow: hidden;
+        background: var(--indigo);
+        box-shadow: var(--shadow-window);
+      }
+      .video video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        background: #000;
+      }
+      .poster {
+        all: unset;
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: end;
+        gap: 24px;
+        padding: clamp(22px, 4vw, 48px);
+        background: var(--indigo);
+        color: var(--white);
+        cursor: pointer;
+      }
+      .poster[disabled] {
+        cursor: default;
+      }
+      .poster-mark {
+        position: absolute;
+        top: clamp(22px, 4vw, 48px);
+        left: clamp(22px, 4vw, 48px);
+        width: clamp(56px, 8vw, 96px);
+      }
+      .poster-title {
+        font-size: clamp(26px, 4.4vw, 54px);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.05;
+        max-width: 12em;
+      }
+      .poster-sub {
+        margin-top: 10px;
+        font-size: clamp(14px, 1.5vw, 17px);
+        color: var(--soft-indigo);
+      }
+      .poster-play {
+        width: clamp(56px, 7vw, 84px);
+        height: clamp(56px, 7vw, 84px);
+        border-radius: 50%;
+        background: var(--white);
+        display: grid;
+        place-items: center;
+        transition: transform 0.15s;
+      }
+      .poster:hover .poster-play {
+        transform: scale(1.05);
+      }
+      .poster[disabled] .poster-play {
+        display: none;
+      }
+      .poster-play svg {
+        width: 34%;
+        margin-left: 6%;
+        fill: var(--indigo);
+      }
+      .poster-lines {
+        position: absolute;
+        right: clamp(22px, 4vw, 48px);
+        top: clamp(26px, 4.4vw, 56px);
+        display: grid;
+        gap: 10px;
+        width: 34%;
+        opacity: 0.9;
+      }
+      .poster-lines i {
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(184, 190, 255, 0.35);
+      }
+      .poster-lines i:nth-child(2) {
+        width: 82%;
+        background: var(--soft-indigo);
+      }
+      .poster-lines i:nth-child(3) {
+        width: 64%;
+      }
+      @media (max-width: 560px) {
+        .poster-lines {
+          display: none;
+        }
+      }
+
+      /* ---------- Loop (how it works) ---------- */
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 20px;
+      }
+      @media (max-width: 860px) {
+        .steps {
+          grid-template-columns: 1fr;
+        }
+      }
+      .step {
+        background: var(--white);
+        border: 1px solid var(--line);
+        border-radius: var(--r-panel);
+        padding: 28px;
+        display: flex;
+        flex-direction: column;
+      }
+      .step-num {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-3);
+        letter-spacing: 0.1em;
+      }
+      .step h3 {
+        font-size: 24px;
+        margin-top: 10px;
+      }
+      .step p {
+        margin-top: 10px;
+        color: var(--text-2);
+        font-size: 16px;
+      }
+      .step-fig {
+        margin-top: auto;
+        padding-top: 24px;
+      }
+      .fig {
+        background: var(--paper);
+        border-radius: var(--r-card);
+        padding: 16px;
+        font-size: 15px;
+        min-height: 112px;
+      }
+      .fig .meta {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-3);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-top: 10px;
+      }
+      .u-red {
+        background: linear-gradient(var(--cat-correct), var(--cat-correct)) 0 100% / 100% 2px
+          no-repeat;
+      }
+      .u-amber {
+        background: linear-gradient(var(--cat-clarity), var(--cat-clarity)) 0 100% / 100% 2px
+          no-repeat;
+      }
+      .fig .explain {
+        background: var(--white);
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        font-size: 14px;
+        color: var(--text-2);
+      }
+      .fig .explain b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .fig .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .chip {
+        font-size: 13px;
+        font-weight: 500;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--white);
+        border: 1px solid var(--line);
+        color: var(--text-2);
+      }
+      .chip.on {
+        background: var(--indigo);
+        border-color: var(--indigo);
+        color: var(--white);
+      }
+
+      /* ---------- Everywhere ---------- */
+      .everywhere {
+        background: var(--white);
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: clamp(36px, 6vw, 80px);
+        align-items: center;
+      }
+      @media (max-width: 860px) {
+        .split {
+          grid-template-columns: 1fr;
+        }
+      }
+      .split .section-head {
+        margin-bottom: 0;
+      }
+      .apps {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      @media (max-width: 400px) {
+        .apps {
+          grid-template-columns: 1fr;
+        }
+      }
+      .app {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-card);
+        background: var(--paper);
+        font-size: 16px;
+        font-weight: 500;
+      }
+      .app .on {
+        margin-left: auto;
+        width: 34px;
+        height: 20px;
+        border-radius: 999px;
+        background: var(--indigo);
+        position: relative;
+        flex: none;
+      }
+      .app .on::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--white);
+      }
+      .app i {
+        font-style: normal;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        background: var(--indigo-tint);
+        color: var(--indigo);
+        font-size: 13px;
+        font-weight: 600;
+        flex: none;
+      }
+      .keys {
+        margin-top: 24px;
+        display: grid;
+        gap: 10px;
+      }
+      .keys div {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 16px;
+      }
+      .keys div:last-child {
+        border-bottom: 0;
+      }
+      .footnote,
+      .section-head .footnote {
+        margin-top: 18px;
+        font-size: 14px;
+        color: var(--text-3);
+      }
+
+      /* ---------- Studio ---------- */
+      .tabs {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        padding: 4px;
+        background: var(--paper-deep);
+        border-radius: 999px;
+        width: max-content;
+        max-width: 100%;
+        margin-bottom: 20px;
+      }
+      .tabs::-webkit-scrollbar {
+        display: none;
+      }
+      .tab {
+        all: unset;
+        cursor: pointer;
+        flex: none;
+        padding: 8px 16px;
+        border-radius: 999px;
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text-2);
+        transition:
+          background-color 0.15s,
+          color 0.15s;
+      }
+      .tab:hover {
+        color: var(--indigo);
+      }
+      .tab[aria-selected="true"] {
+        background: var(--white);
+        color: var(--indigo);
+        box-shadow: 0 1px 3px rgba(23, 23, 23, 0.12);
+      }
+      .tab:focus-visible {
+        outline: 2px solid var(--indigo);
+        outline-offset: 1px;
+      }
+      .shot {
+        border-radius: var(--r-panel);
+        overflow: hidden;
+        border: 1px solid rgba(23, 23, 23, 0.08);
+        box-shadow: var(--shadow-window);
+        background: var(--paper-deep);
+        aspect-ratio: 2720 / 1720;
+      }
+      .shot img {
+        width: 100%;
+      }
+      .shot-caption {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 24px;
+        margin-top: 18px;
+        font-size: 17px;
+        color: var(--text-2);
+      }
+      .shot-caption b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .shot-caption span:last-child {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-3);
+        white-space: nowrap;
+      }
+
+      /* ---------- Voice ---------- */
+      .ticks {
+        list-style: none;
+        padding: 0;
+        margin: 28px 0 0;
+        display: grid;
+        gap: 12px;
+      }
+      .ticks li {
+        position: relative;
+        padding-left: 30px;
+        color: var(--text-2);
+        font-size: 16px;
+      }
+      .ticks li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 4px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--indigo-tint)
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.5l3 3 6-7' fill='none' stroke='%23191F70' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+          center / 14px no-repeat;
+      }
+      .stylecard {
+        background: var(--white);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: clamp(20px, 3vw, 32px);
+        box-shadow: var(--shadow-window);
+      }
+      .stylecard-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+      }
+      .stylecard-head h3 {
+        font-size: 22px;
+      }
+      .trait {
+        padding: 16px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .trait:last-of-type {
+        border-bottom: 0;
+      }
+      .trait-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 15px;
+      }
+      .trait-row b {
+        font-weight: 600;
+      }
+      .trait-row span {
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--indigo);
+      }
+      .trait p {
+        font-size: 14px;
+        color: var(--text-3);
+        margin-top: 2px;
+      }
+      .bar {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--paper-deep);
+        margin-top: 10px;
+        overflow: hidden;
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        background: var(--indigo);
+        border-radius: 2px;
+      }
+      .switches {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      @media (max-width: 480px) {
+        .switches {
+          grid-template-columns: 1fr;
+        }
+      }
+      .switch {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: var(--r-card);
+        background: var(--paper);
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .switch i {
+        width: 34px;
+        height: 20px;
+        border-radius: 999px;
+        background: var(--line-strong);
+        position: relative;
+        flex: none;
+      }
+      .switch i::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--white);
+      }
+
+      /* ---------- Models ---------- */
+      .models {
+        background: var(--white);
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+      .providers {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      @media (max-width: 860px) {
+        .providers {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 480px) {
+        .providers {
+          grid-template-columns: 1fr;
+        }
+      }
+      .provider {
+        border: 1px solid var(--line);
+        border-radius: var(--r-card);
+        padding: 18px 20px;
+        background: var(--paper);
+      }
+      .provider b {
+        display: block;
+        font-weight: 600;
+        font-size: 17px;
+      }
+      .provider span {
+        display: inline-block;
+        margin-top: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-3);
+      }
+      .provider.local span {
+        color: var(--ok);
+      }
+      .costs {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 40px;
+      }
+      @media (max-width: 760px) {
+        .costs {
+          grid-template-columns: 1fr;
+        }
+      }
+      .cost {
+        padding: 20px 0 0;
+        border-top: 2px solid var(--ink);
+      }
+      .cost b {
+        display: block;
+        font-size: clamp(34px, 4vw, 44px);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        color: var(--indigo);
+        line-height: 1.1;
+      }
+      .cost span {
+        display: block;
+        margin-top: 8px;
+        font-size: 15px;
+        color: var(--text-2);
+      }
+
+      /* ---------- Privacy (indigo band) ---------- */
+      .privacy {
+        background: var(--indigo);
+        color: var(--white);
+      }
+      .privacy h2,
+      .privacy h3 {
+        color: var(--white);
+      }
+      .privacy .eyebrow {
+        color: var(--soft-indigo);
+      }
+      .privacy .section-head p {
+        color: rgba(255, 255, 255, 0.78);
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1px;
+        background: rgba(184, 190, 255, 0.25);
+        border: 1px solid rgba(184, 190, 255, 0.25);
+        border-radius: var(--r-panel);
+        overflow: hidden;
+      }
+      @media (max-width: 860px) {
+        .facts {
+          grid-template-columns: 1fr;
+        }
+      }
+      .fact {
+        background: var(--indigo);
+        padding: 28px;
+      }
+      .fact h3 {
+        font-size: 19px;
+        letter-spacing: -0.01em;
+      }
+      .fact p {
+        margin-top: 8px;
+        font-size: 15px;
+        color: rgba(255, 255, 255, 0.74);
+      }
+      .privacy a {
+        color: var(--white);
+      }
+      .privacy-link {
+        margin-top: 28px;
+        font-size: 16px;
+      }
+
+      /* ---------- Compare ---------- */
+      .compare {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 16px;
+        background: var(--white);
+        border-radius: var(--r-panel);
+        overflow: hidden;
+        border: 1px solid var(--line);
+      }
+      .compare th,
+      .compare td {
+        text-align: left;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      .compare tr:last-child td {
+        border-bottom: 0;
+      }
+      .compare thead th {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-3);
+        font-weight: 500;
+        background: var(--paper);
+      }
+      .compare thead th:last-child {
+        color: var(--indigo);
+      }
+      .compare td:first-child {
+        font-weight: 600;
+        width: 22%;
+      }
+      .compare td:nth-child(2) {
+        color: var(--text-3);
+      }
+      .compare td:last-child {
+        color: var(--ink);
+      }
+      @media (max-width: 640px) {
+        .compare,
+        .compare tbody,
+        .compare tr,
+        .compare td {
           display: block;
-          max-inline-size: 100%;
+          width: auto !important;
         }
-
-        :where(button, input, select) {
-          font: inherit;
-          color: inherit;
+        .compare thead {
+          display: none;
         }
-      }
-
-      @layer theme {
-        :root {
-          /* Official Elocutio Brand Tokens (docs/BRAND.md) */
-          --raw-ink-indigo: #191f70;
-          --raw-ink-indigo-deep: #101552;
-          --raw-soft-indigo: #b8beff;
-          --raw-soft-indigo-bright: #d4d8ff;
-          --raw-near-black: #171717;
-          --raw-warm-paper: #f8f7f3;
-          --raw-warm-paper-2: #f0eee8;
-          --raw-white: #ffffff;
-
-          --raw-dark-surface: #171717;
-          --raw-dark-surface-2: #1f1f24;
-          --raw-dark-card: #222228;
-
-          /* Category semantic tokens */
-          --cat-correctness-light: #c81e2b;
-          --cat-correctness-dark: #ff8b92;
-          --cat-clarity-light: #1d4ed8;
-          --cat-clarity-dark: #93c5fd;
-          --cat-voice-light: #191f70;
-          --cat-voice-dark: #b8beff;
-
-          /* Light defaults */
-          --bg-surface: var(--raw-warm-paper);
-          --bg-subtle: var(--raw-warm-paper-2);
-          --bg-card: var(--raw-white);
-          --text-primary: var(--raw-near-black);
-          --text-secondary: #52525b;
-          --text-muted: #71717a;
-          --accent-color: var(--raw-ink-indigo);
-          --accent-strong: var(--raw-ink-indigo-deep);
-          --on-accent: var(--raw-white);
-          --accent-tint: rgba(25, 31, 112, 0.06);
-          --accent-border: rgba(25, 31, 112, 0.18);
-          --border-subtle: #e5e2d9;
-          --border-strong: #d0ccc0;
-          --shadow-soft: 0 2px 6px rgba(23, 23, 23, 0.03), 0 18px 42px rgba(23, 23, 23, 0.05);
-          --scrollbar-thumb: #bab6ab;
-          --scrollbar-track: #f0eee8;
-
-          --cat-correctness: var(--cat-correctness-light);
-          --cat-correctness-bg: #fdebec;
-          --cat-clarity: var(--cat-clarity-light);
-          --cat-clarity-bg: #eaf1ff;
-          --cat-voice: var(--cat-voice-light);
-          --cat-voice-bg: #ececf8;
-          --status-ok: #136f46;
-          --status-ok-bg: #e5f5ec;
-
-          --font-sans:
-            "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-            sans-serif;
-          --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-
-          --radius-sm: 8px;
-          --radius-md: 14px;
-          --radius-lg: 20px;
-          --radius-pill: 999px;
-
-          /* Fallback for browsers without light-dark() */
-          @media (prefers-color-scheme: dark) {
-            --bg-surface: var(--raw-dark-surface);
-            --bg-subtle: var(--raw-dark-surface-2);
-            --bg-card: var(--raw-dark-card);
-            --text-primary: var(--raw-warm-paper);
-            --text-secondary: #b8b7b2;
-            --text-muted: #8e8d96;
-            --accent-color: var(--raw-soft-indigo);
-            --accent-strong: var(--raw-soft-indigo-bright);
-            --on-accent: var(--raw-near-black);
-            --accent-tint: rgba(184, 190, 255, 0.1);
-            --accent-border: rgba(184, 190, 255, 0.28);
-            --border-subtle: #2b2b33;
-            --border-strong: #3d3d48;
-            --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.35), 0 24px 48px rgba(0, 0, 0, 0.4);
-            --scrollbar-thumb: #4f4f5c;
-            --scrollbar-track: #1f1f24;
-
-            --cat-correctness: var(--cat-correctness-dark);
-            --cat-correctness-bg: rgba(255, 139, 146, 0.14);
-            --cat-clarity: var(--cat-clarity-dark);
-            --cat-clarity-bg: rgba(147, 197, 253, 0.14);
-            --cat-voice: var(--cat-voice-dark);
-            --cat-voice-bg: rgba(184, 190, 255, 0.14);
-            --status-ok: #5ce0a0;
-            --status-ok-bg: rgba(92, 224, 160, 0.14);
-          }
-
-          @supports (color: light-dark(white, black)) {
-            --bg-surface: light-dark(var(--raw-warm-paper), var(--raw-dark-surface));
-            --bg-subtle: light-dark(var(--raw-warm-paper-2), var(--raw-dark-surface-2));
-            --bg-card: light-dark(var(--raw-white), var(--raw-dark-card));
-            --text-primary: light-dark(var(--raw-near-black), var(--raw-warm-paper));
-            --text-secondary: light-dark(#52525b, #b8b7b2);
-            --text-muted: light-dark(#71717a, #8e8d96);
-            --accent-color: light-dark(var(--raw-ink-indigo), var(--raw-soft-indigo));
-            --accent-strong: light-dark(var(--raw-ink-indigo-deep), var(--raw-soft-indigo-bright));
-            --on-accent: light-dark(var(--raw-white), var(--raw-near-black));
-            --accent-tint: light-dark(rgba(25, 31, 112, 0.06), rgba(184, 190, 255, 0.1));
-            --accent-border: light-dark(rgba(25, 31, 112, 0.18), rgba(184, 190, 255, 0.28));
-            --border-subtle: light-dark(#e5e2d9, #2b2b33);
-            --border-strong: light-dark(#d0ccc0, #3d3d48);
-            --scrollbar-thumb: light-dark(#bab6ab, #4f4f5c);
-            --scrollbar-track: light-dark(#f0eee8, #1f1f24);
-
-            --cat-correctness: light-dark(
-              var(--cat-correctness-light),
-              var(--cat-correctness-dark)
-            );
-            --cat-correctness-bg: light-dark(#fdebec, rgba(255, 139, 146, 0.14));
-            --cat-clarity: light-dark(var(--cat-clarity-light), var(--cat-clarity-dark));
-            --cat-clarity-bg: light-dark(#eaf1ff, rgba(147, 197, 253, 0.14));
-            --cat-voice: light-dark(var(--cat-voice-light), var(--cat-voice-dark));
-            --cat-voice-bg: light-dark(#ececf8, rgba(184, 190, 255, 0.14));
-            --status-ok: light-dark(#136f46, #5ce0a0);
-            --status-ok-bg: light-dark(#e5f5ec, rgba(92, 224, 160, 0.14));
-          }
-
-          color-scheme: light dark;
-          accent-color: var(--accent-color);
-          scrollbar-width: thin;
-          scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-
-          &:has(> head > meta[name="color-scheme"][content="dark"]) {
-            color-scheme: dark;
-          }
-
-          &:has(> head > meta[name="color-scheme"][content="light"]) {
-            color-scheme: light;
-          }
+        .compare tr {
+          padding: 14px 18px;
+          border-bottom: 1px solid var(--line);
         }
-
-        @supports not (scrollbar-color: auto) {
-          ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-          }
-
-          ::-webkit-scrollbar-thumb {
-            background: var(--scrollbar-thumb);
-            border-radius: 999px;
-          }
-
-          ::-webkit-scrollbar-track {
-            background: var(--scrollbar-track);
-          }
+        .compare tr:last-child {
+          border-bottom: 0;
         }
-
-        @media (forced-colors: active) {
-          :root {
-            --bg-surface: Canvas;
-            --bg-card: Canvas;
-            --text-primary: CanvasText;
-            --text-secondary: CanvasText;
-            --accent-color: LinkText;
-            --border-subtle: CanvasText;
-            --border-strong: CanvasText;
-          }
+        .compare td {
+          padding: 2px 0;
+          border: 0;
+        }
+        .compare td:nth-child(2)::before {
+          content: "Typical: ";
+        }
+        .compare td:last-child::before {
+          content: "Elocutio: ";
+          color: var(--indigo);
+          font-weight: 600;
         }
       }
 
-      @layer base {
+      /* ---------- Roadmap ---------- */
+      .timeline {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 10px;
+      }
+      @media (max-width: 980px) {
+        .timeline {
+          grid-template-columns: 1fr;
+          gap: 0;
+        }
+      }
+      .milestone {
+        position: relative;
+        padding-top: 22px;
+        border-top: 3px solid var(--line-strong);
+      }
+      .milestone.done {
+        border-top-color: var(--indigo);
+      }
+      .milestone.now {
+        border-top-color: var(--soft-indigo);
+      }
+      .milestone small {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
+      .milestone.done small,
+      .milestone.now small {
+        color: var(--indigo);
+      }
+      .milestone h3 {
+        font-size: 17px;
+        margin-top: 6px;
+        letter-spacing: -0.01em;
+        line-height: 1.25;
+      }
+      .milestone p {
+        font-size: 14px;
+        color: var(--text-2);
+        margin-top: 6px;
+      }
+      @media (max-width: 980px) {
+        .milestone {
+          border-top: 0;
+          border-left: 3px solid var(--line-strong);
+          padding: 4px 0 22px 20px;
+        }
+        .milestone.done {
+          border-left-color: var(--indigo);
+        }
+        .milestone.now {
+          border-left-color: var(--soft-indigo);
+        }
+      }
+      .platforms {
+        margin-top: 40px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        font-size: 15px;
+        color: var(--text-2);
+      }
+      .platforms .chip b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      /* ---------- Start ---------- */
+      .start {
+        background: var(--white);
+        border-top: 1px solid var(--line);
+      }
+      .terminal {
+        background: #13163a;
+        color: #e8e9ff;
+        border-radius: var(--r-panel);
+        overflow: hidden;
+        box-shadow: var(--shadow-window);
+      }
+      .terminal-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 12px 10px 16px;
+        border-bottom: 1px solid rgba(184, 190, 255, 0.16);
+        font-size: 13px;
+        color: var(--soft-indigo);
+      }
+      .copy {
+        all: unset;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        padding: 5px 12px;
+        border-radius: 999px;
+        background: rgba(184, 190, 255, 0.16);
+        color: var(--white);
+      }
+      .copy:hover {
+        background: rgba(184, 190, 255, 0.28);
+      }
+      .copy:focus-visible {
+        outline: 2px solid var(--soft-indigo);
+      }
+      .terminal pre {
+        margin: 0;
+        padding: 20px;
+        font-family: var(--mono);
+        font-size: 14px;
+        line-height: 1.8;
+        overflow-x: auto;
+      }
+      .terminal .p {
+        color: var(--soft-indigo);
+        user-select: none;
+      }
+      .reqs {
+        list-style: none;
+        margin: 24px 0 0;
+        padding: 0;
+        font-size: 15px;
+        color: var(--text-2);
+      }
+      .reqs li {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .reqs li b {
+        color: var(--ink);
+        font-weight: 500;
+      }
+
+      /* ---------- Contribute ---------- */
+      .contribute {
+        padding: 0 0 clamp(72px, 10vw, 120px);
+        background: var(--white);
+      }
+      .cta-band {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: clamp(28px, 5vw, 56px);
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: clamp(20px, 4vw, 40px);
+        align-items: center;
+      }
+      .cta-band img {
+        width: 72px;
+      }
+      .cta-band h2 {
+        font-size: clamp(26px, 3vw, 34px);
+      }
+      .cta-band p {
+        margin-top: 8px;
+        color: var(--text-2);
+      }
+      .cta-band .hero-cta {
+        margin-top: 0;
+      }
+      @media (max-width: 860px) {
+        .cta-band {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* ---------- Footer ---------- */
+      footer {
+        padding: 56px 0 40px;
+        font-size: 15px;
+        color: var(--text-2);
+      }
+      .foot {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+        gap: 32px;
+      }
+      @media (max-width: 720px) {
+        .foot {
+          grid-template-columns: 1fr 1fr;
+        }
+        .foot > div:first-child {
+          grid-column: 1 / -1;
+        }
+      }
+      .foot img {
+        height: 28px;
+        width: auto;
+      }
+      .foot p {
+        margin-top: 12px;
+      }
+      .foot h4 {
+        margin: 0 0 12px;
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-3);
+        font-weight: 500;
+      }
+      .foot ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 8px;
+      }
+      .foot a {
+        color: var(--text-2);
+        text-decoration: none;
+      }
+      .foot a:hover {
+        color: var(--indigo);
+      }
+      .legal {
+        margin-top: 48px;
+        padding-top: 24px;
+        border-top: 1px solid var(--line);
+        font-size: 13px;
+        color: var(--text-3);
+        display: grid;
+        gap: 6px;
+      }
+      .legal a {
+        color: inherit;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
         html {
-          scroll-behavior: smooth;
-          font-family: var(--font-sans);
-          background-color: var(--bg-surface);
-          color: var(--text-primary);
-          line-height: 1.6;
-          -webkit-font-smoothing: antialiased;
-          text-rendering: optimizeLegibility;
-        }
-
-        body {
-          min-block-size: 100dvh;
-          background-color: var(--bg-surface);
-          color: var(--text-primary);
-        }
-
-        h1,
-        h2,
-        h3 {
-          font-weight: 600;
-          letter-spacing: -0.025em;
-          line-height: 1.15;
-          color: var(--text-primary);
-        }
-
-        h1 {
-          font-size: clamp(2.5rem, 1.7rem + 3.4vw, 4.25rem);
-          color: var(--accent-color);
-        }
-
-        h2 {
-          font-size: clamp(1.75rem, 1.35rem + 1.5vw, 2.5rem);
-        }
-
-        h3 {
-          font-size: clamp(1.12rem, 1.02rem + 0.35vw, 1.28rem);
-        }
-
-        a {
-          color: var(--accent-color);
-          text-decoration-thickness: 1px;
-          text-underline-offset: 3px;
-          transition: color 120ms ease;
-        }
-
-        a:hover {
-          color: var(--accent-strong);
-        }
-
-        code,
-        pre,
-        kbd {
-          font-family: var(--font-mono);
-        }
-
-        pre {
-          color-scheme: dark;
-          accent-color: var(--accent-color);
-        }
-
-        :focus-visible {
-          outline: 2px solid var(--accent-color);
-          outline-offset: 3px;
-          border-radius: 4px;
-        }
-      }
-
-      @layer layout {
-        .container {
-          inline-size: min(1040px, 100% - clamp(2.5rem, 7vw, 6rem));
-          margin-inline: auto;
-        }
-
-        .section {
-          padding-block: clamp(5rem, 9vw, 8rem);
-          border-block-start: 1px solid var(--border-subtle);
-          scroll-margin-block-start: 4rem;
-        }
-
-        .section-intro {
-          max-inline-size: 56ch;
-          margin-block-end: clamp(2.5rem, 4.5vw, 3.75rem);
-        }
-
-        .eyebrow {
-          display: inline-block;
-          font-size: 0.78rem;
-          font-weight: 600;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: var(--accent-color);
-          margin-block-end: 0.85rem;
-        }
-
-        .lede {
-          margin-block-start: 0.9rem;
-          font-size: clamp(1.06rem, 1rem + 0.3vw, 1.22rem);
-          color: var(--text-secondary);
-          line-height: 1.65;
-        }
-      }
-
-      @layer components {
-        .skip-link {
-          position: absolute;
-          inset-inline-start: 1rem;
-          inset-block-start: -4rem;
-          z-index: 200;
-          padding: 0.6rem 1rem;
-          background: var(--accent-color);
-          color: var(--on-accent);
-          font-weight: 600;
-          border-radius: var(--radius-sm);
-          text-decoration: none;
-        }
-
-        .skip-link:focus {
-          inset-block-start: 0.75rem;
-        }
-
-        .sr-only {
-          position: absolute;
-          inline-size: 1px;
-          block-size: 1px;
-          padding: 0;
-          margin: -1px;
-          overflow: hidden;
-          clip: rect(0, 0, 0, 0);
-          white-space: nowrap;
-          border: 0;
-        }
-
-        /* Non-color branching for Brand Lockup & Theme Toggle */
-        .logo-dark,
-        .theme-icon-light {
-          display: none;
-        }
-
-        @media (prefers-color-scheme: dark) {
-          :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .logo-light,
-          :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .theme-icon-dark {
-            display: none;
-          }
-
-          :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .logo-dark,
-          :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .theme-icon-light {
-            display: inline-flex;
-          }
-        }
-
-        :root:has(> head > meta[name="color-scheme"][content="dark"]) .logo-light,
-        :root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-icon-dark {
-          display: none;
-        }
-
-        :root:has(> head > meta[name="color-scheme"][content="dark"]) .logo-dark,
-        :root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-icon-light {
-          display: inline-flex;
-        }
-
-        /* Calm Sticky Header */
-        .site-header {
-          position: sticky;
-          inset-block-start: 0;
-          z-index: 80;
-          background-color: color-mix(in oklab, var(--bg-surface) 88%, transparent);
-          backdrop-filter: blur(14px);
-          border-block-end: 1px solid var(--border-subtle);
-        }
-
-        .header-inner {
-          display: flex;
-          align-items: safe center;
-          justify-content: space-between;
-          gap: 1.5rem;
-          padding-block: 1.05rem;
-        }
-
-        .brand-link {
-          display: inline-flex;
-          align-items: center;
-          padding-block: 4px;
-          text-decoration: none;
-        }
-
-        .brand-lockup-img {
-          inline-size: 144px;
-          block-size: auto;
-          aspect-ratio: 1933 / 809;
-          object-fit: contain;
-        }
-
-        .primary-nav ul {
-          display: flex;
-          flex-wrap: wrap;
-          flex-wrap: balance;
-          align-items: center;
-          gap: 1.75rem;
-          list-style: none;
-          margin: 0;
-          padding: 0;
-        }
-
-        .primary-nav a {
-          color: var(--text-secondary);
-          text-decoration: none;
-          font-size: 0.92rem;
-          font-weight: 500;
-        }
-
-        .primary-nav a:hover {
-          color: var(--accent-color);
-        }
-
-        .header-actions {
-          display: flex;
-          align-items: center;
-          gap: 0.65rem;
-        }
-
-        /* Buttons */
-        .btn {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-          padding: 0.65rem 1.2rem;
-          border-radius: var(--radius-sm);
-          font-size: 0.92rem;
-          font-weight: 500;
-          line-height: 1.2;
-          text-decoration: none;
-          cursor: pointer;
-          border: 1px solid var(--border-strong);
-          background-color: var(--bg-card);
-          color: var(--text-primary);
-          transition:
-            background-color 120ms ease,
-            border-color 120ms ease;
-          white-space: nowrap;
-        }
-
-        .btn:hover:not(:disabled) {
-          border-color: var(--accent-color);
-          background-color: var(--bg-subtle);
-        }
-
-        .btn:disabled {
-          opacity: 0.45;
-          cursor: not-allowed;
-        }
-
-        .btn-primary {
-          background-color: var(--accent-color);
-          color: var(--on-accent);
-          border-color: var(--accent-color);
-          font-weight: 600;
-        }
-
-        .btn-primary:hover:not(:disabled) {
-          background-color: var(--accent-strong);
-          border-color: var(--accent-strong);
-          color: var(--on-accent);
-        }
-
-        .btn-sm {
-          padding: 0.48rem 0.85rem;
-          font-size: 0.84rem;
-        }
-
-        .btn-icon {
-          padding: 0.48rem 0.68rem;
-        }
-
-        kbd {
-          display: inline-block;
-          padding: 0.12rem 0.42rem;
-          font-size: 0.78rem;
-          font-weight: 500;
-          border-radius: 5px;
-          background: var(--bg-subtle);
-          border: 1px solid var(--border-strong);
-        }
-
-        /* Spacious Hero */
-        .hero {
-          padding-block: clamp(4.5rem, 9vw, 7.5rem) clamp(5rem, 9vw, 7.5rem);
-        }
-
-        .hero-intro {
-          max-inline-size: 64ch;
-          margin-block-end: clamp(3rem, 6vw, 4.5rem);
-        }
-
-        .hero-sub {
-          margin-block: 1.25rem 2rem;
-          font-size: clamp(1.12rem, 1.02rem + 0.4vw, 1.32rem);
-          color: var(--text-secondary);
-          line-height: 1.6;
-        }
-
-        .hero-cta-row {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 0.85rem;
-        }
-
-        /* Quiet Interactive Demo */
-        .demo-frame {
-          background: var(--bg-card);
-          border: 1px solid var(--border-strong);
-          border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-soft);
-          overflow: clip;
-        }
-
-        .demo-topbar {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-          padding: 0.9rem 1.5rem;
-          background: var(--bg-subtle);
-          border-block-end: 1px solid var(--border-subtle);
-          font-size: 0.82rem;
-          color: var(--text-muted);
-        }
-
-        .window-dots {
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-        }
-
-        .window-dots span {
-          inline-size: 10px;
-          block-size: 10px;
-          border-radius: 50%;
-          background: var(--border-strong);
-        }
-
-        .demo-grid {
-          display: grid;
-          grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.85fr);
-        }
-
-        .demo-manuscript {
-          padding: clamp(1.75rem, 3.5vw, 2.75rem);
-          border-inline-end: 1px solid var(--border-subtle);
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          gap: 2rem;
-        }
-
-        .demo-prose {
-          font-size: clamp(1.08rem, 1rem + 0.25vw, 1.2rem);
-          line-height: 1.85;
-          color: var(--text-primary);
-        }
-
-        /* Distinct underline styles + accessible labels so color is never used alone */
-        .elo-span {
-          display: inline;
-          padding-inline: 3px;
-          padding-block: 1px;
-          border-radius: 4px;
-          border: 0;
-          background: transparent;
-          font: inherit;
-          line-height: inherit;
-          cursor: pointer;
-          text-decoration-line: underline;
-          text-decoration-thickness: 2px;
-          text-underline-offset: 5px;
-          transition: background-color 120ms ease;
-        }
-
-        .elo-span[data-cat="correctness"] {
-          text-decoration-color: var(--cat-correctness);
-          text-decoration-style: wavy;
-          background-color: var(--cat-correctness-bg);
-        }
-
-        .elo-span[data-cat="clarity"] {
-          text-decoration-color: var(--cat-clarity);
-          text-decoration-style: dashed;
-          background-color: var(--cat-clarity-bg);
-        }
-
-        .elo-span[data-cat="voice"] {
-          text-decoration-color: var(--cat-voice);
-          text-decoration-style: solid;
-          background-color: var(--cat-voice-bg);
-        }
-
-        .elo-span[aria-current="true"] {
-          outline: 2px solid var(--accent-color);
-          outline-offset: 2px;
-        }
-
-        .demo-footer-bar {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          justify-content: space-between;
-          gap: 0.75rem;
-          padding-block-start: 1rem;
-          border-block-start: 1px solid var(--border-subtle);
-          font-size: 0.82rem;
-          color: var(--text-muted);
-        }
-
-        /* Right Side: Floating Suggestion Card */
-        .demo-card-pane {
-          padding: clamp(1.5rem, 3vw, 2.25rem);
-          background: var(--bg-surface);
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-        }
-
-        .suggestion-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border-strong);
-          border-radius: var(--radius-md);
-          padding: 1.5rem;
-          box-shadow: var(--shadow-soft);
-          display: flex;
-          flex-direction: column;
-          gap: 1.1rem;
-        }
-
-        .card-header-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 0.5rem;
-        }
-
-        .cat-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.35rem;
-          padding: 0.22rem 0.65rem;
-          border-radius: var(--radius-pill);
-          font-size: 0.75rem;
-          font-weight: 600;
-          letter-spacing: 0.03em;
-          text-transform: uppercase;
-        }
-
-        .cat-badge[data-cat="correctness"] {
-          background: var(--cat-correctness-bg);
-          color: var(--cat-correctness);
-        }
-        .cat-badge[data-cat="clarity"] {
-          background: var(--cat-clarity-bg);
-          color: var(--cat-clarity);
-        }
-        .cat-badge[data-cat="voice"] {
-          background: var(--cat-voice-bg);
-          color: var(--cat-voice);
-        }
-
-        .engine-note {
-          font-family: var(--font-mono);
-          font-size: 0.74rem;
-          color: var(--text-muted);
-        }
-
-        .diff-preview {
-          padding: 0.9rem 1rem;
-          border-radius: var(--radius-sm);
-          background: var(--bg-surface);
-          border: 1px solid var(--border-subtle);
-          font-size: 0.98rem;
-          line-height: 1.55;
-        }
-
-        .diff-preview del {
-          color: var(--cat-correctness);
-          text-decoration: line-through;
-          margin-inline-end: 0.35rem;
-        }
-
-        .diff-preview ins {
-          color: var(--status-ok);
-          font-weight: 600;
-          text-decoration: none;
-          margin-inline-start: 0.35rem;
-        }
-
-        /* Three Spacious Pillars (Subgrid) */
-        .pillars-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-          gap: 1.75rem;
-        }
-
-        .pillar-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-md);
-          padding: 2rem;
-          display: grid;
-          grid-row: span 3;
-          grid-template-rows: auto auto 1fr;
-          grid-template-rows: subgrid;
-          gap: 0.75rem;
-        }
-
-        .pillar-meta {
-          font-family: var(--font-mono);
-          font-size: 0.76rem;
-          color: var(--accent-color);
-          font-weight: 600;
-        }
-
-        .pillar-card p {
-          color: var(--text-secondary);
-          font-size: 0.96rem;
-        }
-
-        /* Voice Showcase */
-        .voice-split {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-          gap: 2.5rem;
-          align-items: center;
-        }
-
-        .voice-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border-strong);
-          border-radius: var(--radius-lg);
-          padding: clamp(1.5rem, 3vw, 2.25rem);
-          box-shadow: var(--shadow-soft);
-        }
-
-        .voice-toggle-bar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-          padding-block-end: 1.25rem;
-          margin-block-end: 1.25rem;
-          border-block-end: 1px solid var(--border-subtle);
-        }
-
-        .voice-quote {
-          font-size: clamp(1.05rem, 1rem + 0.25vw, 1.18rem);
-          line-height: 1.7;
-          padding: 1.25rem;
-          border-radius: var(--radius-sm);
-          background: var(--accent-tint);
-          border: 1px solid var(--accent-border);
-        }
-
-        /* Quickstart + FAQ */
-        .code-figure {
-          background: #141418;
-          color: #f8f7f3;
-          border-radius: var(--radius-md);
-          border: 1px solid #2e2e38;
-          overflow: clip;
-          margin-block-end: 3.5rem;
-        }
-
-        .code-figure figcaption {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0.75rem 1.25rem;
-          background: #1c1c22;
-          border-block-end: 1px solid #2e2e38;
-          font-family: var(--font-mono);
-          font-size: 0.78rem;
-          color: #a9a9b5;
-        }
-
-        .code-figure pre {
-          padding: 1.35rem;
-          overflow-x: auto;
-          font-size: 0.88rem;
-          line-height: 1.7;
-        }
-
-        .faq-list {
-          display: grid;
-          gap: 0.85rem;
-          max-inline-size: 720px;
-        }
-
-        .faq-item {
-          background: var(--bg-card);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-md);
-          padding-inline: 1.35rem;
-        }
-
-        .faq-item summary {
-          list-style: none;
-          cursor: pointer;
-          padding-block: 1.15rem;
-          font-weight: 600;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-        }
-
-        .faq-item summary::-webkit-details-marker {
-          display: none;
-        }
-
-        .faq-item summary::after {
-          content: "+";
-          font-family: var(--font-mono);
-          font-size: 1.2rem;
-          color: var(--accent-color);
-        }
-
-        .faq-item[open] summary::after {
-          content: "−";
-        }
-
-        .faq-body {
-          padding-block: 0.85rem 1.25rem;
-          border-block-start: 1px solid var(--border-subtle);
-          color: var(--text-secondary);
-          font-size: 0.95rem;
-        }
-
-        /* Dialog Modal */
-        dialog.elo-dialog {
-          inline-size: min(620px, 92vw);
-          border: 1px solid var(--border-strong);
-          border-radius: var(--radius-lg);
-          background: var(--bg-card);
-          color: var(--text-primary);
-          padding: 1.5rem;
-          box-shadow: var(--shadow-soft);
-        }
-
-        dialog.elo-dialog::backdrop {
-          background: rgba(15, 15, 20, 0.55);
-          backdrop-filter: blur(4px);
-        }
-
-        /* Calm Footer */
-        .site-footer {
-          padding-block: 3.5rem;
-          border-block-start: 1px solid var(--border-subtle);
-          font-size: 0.86rem;
-          color: var(--text-muted);
-        }
-
-        .footer-row {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1.5rem;
-          margin-block-end: 1.5rem;
-        }
-
-        .footer-links {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 1.25rem;
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
-
-        .footer-links a {
-          color: var(--text-secondary);
-          text-decoration: none;
-        }
-
-        .footer-links a:hover {
-          color: var(--accent-color);
-        }
-
-        @media (max-width: 860px) {
-          .demo-grid,
-          .voice-split {
-            grid-template-columns: minmax(0, 1fr);
-          }
-
-          .demo-manuscript {
-            border-inline-end: 0;
-            border-block-end: 1px solid var(--border-subtle);
-          }
-        }
-
-        @media (max-width: 640px) {
-          .primary-nav {
-            display: none;
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          html {
-            scroll-behavior: auto;
-          }
-
-          *,
-          *::before,
-          *::after {
-            animation-duration: 0.001ms !important;
-            transition-duration: 0.001ms !important;
-          }
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          transition: none !important;
+          animation: none !important;
         }
       }
     </style>
   </head>
   <body>
-    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <a class="skip" href="#main">Skip to content</a>
 
-    <header class="site-header">
-      <div class="container header-inner">
-        <a class="brand-link" href="#top" aria-label="Elocutio home">
-          <img
-            class="brand-lockup-img logo-light"
-            src="assets/brand/lockup-indigo.png"
-            alt="Elocutio"
-            width="144"
-            height="60"
-            fetchpriority="high"
-          />
-          <img
-            class="brand-lockup-img logo-dark"
-            src="assets/brand/lockup-white.png"
-            alt="Elocutio"
-            width="144"
-            height="54"
-            fetchpriority="high"
-          />
+    <header class="nav" id="nav">
+      <div class="wrap">
+        <a class="nav-logo" href="./" aria-label="Elocutio home">
+          <img src="assets/site/lockup-indigo.png" alt="Elocutio" width="94" height="34" />
         </a>
-
-        <nav class="primary-nav" aria-label="Primary navigation">
-          <ul>
-            <li><a href="#demo">Live Demo</a></li>
-            <li><a href="#screens">App Screens</a></li>
-            <li><a href="#why">Why Elocutio</a></li>
-            <li><a href="#voice">Your Voice</a></li>
-            <li><a href="#start">Get Started</a></li>
-          </ul>
-        </nav>
-
-        <div class="header-actions">
-          <button
-            type="button"
-            class="btn btn-icon"
-            id="theme-toggle-btn"
-            aria-label="Toggle color scheme"
-          >
-            <span class="theme-icon-dark" aria-hidden="true">☾</span>
-            <span class="theme-icon-dark sr-only">Switch to dark theme</span>
-            <span class="theme-icon-light" aria-hidden="true">☀</span>
-            <span class="theme-icon-light sr-only">Switch to light theme</span>
-          </button>
-          <a
-            class="btn btn-sm"
-            href="https://github.com/pri-te-sh/elocutio"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#how">How it works</a>
+          <a href="#studio">The studio</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#roadmap">Roadmap</a>
+          <a class="btn btn-ghost" href="https://github.com/pri-te-sh/elocutio">
+            <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+              />
+            </svg>
             GitHub
           </a>
-          <a class="btn btn-primary btn-sm" href="#start">Build on macOS</a>
-        </div>
+        </nav>
       </div>
     </header>
 
-    <main id="main-content">
-      <!-- ===================================================================
-           HERO + QUIET INTERACTIVE DEMO
-           =================================================================== -->
-      <section class="hero container" id="top" aria-labelledby="hero-title">
-        <div class="hero-intro">
-          <span class="eyebrow">macOS 14+ · Apache-2.0 · Pre-alpha</span>
-          <h1 id="hero-title">Your voice. Clearly expressed.</h1>
-          <p class="hero-sub">
-            <strong>Elocutio</strong> (<em>el-oh-KOO-tee-oh</em>) is a private writing companion
-            that lives in your macOS menu bar and refines text in Mail, Slack, Notes, and Safari.
-            Local Harper rules catch typos in under 10 ms; your chosen model handles judgment; and a
-            local voice profile keeps every edit sounding like you.
-          </p>
-          <div class="hero-cta-row">
-            <a class="btn btn-primary" href="#start">Build from Source</a>
-            <a class="btn" href="#screens">Explore App Screens</a>
-          </div>
-        </div>
-
-        <!-- Focused Interactive Manuscript -->
-        <div class="demo-frame" id="demo" aria-label="Interactive suggestion preview">
-          <div class="demo-topbar">
-            <div style="display: flex; align-items: center; gap: 0.75rem">
-              <div class="window-dots" aria-hidden="true">
-                <span></span><span></span><span></span>
-              </div>
-              <span>Apple Mail — Release note draft</span>
-            </div>
-            <span>Click any underlined phrase to inspect</span>
-          </div>
-
-          <div class="demo-grid">
-            <div class="demo-manuscript">
-              <div class="demo-prose" id="manuscript-stage" aria-live="polite"></div>
-
-              <div class="demo-footer-bar">
-                <span> <kbd>⌥⌘E</kbd> Rewrite · <kbd>⌥⌘A</kbd> Analyze · <kbd>⌥⌘Z</kbd> Undo </span>
-                <button type="button" class="btn btn-sm" id="demo-reset-btn" hidden>
-                  Reset passage
-                </button>
-              </div>
-            </div>
-
-            <aside class="demo-card-pane" aria-label="Elocutio suggestion card">
-              <div class="suggestion-card">
-                <div class="card-header-row">
-                  <span class="cat-badge" id="demo-cat-pill" data-cat="correctness">
-                    ● Correctness
-                  </span>
-                  <span class="engine-note" id="demo-source-tag">Harper · 3 ms local</span>
-                </div>
-
-                <div class="diff-preview" id="demo-diff-box"></div>
-
-                <p
-                  id="demo-explanation"
-                  style="font-size: 0.92rem; color: var(--text-secondary)"
-                ></p>
-
-                <div
-                  style="
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    gap: 0.5rem;
-                  "
-                >
-                  <button type="button" class="btn btn-primary btn-sm" id="demo-accept-btn">
-                    Apply edit
-                  </button>
-                  <button type="button" class="btn btn-sm" id="demo-dismiss-btn">Dismiss</button>
-                </div>
-              </div>
-            </aside>
-          </div>
-        </div>
-      </section>
-
-      <!-- ===================================================================
-           REAL MACOS APP SCREENS — SAME CALM WINDOW FRAME
-           =================================================================== -->
-      <section class="section container" id="screens" aria-labelledby="screens-title">
-        <div class="section-intro">
-          <span class="eyebrow">Inside the macOS App</span>
-          <h2 id="screens-title">Six focused views. One local SQLite vault.</h2>
-          <p class="lede">
-            Switch between the real screens of the macOS studio below — from the live manuscript
-            editor and writing analytics to on-device AI provider presets, custom lexicon, and Voice
-            DNA calibration.
-          </p>
-        </div>
-
-        <div class="demo-frame" aria-label="Elocutio macOS application screens">
-          <div class="demo-topbar">
-            <div style="display: flex; align-items: center; gap: 0.75rem">
-              <div class="window-dots" aria-hidden="true">
-                <span></span><span></span><span></span>
-              </div>
-              <span id="app-screen-title">Elocutio.app — Manuscript Atelier</span>
-            </div>
-            <div
-              role="tablist"
-              aria-label="Application screens"
-              style="display: flex; flex-wrap: wrap; gap: 0.4rem"
-            >
-              <button
-                type="button"
-                role="tab"
-                class="btn btn-sm btn-primary"
-                aria-selected="true"
-                data-app-screen="manuscript"
-              >
-                Manuscript
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="btn btn-sm"
-                aria-selected="false"
-                data-app-screen="analytics"
-              >
-                Analytics
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="btn btn-sm"
-                aria-selected="false"
-                data-app-screen="privacy"
-              >
-                Privacy &amp; AI
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="btn btn-sm"
-                aria-selected="false"
-                data-app-screen="lexicon"
-              >
-                Lexicon
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="btn btn-sm"
-                aria-selected="false"
-                data-app-screen="voice"
-              >
-                Voice DNA
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="btn btn-sm"
-                aria-selected="false"
-                data-app-screen="apps"
-              >
-                Apps
-              </button>
-            </div>
-          </div>
-
-          <div style="background: var(--bg-subtle); border-block-end: 1px solid var(--border-subtle)">
-            <img
-              id="app-screen-img"
-              src="assets/screenshots/screen-manuscript.png"
-              alt="Elocutio Manuscript Atelier screen"
-              width="1360"
-              height="860"
-              loading="lazy"
-              style="inline-size: 100%; block-size: auto; display: block"
-            />
-          </div>
-
-          <div
-            class="demo-topbar"
-            style="border-block-end: 0; background: var(--bg-card); color: var(--text-secondary)"
-          >
-            <span id="app-screen-caption">
-              Live manuscript editor with sub-10 ms local Harper underlines, single-word + Lexicon
-              guard, and paragraph-level AI rewrites.
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <!-- ===================================================================
-           WHY ELOCUTIO — THREE CALM PILLARS
-           =================================================================== -->
-      <section class="section container" id="why" aria-labelledby="why-title">
-        <div class="section-intro">
-          <span class="eyebrow">Why Elocutio</span>
-          <h2 id="why-title">An editor, not a subscription gatekeeper.</h2>
-          <p class="lede">
-            Local-first correctness, bring-your-own-key intelligence, and zero middleman servers
-            between your Mac and the provider you trust.
-          </p>
-        </div>
-
-        <div class="pillars-grid">
-          <article class="pillar-card">
-            <span class="pillar-meta">01 · &lt;10 ms on-device</span>
-            <h3>Instant local rules</h3>
-            <p>
-              Built on an Apache-2.0 fork of Harper Desktop. Spelling, punctuation, and agreement
-              checks run directly on your Mac in under 10 ms — even completely offline.
-            </p>
-          </article>
-
-          <article class="pillar-card">
-            <span class="pillar-meta">02 · ~$0.28 per 1,000 emails</span>
-            <h3>Bring your own model</h3>
-            <p>
-              Use OpenRouter, Claude Haiku 5.5, OpenAI, Gemini, or local Ollama. Your API key stays
-              in the macOS Keychain, and you pay your provider directly with no markup.
-            </p>
-          </article>
-
-          <article class="pillar-card">
-            <span class="pillar-meta">03 · Non-activating overlay</span>
-            <h3>Stays out of your way</h3>
-            <p>
-              The floating suggestion card never steals keyboard focus. Edits apply cleanly via
-              Accessibility or verified pasteboard (<kbd>⌘V</kbd>) across native and Chromium apps.
-            </p>
-          </article>
-        </div>
-      </section>
-
-      <!-- ===================================================================
-           VOICE DNA — ONE CLEAR COMPARISON
-           =================================================================== -->
-      <section class="section container" id="voice" aria-labelledby="voice-title">
-        <div class="voice-split">
+    <main id="main">
+      <!-- Hero -->
+      <section class="hero">
+        <div class="wrap">
           <div>
-            <span class="eyebrow">Local Voice Profile</span>
-            <h2 id="voice-title">Small edits. Your voice intact.</h2>
-            <p class="lede" style="margin-block-end: 1.5rem">
-              Elocutio never fine-tunes a cloud model on your writing. It builds a compact,
-              explainable <strong>Style Card</strong> on your Mac from samples you paste (analyzed
-              locally and immediately discarded) and edits you accept.
+            <span class="pill"><span class="dot"></span>Open source · macOS 14+ · Pre-alpha</span>
+            <h1>Your voice.<br /><span>Clearly expressed.</span></h1>
+            <p class="lede">
+              Elocutio is a private writing companion for your Mac. It suggests clearer, more
+              correct wording in the apps you already use, explains every edit, and rewrites with
+              the model you choose, in a voice that still sounds like you.
             </p>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.75rem">
-              <button type="button" class="btn btn-sm" id="inspect-json-btn">
-                Inspect Style Card JSON
-              </button>
-              <button type="button" class="btn btn-sm" id="inspect-voice-how-btn">
-                How Voice Learning Works →
-              </button>
+            <div class="hero-cta">
+              <a class="btn btn-primary" href="#start">Build it on your Mac</a>
+              <a class="btn btn-ghost" href="#tour">
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="currentColor">
+                  <path
+                    d="M6.5 4.6v10.8c0 .6.7 1 1.2.6l8-5.4c.4-.3.4-1 0-1.2l-8-5.4c-.5-.4-1.2 0-1.2.6z"
+                  />
+                </svg>
+                Watch the tour
+              </a>
             </div>
+            <p class="hero-meta">Apache-2.0 · Bring your own key, or run fully on-device</p>
           </div>
 
-          <div class="voice-card">
-            <div class="voice-toggle-bar">
-              <div>
-                <label for="voice-use-toggle" style="font-weight: 600; cursor: pointer">
-                  Use my voice in rewrites
-                </label>
-                <div style="font-size: 0.8rem; color: var(--text-muted)">
-                  Off by default · 8-gram copy guard prevents repeating sample text
+          <div>
+            <div class="stage">
+              <div
+                class="window"
+                role="group"
+                aria-label="Interactive example of Elocutio suggestions in a mail draft"
+              >
+                <div class="window-bar" aria-hidden="true">
+                  <i></i><i></i><i></i><b>New Message</b>
+                </div>
+                <div class="mail-fields">
+                  <div>To: <span>Maya Chen</span></div>
+                  <div>Subject: <span>Launch notes</span></div>
+                </div>
+                <div class="mail-body">
+                  <p>Hi Maya,</p>
+                  <p>
+                    <button class="flag active" data-id="0" data-cat="clarity">
+                      <span>At this point in time</span></button
+                    >, the draft is ready for review.
+                    <button class="flag" data-id="1" data-cat="correct"><span>Their</span></button>
+                    are two open questions in section 3, and I would
+                    <button class="flag" data-id="2" data-cat="style">
+                      <span>really appreciate</span>
+                    </button>
+                    your take before Friday.
+                  </p>
+                  <p>Thanks,<br />Sam</p>
+
+                  <div class="elo" id="elo">
+                    <button class="elo-reset" id="elo-reset" hidden>Reset</button>
+                    <img src="assets/site/mark-indigo.png" alt="" width="22" height="16" />
+                    <span class="elo-count" id="elo-count" aria-label="3 suggestions">3</span>
+                  </div>
                 </div>
               </div>
-              <input type="checkbox" id="voice-use-toggle" checked />
+              <div class="card" id="card" aria-live="polite">
+                <div class="card-label" id="card-label">Clarity · Conciseness</div>
+                <div class="card-diff">
+                  <del id="card-from">At this point in time</del><span aria-hidden="true">→</span
+                  ><ins id="card-to">Right now</ins>
+                </div>
+                <p class="card-why" id="card-why">Same meaning in two words.</p>
+                <div class="card-actions">
+                  <button class="apply" id="card-apply">Apply</button>
+                  <button id="card-dismiss">Dismiss</button>
+                </div>
+              </div>
             </div>
-
-            <p
-              style="
-                font-size: 0.82rem;
-                color: var(--text-muted);
-                margin-block-end: 0.6rem;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                font-weight: 600;
-              "
-              id="voice-output-heading"
-            >
-              Rewrite with your local Style Card
-            </p>
-
-            <blockquote class="voice-quote" id="voice-output-text">
-              “We’re moving the migration back two days — the schema suite is still failing in CI,
-              and I want a clean run before we cut over.”
-            </blockquote>
+            <p class="demo-hint">Try it: click an underline, then apply or dismiss.</p>
           </div>
         </div>
       </section>
 
-      <!-- ===================================================================
-           GET STARTED + ESSENTIAL FAQ
-           =================================================================== -->
-      <section class="section container" id="start" aria-labelledby="start-title">
-        <div class="section-intro">
-          <span class="eyebrow">Get Started</span>
-          <h2 id="start-title">Build and run on macOS.</h2>
-          <p class="lede">
-            Elocutio is in pre-alpha (M1 in progress). Clone the repository to build the menu-bar
-            companion and shared Rust workspace from source.
+      <!-- Tour video -->
+      <section class="section tour" id="tour" aria-labelledby="tour-title">
+        <div class="wrap">
+          <h2 id="tour-title" class="eyebrow" style="letter-spacing: 0.12em; margin-bottom: 16px">
+            The 80-second tour
+          </h2>
+          <div class="video">
+            <video id="tour-video" preload="none" playsinline controls hidden>
+              <source src="assets/video/elocutio-explainer.mp4" type="video/mp4" />
+            </video>
+            <button class="poster" id="poster" aria-label="Play the Elocutio tour video">
+              <img
+                class="poster-mark"
+                src="assets/site/mark-white.png"
+                alt=""
+                width="96"
+                height="82"
+              />
+              <div class="poster-lines" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div>
+                <div class="poster-title">See how Elocutio edits without taking over.</div>
+                <div class="poster-sub" id="poster-sub">Watch the tour · 1:20</div>
+              </div>
+              <span class="poster-play" aria-hidden="true">
+                <svg viewBox="0 0 20 20">
+                  <path
+                    d="M5 3.2v13.6c0 .8.9 1.3 1.6.8l10.2-6.8c.6-.4.6-1.2 0-1.6L6.6 2.4C5.9 2 5 2.4 5 3.2z"
+                  />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- How it works -->
+      <section class="section" id="how" aria-labelledby="how-title" style="padding-top: 0">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">How it works</p>
+            <h2 id="how-title">An editor, not a grammar cop.</h2>
+            <p>
+              Fast local checks handle the obvious. Your model handles judgment. Every suggestion is
+              an offer you can take or leave.
+            </p>
+          </div>
+
+          <div class="steps">
+            <article class="step">
+              <span class="step-num">01</span>
+              <h3>Catch</h3>
+              <p>
+                Spelling, grammar, and punctuation are checked on your Mac in under 10&nbsp;ms. No
+                network, no waiting.
+              </p>
+              <div class="step-fig">
+                <div class="fig" aria-hidden="true">
+                  We <span class="u-red">recieved</span> the files and will
+                  <span class="u-amber">make a decision on</span> it today.
+                  <div class="meta">Local rules · 3 ms · offline</div>
+                </div>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-num">02</span>
+              <h3>Explain</h3>
+              <p>
+                Each suggestion says what changed and why. Apply it, dismiss it, or add the word to
+                your lexicon so it never comes up again.
+              </p>
+              <div class="step-fig">
+                <div class="fig" aria-hidden="true">
+                  <div class="explain">
+                    <b>“make a decision on” → “decide”</b><br />A verb does the same work in fewer
+                    words.
+                  </div>
+                </div>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-num">03</span>
+              <h3>Rewrite</h3>
+              <p>
+                Select any text and press <kbd>⌥⌘E</kbd>. Your chosen model reshapes it for clarity
+                or tone, and in your voice if you switch that on.
+              </p>
+              <div class="step-fig">
+                <div class="fig" aria-hidden="true">
+                  <div class="chips">
+                    <span class="chip">Polish flow</span><span class="chip on">Tighten</span
+                    ><span class="chip">Confident</span><span class="chip">Warm</span
+                    ><span class="chip">Executive</span>
+                  </div>
+                  <div class="meta">Rewrite · your model · your voice</div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Everywhere -->
+      <section class="section everywhere" aria-labelledby="everywhere-title">
+        <div class="wrap split">
+          <div class="section-head">
+            <p class="eyebrow">System-wide</p>
+            <h2 id="everywhere-title">Works where you already write.</h2>
+            <p>
+              Elocutio lives in your menu bar. A small “elo” companion sits beside the text field
+              you’re typing in, with underlines in place and edits that never steal your cursor.
+            </p>
+            <div class="keys">
+              <div><span>Rewrite selection</span><kbd>⌥⌘E</kbd></div>
+              <div><span>Check the current field</span><kbd>⌥⌘A</kbd></div>
+              <div><span>Undo the last edit</span><kbd>⌥⌘Z</kbd></div>
+            </div>
+          </div>
+          <div>
+            <ul class="apps" aria-label="Apps with Elocutio switched on">
+              <li class="app">
+                <i aria-hidden="true">M</i>Mail<span class="on" aria-label="On"></span>
+              </li>
+              <li class="app">
+                <i aria-hidden="true">N</i>Notes<span class="on" aria-label="On"></span>
+              </li>
+              <li class="app">
+                <i aria-hidden="true">S</i>Slack<span class="on" aria-label="On"></span>
+              </li>
+              <li class="app">
+                <i aria-hidden="true">S</i>Safari<span class="on" aria-label="On"></span>
+              </li>
+              <li class="app">
+                <i aria-hidden="true">T</i>TextEdit<span class="on" aria-label="On"></span>
+              </li>
+              <li class="app">
+                <i aria-hidden="true">V</i>VS Code<span class="on" aria-label="On"></span>
+              </li>
+              <li class="app">
+                <i aria-hidden="true">L</i>Linear<span class="on" aria-label="On"></span>
+              </li>
+              <li class="app">
+                <i aria-hidden="true">N</i>Notion<span class="on" aria-label="On"></span>
+              </li>
+            </ul>
+            <p class="footnote">
+              Turn it on or off per app. Coverage grows app by app; a Chrome and Edge extension is
+              next. Google Docs isn’t supported because it draws text on a canvas macOS can’t read.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Studio -->
+      <section class="section" id="studio" aria-labelledby="studio-title">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">The studio</p>
+            <h2 id="studio-title">Room for longer writing.</h2>
+            <p>
+              Open the Elocutio studio for drafts that deserve more care, and for every setting in
+              one calm place.
+            </p>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="App screens">
+            <button
+              class="tab"
+              role="tab"
+              aria-selected="true"
+              aria-controls="shot-panel"
+              data-i="0"
+            >
+              Manuscript
+            </button>
+            <button
+              class="tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="shot-panel"
+              data-i="1"
+              tabindex="-1"
+            >
+              Voice DNA
+            </button>
+            <button
+              class="tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="shot-panel"
+              data-i="2"
+              tabindex="-1"
+            >
+              Analytics
+            </button>
+            <button
+              class="tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="shot-panel"
+              data-i="3"
+              tabindex="-1"
+            >
+              Lexicon
+            </button>
+            <button
+              class="tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="shot-panel"
+              data-i="4"
+              tabindex="-1"
+            >
+              Apps
+            </button>
+            <button
+              class="tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="shot-panel"
+              data-i="5"
+              tabindex="-1"
+            >
+              Privacy &amp; AI
+            </button>
+          </div>
+          <div id="shot-panel" role="tabpanel">
+            <div class="shot">
+              <img
+                id="shot-img"
+                src="assets/site/screen-manuscript.webp"
+                alt="Manuscript view: a draft with underlined suggestions and margin notes explaining each edit"
+                width="1800"
+                height="1138"
+                loading="lazy"
+              />
+            </div>
+            <div class="shot-caption">
+              <span id="shot-text"
+                ><b>Manuscript.</b> Write with live underlines, margin notes that explain each edit,
+                and one-click rewrites.</span
+              >
+              <span id="shot-count">1 / 6</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Voice -->
+      <section class="section" id="voice" aria-labelledby="voice-title" style="padding-top: 0">
+        <div class="wrap split">
+          <div class="section-head">
+            <p class="eyebrow">Voice learning</p>
+            <h2 id="voice-title">It learns how you write, and shows you what it learned.</h2>
+            <p>
+              Paste a few samples or let it learn from the edits you accept. Elocutio builds a
+              short, readable style card: your rhythm, your register, the words you reach for and
+              the ones you avoid. Rewrites follow it. Nothing is fine-tuned.
+            </p>
+            <ul class="ticks">
+              <li>Both switches are off until you turn them on.</li>
+              <li>Samples are analyzed on your Mac and discarded. Only the style card is kept.</li>
+              <li>A copy guard refuses any rewrite that repeats your samples back to you.</li>
+              <li>Delete the profile and everything it learned goes with it.</li>
+            </ul>
+          </div>
+          <div class="stylecard" aria-label="Example style card">
+            <div class="stylecard-head">
+              <h3>Your style card</h3>
+              <span class="eyebrow">86 edits learned</span>
+            </div>
+            <div class="trait">
+              <div class="trait-row"><b>Sentence cadence</b><span>91%</span></div>
+              <p>Short, direct openings. Rarely starts with “I”.</p>
+              <div class="bar"><i style="width: 91%"></i></div>
+            </div>
+            <div class="trait">
+              <div class="trait-row"><b>Register</b><span>88%</span></div>
+              <p>Precise, with a warm close.</p>
+              <div class="bar"><i style="width: 88%"></i></div>
+            </div>
+            <div class="trait">
+              <div class="trait-row"><b>Punctuation</b><span>95%</span></div>
+              <p>Serial commas. Few exclamation marks.</p>
+              <div class="bar"><i style="width: 95%"></i></div>
+            </div>
+            <div class="trait">
+              <div class="trait-row"><b>Word choice</b><span>86%</span></div>
+              <p>Prefers “use” to “utilize”. Avoids “circle back”.</p>
+              <div class="bar"><i style="width: 86%"></i></div>
+            </div>
+            <div class="switches" aria-hidden="true">
+              <div class="switch">Learn from my edits <i></i></div>
+              <div class="switch">Use my voice <i></i></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Models -->
+      <section class="section models" aria-labelledby="models-title">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Bring your own model</p>
+            <h2 id="models-title">Your model. Your key. Your bill.</h2>
+            <p>
+              Pick a provider and a model, paste your key, and pay that provider directly. No
+              subscription, no credits, no markup. Or keep everything on your Mac.
+            </p>
+          </div>
+          <div class="providers">
+            <div class="provider">
+              <b>OpenRouter</b><span>Cloud · hundreds of models, one key</span>
+            </div>
+            <div class="provider"><b>OpenAI</b><span>Cloud</span></div>
+            <div class="provider"><b>Groq</b><span>Cloud · fast inference</span></div>
+            <div class="provider"><b>Ollama Cloud</b><span>Cloud</span></div>
+            <div class="provider local"><b>Ollama</b><span>On your Mac · nothing leaves</span></div>
+            <div class="provider local">
+              <b>Apple Foundation Models</b><span>On your Mac · nothing leaves</span>
+            </div>
+          </div>
+          <div class="costs">
+            <div class="cost">
+              <b>$0.28</b><span>per 1,000 email reviews on the default cloud model</span>
+            </div>
+            <div class="cost"><b>$1.06</b><span>per 1,000 documents of 1,500 words</span></div>
+            <div class="cost">
+              <b>$0</b><span>in local mode, with Ollama or Apple’s on-device model</span>
+            </div>
+          </div>
+          <p class="footnote">
+            Estimates at October 2026 provider prices. Set a monthly budget and a per-request cap in
+            the app.
           </p>
         </div>
+      </section>
 
-        <figure class="code-figure">
-          <figcaption>
-            <span>Terminal — macOS 14 Sonoma or later</span>
-            <button type="button" class="btn btn-sm" id="copy-commands-btn">Copy</button>
-          </figcaption>
-          <pre
-            tabindex="0"
-          ><code id="quickstart-code">git clone git@github.com:pri-te-sh/elocutio.git
-cd elocutio
-./scripts/bootstrap.sh
-just macos-dev</code></pre>
-        </figure>
+      <!-- Privacy -->
+      <section class="section privacy" id="privacy" aria-labelledby="privacy-title">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Privacy</p>
+            <h2 id="privacy-title">An app, not a service.</h2>
+            <p>
+              There is no Elocutio account and no Elocutio server. The only network requests are the
+              ones you set up.
+            </p>
+          </div>
+          <div class="facts">
+            <div class="fact">
+              <h3>Your text goes where you send it</h3>
+              <p>To the provider you picked, when you ask. In local mode, nowhere at all.</p>
+            </div>
+            <div class="fact">
+              <h3>Keys stay on your Mac</h3>
+              <p>Stored in the macOS Keychain and encrypted in a local database.</p>
+            </div>
+            <div class="fact">
+              <h3>No telemetry</h3>
+              <p>No analytics, device IDs, or keystroke logging. Crash reports are opt-in.</p>
+            </div>
+            <div class="fact">
+              <h3>Nothing trains on you</h3>
+              <p>Your writing is never used to fine-tune a model, ours or anyone’s.</p>
+            </div>
+            <div class="fact">
+              <h3>Every request is logged, for you</h3>
+              <p>A local network log shows host, model, tokens, and cost. Never your text.</p>
+            </div>
+            <div class="fact">
+              <h3>Check it yourself</h3>
+              <p>Every line is open source under Apache-2.0.</p>
+            </div>
+          </div>
+          <p class="privacy-link">
+            <a href="https://github.com/pri-te-sh/elocutio/blob/main/docs/PRIVACY.md"
+              >Read exactly what is stored and where →</a
+            >
+          </p>
+        </div>
+      </section>
 
-        <div class="faq-list" aria-label="Frequently asked questions">
-          <details class="faq-item" name="faq">
-            <summary>Why is Elocutio distributed outside the Mac App Store?</summary>
-            <div class="faq-body">
+      <!-- Compare -->
+      <section class="section" aria-labelledby="why-title">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Why Elocutio</p>
+            <h2 id="why-title">The judgment of a paid assistant, on your terms.</h2>
+            <p>
+              Good writing help no longer needs a subscription or a cloud account. Models are cheap,
+              local checks are instant, and the choices should be yours.
+            </p>
+          </div>
+          <table class="compare">
+            <thead>
+              <tr>
+                <th scope="col"><span class="skip">Topic</span></th>
+                <th scope="col">Typical cloud assistant</th>
+                <th scope="col">Elocutio</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Your text</td>
+                <td>Sent to the vendor’s cloud</td>
+                <td>Sent only to the provider you choose, or kept on your Mac</td>
+              </tr>
+              <tr>
+                <td>The model</td>
+                <td>Theirs</td>
+                <td>Any model you pick, switch anytime</td>
+              </tr>
+              <tr>
+                <td>Price</td>
+                <td>Monthly subscription per seat</td>
+                <td>Free app. Pay your provider for what you use</td>
+              </tr>
+              <tr>
+                <td>Offline</td>
+                <td>Not available</td>
+                <td>Local checks and on-device models work offline</td>
+              </tr>
+              <tr>
+                <td>Your voice</td>
+                <td>Learned in the cloud</td>
+                <td>A local style card you can read, edit, and delete</td>
+              </tr>
+              <tr>
+                <td>Source</td>
+                <td>Closed</td>
+                <td>Open, Apache-2.0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Roadmap -->
+      <section class="section" id="roadmap" aria-labelledby="roadmap-title" style="padding-top: 0">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Roadmap</p>
+            <h2 id="roadmap-title">Early, and honest about it.</h2>
+            <p>
+              Elocutio is pre-alpha. The macOS app builds and runs today; there is no signed release
+              yet, and things will change.
+            </p>
+          </div>
+          <ol class="timeline">
+            <li class="milestone done">
+              <small>Done</small>
+              <h3>Planning</h3>
+              <p>Audit, architecture, decisions, voice design</p>
+            </li>
+            <li class="milestone now">
+              <small>Partial</small>
+              <h3>M0 · Fork &amp; spike</h3>
+              <p>Rebranded app, overlay in Notes, TextEdit, Safari</p>
+            </li>
+            <li class="milestone now">
+              <small>In progress</small>
+              <h3>M1 · AI suggestions</h3>
+              <p>Cards, accept and dismiss, providers, usage log</p>
+            </li>
+            <li class="milestone now">
+              <small>Started</small>
+              <h3>M2 · Inline + voice</h3>
+              <p>Companion widget, tone presets, style card</p>
+            </li>
+            <li class="milestone">
+              <small>Planned</small>
+              <h3>M3 · Everywhere</h3>
+              <p>Chrome and Edge extension, compose, reply, summarize</p>
+            </li>
+            <li class="milestone">
+              <small>Planned</small>
+              <h3>M4 · Personal</h3>
+              <p>Style guide, glossary, snippets, per-context voices</p>
+            </li>
+            <li class="milestone">
+              <small>Planned</small>
+              <h3>M5 · v1.0</h3>
+              <p>Notarized download, signed updates, Homebrew</p>
+            </li>
+          </ol>
+          <div class="platforms">
+            <span class="chip"><b>macOS</b> · first</span>
+            <span class="chip">Chrome &amp; Edge · next</span>
+            <span class="chip">Windows · after v1</span>
+            <span class="chip">iOS · planned</span>
+            <span class="chip">Android · planned</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Start -->
+      <section class="section start" id="start" aria-labelledby="start-title">
+        <div class="wrap split">
+          <div class="section-head">
+            <p class="eyebrow">Get started</p>
+            <h2 id="start-title">Build it on your Mac.</h2>
+            <p>
+              Four commands. The app runs from your menu bar and asks for Accessibility permission
+              so it can read the field you’re writing in.
+            </p>
+            <ul class="reqs">
+              <li><span>macOS</span><b>14 Sonoma or later</b></li>
+              <li><span>Toolchain</span><b>Xcode CLT, Rust, Node 22+, pnpm</b></li>
+              <li><span>A model</span><b>An API key, or a local model</b></li>
+            </ul>
+            <p class="footnote">
+              Builds are unsigned until v1. On first launch, right-click the app and choose Open.
+            </p>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar">
+              <span>Terminal</span>
+              <button class="copy" id="copy" aria-label="Copy commands">Copy</button>
+            </div>
+            <pre
+              id="cmds"
+            ><span class="p">$ </span>git clone https://github.com/pri-te-sh/elocutio.git
+<span class="p">$ </span>cd elocutio
+<span class="p">$ </span>./scripts/bootstrap.sh
+<span class="p">$ </span>just macos-dev</pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="contribute" aria-labelledby="contribute-title">
+        <div class="wrap">
+          <div class="cta-band">
+            <img src="assets/site/mark-indigo.png" alt="" width="72" height="52" />
+            <div>
+              <h2 id="contribute-title">Help shape it.</h2>
               <p>
-                Reading and replacing text across other apps requires the macOS Accessibility API,
-                which the App Sandbox does not permit. Release builds target a Developer ID–signed,
-                Apple-notarized DMG and Homebrew cask.
+                The most useful contributions right now are product feedback, testing in your apps,
+                and prompt evaluation. Code is welcome too.
               </p>
             </div>
-          </details>
-
-          <details class="faq-item" name="faq">
-            <summary>What leaves my Mac when I use an LLM provider?</summary>
-            <div class="faq-body">
-              <p>
-                In local-only mode, nothing leaves your Mac. With a configured provider, only the
-                text being analyzed (plus your compact Style Card if you turn on
-                <em>Use my voice</em>) is sent directly to that provider using the key in your macOS
-                Keychain.
-              </p>
+            <div class="hero-cta">
+              <a class="btn btn-primary" href="https://github.com/pri-te-sh/elocutio"
+                >Star on GitHub</a
+              >
+              <a class="btn btn-ghost" href="https://github.com/pri-te-sh/elocutio/issues"
+                >Open an issue</a
+              >
             </div>
-          </details>
-
-          <details class="faq-item" name="faq">
-            <summary>What is explicitly out of scope for v1?</summary>
-            <div class="faq-body">
-              <p>
-                Google Docs (canvas-rendered; Gmail, Notion, Slack, and Linear are covered by the
-                planned browser extension), plagiarism scores, AI-detector scores, and enterprise
-                SSO. Windows, iOS, and Android follow the macOS release on the shared Rust core.
-              </p>
-            </div>
-          </details>
+          </div>
         </div>
       </section>
     </main>
 
-    <!-- Native Modal Dialog for Style Card JSON -->
-    <dialog class="elo-dialog" id="stylecard-dialog" closedby="any" aria-labelledby="dialog-title">
-      <div
-        style="
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-          margin-block-end: 1rem;
-        "
-      >
-        <h2 id="dialog-title" style="font-size: 1.15rem">
-          Local Voice Style Card (elocutio-voice)
-        </h2>
-        <form method="dialog">
-          <button type="submit" class="btn btn-sm" value="close">Close</button>
-        </form>
-      </div>
-      <figure class="code-figure" style="margin-block-end: 0">
-        <figcaption>
-          <span>style_card.json (~165 tokens)</span>
-          <span>Raw samples discarded</span>
-        </figcaption>
-        <pre tabindex="0"><code>{
-  "schema_version": 1,
-  "learn_from_edits": false,
-  "use_my_voice": false,
-  "cadence": { "mean_sentence_words": 14.8, "rhythm": "short-long contrast" },
-  "punctuation": { "oxford_comma": true, "em_dash_preference": "spaced" },
-  "diction": { "voice": "active, verb-first", "sign_off": "Best," },
-  "copy_guard": { "max_ngram_overlap": 7 }
-}</code></pre>
-      </figure>
-    </dialog>
-
-    <dialog
-      class="elo-dialog"
-      id="voice-how-dialog"
-      closedby="any"
-      aria-labelledby="voice-how-title"
-    >
-      <div
-        style="
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-          margin-block-end: 1rem;
-        "
-      >
-        <h2 id="voice-how-title" style="font-size: 1.15rem">How Local Voice Learning Works</h2>
-        <form method="dialog">
-          <button type="submit" class="btn btn-sm" value="close">Close</button>
-        </form>
-      </div>
-      <div style="color: var(--text-secondary); font-size: 0.94rem; display: grid; gap: 0.75rem">
-        <p>
-          <strong>1. Local Feature Extraction:</strong> When you paste a writing sample in the Voice
-          DNA tab, <code>elocutio-voice</code> computes sentence cadence, formality register,
-          punctuation habits, and verb preferences in memory on your Mac and discards the raw text.
-        </p>
-        <p>
-          <strong>2. Accepted &amp; Dismissed Edit Telemetry:</strong> When
-          <em>Learn from edits</em> is enabled, accepted and dismissed suggestions in
-          <code>elocutio.sqlite3</code> refine your active traits without sending samples to any
-          server.
-        </p>
-        <p>
-          <strong>3. 8-Gram Copy Guard:</strong> Every AI rewrite is checked against an 8-gram
-          overlap filter before being shown, preventing any model from repeating phrases from your
-          samples verbatim.
-        </p>
-      </div>
-    </dialog>
-
-    <footer class="site-footer">
-      <div class="container">
-        <div class="footer-row">
-          <img
-            class="brand-lockup-img logo-light"
-            src="assets/brand/lockup-indigo.png"
-            alt="Elocutio"
-            width="140"
-            height="59"
-            loading="lazy"
-          />
-          <img
-            class="brand-lockup-img logo-dark"
-            src="assets/brand/lockup-white.png"
-            alt="Elocutio"
-            width="140"
-            height="52"
-            loading="lazy"
-          />
-          <ul class="footer-links">
-            <li><a href="#demo">Live Demo</a></li>
-            <li><a href="#screens">App Screens</a></li>
-            <li><a href="#why">Why Elocutio</a></li>
-            <li><a href="#voice">Voice Profile</a></li>
-            <li><a href="#start">Get Started</a></li>
-            <li>
-              <a
-                href="https://github.com/pri-te-sh/elocutio"
-                target="_blank"
-                rel="noopener noreferrer"
-                >GitHub (Apache-2.0)</a
-              >
-            </li>
-          </ul>
+    <footer>
+      <div class="wrap">
+        <div class="foot">
+          <div>
+            <img src="assets/site/lockup-indigo.png" alt="Elocutio" width="78" height="28" />
+            <p>Your voice. Clearly expressed.</p>
+          </div>
+          <div>
+            <h4>Docs</h4>
+            <ul>
+              <li>
+                <a href="https://github.com/pri-te-sh/elocutio/blob/main/docs/ARCHITECTURE.md"
+                  >Architecture</a
+                >
+              </li>
+              <li>
+                <a href="https://github.com/pri-te-sh/elocutio/blob/main/docs/PRIVACY.md"
+                  >Privacy</a
+                >
+              </li>
+              <li>
+                <a href="https://github.com/pri-te-sh/elocutio/blob/main/docs/VOICE-LEARNING.md"
+                  >Voice learning</a
+                >
+              </li>
+              <li>
+                <a href="https://github.com/pri-te-sh/elocutio/blob/main/ROADMAP.md">Roadmap</a>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h4>Project</h4>
+            <ul>
+              <li><a href="https://github.com/pri-te-sh/elocutio">GitHub</a></li>
+              <li>
+                <a href="https://github.com/pri-te-sh/elocutio/blob/main/CONTRIBUTING.md"
+                  >Contributing</a
+                >
+              </li>
+              <li>
+                <a href="https://github.com/pri-te-sh/elocutio/blob/main/SECURITY.md">Security</a>
+              </li>
+              <li><a href="https://github.com/pri-te-sh/elocutio/blob/main/LICENSE">License</a></li>
+            </ul>
+          </div>
         </div>
-        <p>
-          Derived from
-          <a href="https://github.com/Automattic/harper" target="_blank" rel="noopener noreferrer"
-            >Harper</a
-          >
-          (Apache-2.0). Not affiliated with Automattic, Grammarly, Inc., or Superhuman.
-        </p>
+        <div class="legal">
+          <p>
+            Apache-2.0. Built on
+            <a href="https://github.com/Automattic/harper">Harper</a> by Automattic, also
+            Apache-2.0.
+          </p>
+          <p>
+            Not affiliated with Automattic, Grammarly, or Superhuman. The Elocutio name is
+            provisional pending trademark clearance.
+          </p>
+        </div>
       </div>
     </footer>
 
     <script>
-      (function () {
-        // 1. Two-state dark mode toggle
-        const metaScheme = document.querySelector('meta[name="color-scheme"]');
-        const themeBtn = document.getElementById("theme-toggle-btn");
-        const darkMedia = window.matchMedia("(prefers-color-scheme: dark)");
+      (() => {
+        // Sticky nav hairline
+        const nav = document.getElementById("nav");
+        const onScroll = () => nav.classList.toggle("scrolled", window.scrollY > 8);
+        addEventListener("scroll", onScroll, { passive: true });
+        onScroll();
 
-        function getRenderedScheme() {
-          const stored = metaScheme.content;
-          if (stored === "dark" || stored === "light") return stored;
-          return darkMedia.matches ? "dark" : "light";
-        }
-
-        themeBtn.addEventListener("click", () => {
-          const target = getRenderedScheme() === "dark" ? "light" : "dark";
-          const systemScheme = darkMedia.matches ? "dark" : "light";
-          try {
-            if (target === systemScheme) {
-              localStorage.removeItem("color-scheme");
-              metaScheme.content = "light dark";
-            } else {
-              localStorage.setItem("color-scheme", target);
-              metaScheme.content = target;
-            }
-          } catch (e) {
-            metaScheme.content = target === systemScheme ? "light dark" : target;
-          }
-        });
-
-        window.addEventListener("storage", (event) => {
-          if (event.key === "color-scheme") {
-            metaScheme.content = event.newValue ?? "light dark";
-          }
-        });
-
-        // 2. Calm Interactive Manuscript Demo
-        const INITIAL_SEGMENTS = [
-          { text: "We plan to ship the macOS menu-bar build on Thursday. " },
+        // ---------- Hero demo ----------
+        const S = [
           {
-            id: "s1",
-            cat: "correctness",
-            catLabel: "Correctness · Spelling",
-            engine: "Harper · 3 ms local",
-            original: "Definately",
-            replacement: "Definitely",
-            explanation: "Caught locally on-device by Harper in 3 ms without a network call.",
-          },
-          { text: " let me know if the installer prompts cleanly. " },
-          {
-            id: "s2",
             cat: "clarity",
-            catLabel: "Clarity · Conciseness",
-            engine: "Claude Haiku 5.5 · BYOK",
-            original: "At this point in time, local checks are running",
-            replacement: "Local checks now run",
-            explanation: "Replaces a six-word throat-clearing phrase with a direct active verb.",
+            label: "Clarity · Conciseness",
+            from: "At this point in time",
+            to: "Right now",
+            why: "Same meaning in two words.",
+            color: "var(--cat-clarity)",
           },
-          { text: " in under 4 ms on Apple Silicon, and " },
           {
-            id: "s3",
-            cat: "voice",
-            catLabel: "Voice Profile · Diction",
-            engine: "elocutio-voice · Local Style Card",
-            original: "we utilized a two-process architecture",
-            replacement: "we built a two-process architecture",
-            explanation: "Matches your preference for plain verbs (“built”) over corporate jargon.",
+            cat: "correct",
+            label: "Correctness · Confused words",
+            from: "Their",
+            to: "There",
+            why: "“There” points to something. “Their” means it belongs to them.",
+            color: "var(--cat-correct)",
           },
-          { text: " so API keys stay strictly inside the main process." },
+          {
+            cat: "style",
+            label: "Voice · Your usual phrasing",
+            from: "really appreciate",
+            to: "value",
+            why: "Matches how you usually ask: short and direct.",
+            color: "var(--cat-style)",
+          },
         ];
+        const flags = [...document.querySelectorAll(".flag")];
+        const card = document.getElementById("card");
+        const $ = (id) => document.getElementById(id);
+        const done = new Set();
+        let current = 0;
 
-        let segments = [];
-        let activeId = "s1";
-
-        const stageEl = document.getElementById("manuscript-stage");
-        const catPillEl = document.getElementById("demo-cat-pill");
-        const sourceTagEl = document.getElementById("demo-source-tag");
-        const diffBoxEl = document.getElementById("demo-diff-box");
-        const explanationEl = document.getElementById("demo-explanation");
-        const acceptBtn = document.getElementById("demo-accept-btn");
-        const dismissBtn = document.getElementById("demo-dismiss-btn");
-        const resetBtn = document.getElementById("demo-reset-btn");
-
-        function resetSegments() {
-          segments = INITIAL_SEGMENTS.map((s) => ({ ...s, status: s.id ? "open" : "text" }));
-          activeId = "s1";
-          renderDemo();
+        function show(i) {
+          current = i;
+          flags.forEach((f, k) => f.classList.toggle("active", k === i));
+          const s = S[i];
+          $("card-label").textContent = s.label;
+          $("card-label").style.color = s.color;
+          card.style.borderLeftColor = s.color;
+          $("card-from").textContent = s.from;
+          $("card-to").textContent = s.to;
+          $("card-why").textContent = s.why;
+          card.hidden = false;
         }
+        function next() {
+          const open = S.findIndex((_, k) => !done.has(k));
+          if (open === -1) {
+            card.hidden = true;
+            flags.forEach((f) => f.classList.remove("active"));
+          } else show(open);
+          const left = S.length - done.size;
+          $("elo-count").textContent = left ? left : "✓";
+          $("elo-count").setAttribute("aria-label", left ? left + " suggestions" : "All clear");
+          $("elo").classList.toggle("clear", !left);
+          $("elo-reset").hidden = done.size === 0;
+        }
+        function resolve(apply) {
+          const f = flags[current];
+          if (apply) f.firstElementChild.textContent = S[current].to;
+          f.classList.add("fixed");
+          f.classList.remove("active");
+          f.disabled = true;
+          done.add(current);
+          next();
+        }
+        flags.forEach((f, i) => f.addEventListener("click", () => !done.has(i) && show(i)));
+        $("card-apply").addEventListener("click", () => resolve(true));
+        $("card-dismiss").addEventListener("click", () => resolve(false));
+        $("elo-reset").addEventListener("click", () => {
+          done.clear();
+          flags.forEach((f, i) => {
+            f.firstElementChild.textContent = S[i].from;
+            f.classList.remove("fixed");
+            f.disabled = false;
+          });
+          next();
+        });
+        show(0);
 
-        function renderDemo() {
-          const openItems = segments.filter((s) => s.status === "open");
-          const current = openItems.find((s) => s.id === activeId) || openItems[0] || null;
-          if (current) activeId = current.id;
+        // ---------- Tour video ----------
+        const video = $("tour-video");
+        const poster = $("poster");
+        const src = video.querySelector("source").getAttribute("src");
+        let available = false;
+        fetch(src, { method: "HEAD" })
+          .then((r) => {
+            available = r.ok;
+            if (!available) throw 0;
+          })
+          .catch(() => {
+            poster.disabled = true;
+            poster.setAttribute("aria-label", "Tour video coming soon");
+            $("poster-sub").textContent = "Tour video coming soon";
+          });
+        poster.addEventListener("click", () => {
+          if (!available) return;
+          poster.hidden = true;
+          video.hidden = false;
+          video.play().catch(() => {});
+        });
 
-          stageEl.replaceChildren();
-          const p = document.createElement("p");
-
-          segments.forEach((seg) => {
-            if (seg.status === "open") {
-              const btn = document.createElement("button");
-              btn.type = "button";
-              btn.className = "elo-span";
-              btn.dataset.cat = seg.cat;
-              btn.setAttribute("aria-label", seg.catLabel + ": " + seg.original);
-              btn.setAttribute("aria-current", current && current.id === seg.id ? "true" : "false");
-              btn.textContent = seg.original;
-              btn.addEventListener("click", () => {
-                activeId = seg.id;
-                renderDemo();
-              });
-              p.append(btn);
-            } else if (seg.status === "accepted") {
-              const span = document.createElement("span");
-              span.textContent = seg.replacement;
-              span.style.fontWeight = "500";
-              p.append(span);
-            } else {
-              p.append(document.createTextNode(seg.text || seg.original));
+        // ---------- Studio tabs ----------
+        const shots = [
+          [
+            "screen-manuscript",
+            "Manuscript.",
+            "Write with live underlines, margin notes that explain each edit, and one-click rewrites.",
+            "Manuscript view: a draft with underlined suggestions and margin notes explaining each edit",
+          ],
+          [
+            "screen-voice-dna",
+            "Voice DNA.",
+            "See the traits Elocutio has learned from your samples and your edits, with a confidence for each.",
+            "Voice DNA view: learned edits, custom words, and voice traits with confidence scores",
+          ],
+          [
+            "screen-analytics",
+            "Analytics.",
+            "Watch your writing improve, see how much was handled on-device, and what the AI actually cost.",
+            "Analytics view: writing score, time saved, on-device versus AI split, and cost per model",
+          ],
+          [
+            "screen-lexicon",
+            "Lexicon.",
+            "Choose your English, keep your own words, and mute the rules you don’t want.",
+            "Lexicon view: English dialect picker, personal dictionary, and editorial rule toggles",
+          ],
+          [
+            "screen-apps",
+            "Apps.",
+            "Choose which Mac apps show underlines and the elo companion.",
+            "Apps view: per-app toggles for Notes, Safari, TextEdit, Slack, Mail, VS Code, Linear, Notion",
+          ],
+          [
+            "screen-privacy-ai",
+            "Privacy & AI.",
+            "Pick a provider and model, store your key encrypted, and set a budget.",
+            "Privacy and AI view: provider preset, model, encrypted API key, token usage and budget",
+          ],
+        ];
+        const tabs = [...document.querySelectorAll(".tab")];
+        const img = $("shot-img");
+        function select(i, focus) {
+          tabs.forEach((t, k) => {
+            const on = k === i;
+            t.setAttribute("aria-selected", on);
+            t.tabIndex = on ? 0 : -1;
+          });
+          const [file, title, text, alt] = shots[i];
+          img.src = "assets/site/" + file + ".webp";
+          img.alt = alt;
+          $("shot-text").innerHTML = "<b></b> ";
+          $("shot-text").firstChild.textContent = title;
+          $("shot-text").append(text);
+          $("shot-count").textContent = i + 1 + " / " + shots.length;
+          if (focus) {
+            tabs[i].focus();
+            tabs[i].scrollIntoView({ block: "nearest", inline: "nearest" });
+          }
+        }
+        tabs.forEach((t, i) => {
+          t.addEventListener("click", () => select(i));
+          t.addEventListener("keydown", (e) => {
+            const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+            if (d) {
+              e.preventDefault();
+              select((i + d + tabs.length) % tabs.length, true);
             }
           });
-
-          stageEl.append(p);
-          resetBtn.hidden = openItems.length === 3;
-
-          if (!current) {
-            catPillEl.dataset.cat = "voice";
-            catPillEl.textContent = "✓ All Clean";
-            sourceTagEl.textContent = "0 suggestions remaining";
-            diffBoxEl.textContent = "Every suggestion has been reviewed.";
-            explanationEl.textContent =
-              "When your draft is clean, the floating widget collapses quietly out of the way.";
-            acceptBtn.disabled = true;
-            dismissBtn.disabled = true;
-            return;
-          }
-
-          acceptBtn.disabled = false;
-          dismissBtn.disabled = false;
-          catPillEl.dataset.cat = current.cat;
-          catPillEl.textContent = "● " + current.catLabel;
-          sourceTagEl.textContent = current.engine;
-
-          diffBoxEl.replaceChildren();
-          const delEl = document.createElement("del");
-          delEl.textContent = current.original;
-          const arrowEl = document.createTextNode("→");
-          const insEl = document.createElement("ins");
-          insEl.textContent = current.replacement;
-          diffBoxEl.append(delEl, arrowEl, insEl);
-
-          explanationEl.textContent = current.explanation;
-        }
-
-        acceptBtn.addEventListener("click", () => {
-          const target = segments.find((s) => s.id === activeId);
-          if (target) target.status = "accepted";
-          renderDemo();
         });
+        // Warm the cache so tab switches are instant
+        addEventListener("load", () =>
+          shots.slice(1).forEach(([f]) => (new Image().src = "assets/site/" + f + ".webp")),
+        );
 
-        dismissBtn.addEventListener("click", () => {
-          const target = segments.find((s) => s.id === activeId);
-          if (target) target.status = "dismissed";
-          renderDemo();
-        });
-
-        resetBtn.addEventListener("click", resetSegments);
-        resetSegments();
-
-        // 3. Voice DNA Switch
-        const voiceToggle = document.getElementById("voice-use-toggle");
-        const voiceHeading = document.getElementById("voice-output-heading");
-        const voiceText = document.getElementById("voice-output-text");
-
-        voiceToggle.addEventListener("change", () => {
-          if (voiceToggle.checked) {
-            voiceHeading.textContent = "Rewrite with your local Style Card";
-            voiceText.textContent =
-              "“We’re moving the migration back two days — the schema suite is still failing in CI, and I want a clean run before we cut over.”";
-          } else {
-            voiceHeading.textContent = "Standard LLM rewrite (Voice off)";
-            voiceText.textContent =
-              "“Please be advised that we will need to postpone the migration by two days due to ongoing schema test failures in our CI pipeline.”";
-          }
-        });
-
-        // 4. Style Card & Voice How Modals + Safari closedBy Fallback
-        const styleDialog = document.getElementById("stylecard-dialog");
-        const voiceHowDialog = document.getElementById("voice-how-dialog");
-        document
-          .getElementById("inspect-json-btn")
-          .addEventListener("click", () => styleDialog.showModal());
-        document
-          .getElementById("inspect-voice-how-btn")
-          .addEventListener("click", () => voiceHowDialog.showModal());
-
-        if (!("closedBy" in HTMLDialogElement.prototype)) {
-          [styleDialog, voiceHowDialog].forEach((dialog) => {
-            dialog.addEventListener("click", (event) => {
-              if (event.target !== dialog) return;
-              const rect = dialog.getBoundingClientRect();
-              const isDialogContent =
-                rect.top <= event.clientY &&
-                event.clientY <= rect.top + rect.height &&
-                rect.left <= event.clientX &&
-                event.clientX <= rect.left + rect.width;
-              if (isDialogContent) return;
-              dialog.close();
-            });
-          });
-        }
-
-        // 5. Real macOS App Screens Switcher
-        const APP_SCREENS = {
-          manuscript: {
-            title: "Elocutio.app — Manuscript Atelier",
-            src: "assets/screenshots/screen-manuscript.png",
-            alt: "Elocutio Manuscript Atelier screen",
-            caption:
-              "Live manuscript editor with sub-10 ms local Harper underlines, single-word + Lexicon guard, and paragraph-level AI rewrites.",
-          },
-          analytics: {
-            title: "Elocutio.app — Writing & AI Analytics",
-            src: "assets/screenshots/screen-analytics.png",
-            alt: "Elocutio Writing and AI Analytics screen",
-            caption:
-              "Tracks Prose Craft Index (92/100), editorial time saved, Hybrid Intelligence Split (76% On-Device vs. 24% AI), and 7-day cadence.",
-          },
-          privacy: {
-            title: "Elocutio.app — Privacy & AI Engine",
-            src: "assets/screenshots/screen-privacy-ai.png",
-            alt: "Elocutio Privacy and AI Engine screen",
-            caption:
-              "Dropdown presets for OpenRouter, Ollama Local/Cloud, Apple Foundation Models on-device, OpenAI, and Groq + AES-256-CBC encrypted API keys.",
-          },
-          lexicon: {
-            title: "Elocutio.app — Personal Lexicon & Rules",
-            src: "assets/screenshots/screen-lexicon.png",
-            alt: "Elocutio Personal Lexicon and Rules screen",
-            caption:
-              "Dialect switcher (US, UK, CA, AU, IN), searchable custom dictionary built for 1,000+ words, and granular Harper lint toggles.",
-          },
-          voice: {
-            title: "Elocutio.app — Voice DNA",
-            src: "assets/screenshots/screen-voice-dna.png",
-            alt: "Elocutio Voice DNA screen",
-            caption:
-              "Local stylistic fingerprinting from writing samples and accepted/dismissed edits stored in elocutio.sqlite3.",
-          },
-          apps: {
-            title: "Elocutio.app — Connected Applications",
-            src: "assets/screenshots/screen-apps.png",
-            alt: "Elocutio Connected Applications screen",
-            caption:
-              "Per-application enablement across Apple Notes, Safari, TextEdit, Slack, Apple Mail, VS Code, Linear, and Notion.",
-          },
-        };
-
-        const screenBtns = document.querySelectorAll("[data-app-screen]");
-        const screenImgEl = document.getElementById("app-screen-img");
-        const screenTitleEl = document.getElementById("app-screen-title");
-        const screenCaptionEl = document.getElementById("app-screen-caption");
-
-        screenBtns.forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const key = btn.dataset.appScreen;
-            const info = APP_SCREENS[key];
-            if (!info) return;
-            screenBtns.forEach((b) => {
-              const active = b.dataset.appScreen === key;
-              b.setAttribute("aria-selected", active ? "true" : "false");
-              b.classList.toggle("btn-primary", active);
-            });
-            screenImgEl.src = info.src;
-            screenImgEl.alt = info.alt;
-            screenTitleEl.textContent = info.title;
-            screenCaptionEl.textContent = info.caption;
-          });
-        });
-
-        // 6. Copy Terminal Commands
-        const copyBtn = document.getElementById("copy-commands-btn");
-        const codeEl = document.getElementById("quickstart-code");
-        copyBtn.addEventListener("click", async () => {
+        // ---------- Copy ----------
+        $("copy").addEventListener("click", async () => {
+          const text = [...$("cmds").childNodes]
+            .filter((n) => !(n.classList && n.classList.contains("p")))
+            .map((n) => n.textContent)
+            .join("");
           try {
-            await navigator.clipboard.writeText(codeEl.textContent);
-            copyBtn.textContent = "Copied";
-            setTimeout(() => {
-              copyBtn.textContent = "Copy";
-            }, 1600);
-          } catch (e) {
-            copyBtn.textContent = "Select below";
+            await navigator.clipboard.writeText(text);
+            $("copy").textContent = "Copied";
+          } catch {
+            $("copy").textContent = "Select and copy";
           }
+          setTimeout(() => ($("copy").textContent = "Copy"), 1600);
         });
       })();
     </script>

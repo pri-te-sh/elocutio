@@ -6,6 +6,7 @@
   <h3>Your voice. Clearly expressed.</h3>
   <p>A private, open-source writing companion for macOS — with Windows, browser, iOS, and Android on the roadmap.</p>
   <p>
+    <a href="https://pri-te-sh.github.io/elocutio/"><img src="https://img.shields.io/badge/website-elocutio-191F70.svg" alt="Website"></a>
     <a href="https://github.com/pri-te-sh/elocutio/actions/workflows/ci.yml"><img src="https://github.com/pri-te-sh/elocutio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
     <a href="#requirements"><img src="https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey.svg" alt="Platform: macOS 14+"></a>

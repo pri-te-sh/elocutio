@@ -291,6 +291,8 @@
           padding-block: clamp(5rem, 9vw, 8rem);
           border-block-start: 1px solid var(--border-subtle);
           scroll-margin-block-start: 4rem;
+          content-visibility: auto;
+          contain-intrinsic-size: auto none auto 520px;
         }
 
         .section-intro {
@@ -962,6 +964,7 @@
           <ul>
             <li><a href="#demo">Live Demo</a></li>
             <li><a href="#why">Why Elocutio</a></li>
+            <li><a href="#atelier">Editorial Atelier</a></li>
             <li><a href="#voice">Your Voice</a></li>
             <li><a href="#start">Get Started</a></li>
           </ul>
@@ -1095,11 +1098,12 @@
           </article>
 
           <article class="pillar-card">
-            <span class="pillar-meta">02 · ~$0.28 per 1,000 emails</span>
+            <span class="pillar-meta">02 · 6 AI Provider Presets</span>
             <h3>Bring your own model</h3>
             <p>
-              Use OpenRouter, Claude Haiku 5.5, OpenAI, Gemini, or local Ollama. Your API key stays
-              in the macOS Keychain, and you pay your provider directly with no markup.
+              Switch between OpenRouter, Ollama (Local &amp; Cloud), Apple Foundation Models
+              (on-device bridge), OpenAI, and Groq Cloud. API keys are stored in macOS Keychain and
+              AES-256-CBC encrypted in local SQLite.
             </p>
           </article>
 
@@ -1107,8 +1111,54 @@
             <span class="pillar-meta">03 · Non-activating overlay</span>
             <h3>Stays out of your way</h3>
             <p>
-              The floating suggestion card never steals keyboard focus. Edits apply cleanly via
-              Accessibility or verified pasteboard (<kbd>⌘V</kbd>) across native and Chromium apps.
+              The floating <code>elo</code> companion and adaptive menu-bar icon never steal keyboard
+              focus. Edits apply cleanly via Accessibility or verified pasteboard (<kbd>⌘V</kbd>)
+              across native and Chromium apps.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           EDITORIAL ATELIER & WRITING ANALYTICS
+           =================================================================== -->
+      <section class="section container" id="atelier" aria-labelledby="atelier-title">
+        <div class="section-intro">
+          <span class="eyebrow">Elocutio Editorial Atelier</span>
+          <h2 id="atelier-title">A complete writing studio &amp; telemetry ledger on your Mac.</h2>
+          <p class="lede">
+            Beyond the system-wide floating overlay, Elocutio includes a six-pillar macOS studio
+            backed by a local SQLite personalization engine (<code>elocutio.sqlite3</code>).
+          </p>
+        </div>
+
+        <div class="pillars-grid">
+          <article class="pillar-card">
+            <span class="pillar-meta">Studio · Prose Craft Index</span>
+            <h3>Writing &amp; AI Analytics</h3>
+            <p>
+              Track your Prose Craft Index (0–100), editorial time saved, hybrid intelligence split
+              (on-device Harper vs. AI Co-Pilot), 4-pillar writing mastery, Flesch Reading Ease, and
+              per-model token &amp; USD cost efficiency.
+            </p>
+          </article>
+
+          <article class="pillar-card">
+            <span class="pillar-meta">On-Device · macOS 26</span>
+            <h3>Apple Foundation Models Bridge</h3>
+            <p>
+              Run zero-setup, 100% private rewrites and prose analysis through the built-in
+              <code>FoundationModels.framework</code> HTTP bridge at
+              <code>127.0.0.1:11535/v1</code> — no API key or internet required.
+            </p>
+          </article>
+
+          <article class="pillar-card">
+            <span class="pillar-meta">SQLite · AES-256-CBC</span>
+            <h3>Virtualized Lexicon &amp; Vault</h3>
+            <p>
+              Manage 1,000+ custom dictionary words with instant search, bulk import, and single-word
+              lexicon guards, while API credentials and token budgets stay encrypted locally on disk.
             </p>
           </article>
         </div>

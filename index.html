@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- MANDATORY: Declare support for both light and dark themes -->
     <meta name="color-scheme" content="light dark" />
     <script>
       try {
@@ -12,17 +13,17 @@
         /* localStorage may be restricted; default light dark remains active */
       }
     </script>
-    <title>Elocutio — The Private Editorial Atelier for macOS</title>
+    <title>Elocutio — Your voice. Clearly expressed.</title>
     <meta
       name="description"
-      content="A private, open-source macOS writing studio and menu-bar companion. Sub-10ms local Harper checks, 6 AI provider presets including Apple Foundation Models on-device, Voice DNA learning, and local SQLite encryption."
+      content="A private, open-source writing companion for macOS. Instant local checks, bring-your-own-key rewrites, and a local voice profile."
     />
-    <meta property="og:title" content="Elocutio — The Private Editorial Atelier for macOS" />
+    <meta property="og:title" content="Elocutio — Your voice. Clearly expressed." />
     <meta
       property="og:description"
-      content="Local-first writing studio and system-wide macOS companion — bring your own model or run 100% on-device."
+      content="A private, open-source writing companion for macOS — local-first, model-agnostic, no vendor in the middle."
     />
-    <meta property="og:image" content="assets/screenshots/screen-manuscript.png" />
+    <meta property="og:image" content="assets/icons/social-preview.png" />
     <meta property="og:type" content="website" />
     <link rel="icon" href="assets/icons/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="assets/icons/app-icon-256.png" />
@@ -34,7 +35,7 @@
           box-sizing: border-box;
         }
 
-        :where(body, h1, h2, h3, h4, p, figure, blockquote, dl, dd) {
+        :where(body, h1, h2, h3, p, figure, blockquote, dl, dd) {
           margin: 0;
         }
 
@@ -51,70 +52,164 @@
 
       @layer theme {
         :root {
-          /* Matches apps/macos/src/App.svelte Editorial Atelier Palette */
-          --raw-atelier-indigo: #191f70;
-          --raw-atelier-indigo-deep: #111552;
+          /* Official Elocutio Brand Tokens (docs/BRAND.md) */
+          --raw-ink-indigo: #191f70;
+          --raw-ink-indigo-deep: #101552;
           --raw-soft-indigo: #b8beff;
-          --raw-terracotta: #d9532f;
-          --raw-emerald: #15803d;
-          --raw-amber: #d97706;
+          --raw-soft-indigo-bright: #d4d8ff;
+          --raw-near-black: #171717;
+          --raw-warm-paper: #f8f7f3;
+          --raw-warm-paper-2: #f0eee8;
+          --raw-white: #ffffff;
 
-          --bg-desk: light-dark(#efece4, #0f1117);
-          --bg-folio: light-dark(#fdfbf7, #171a23);
-          --bg-card: light-dark(#f6f3eb, #1e222e);
-          --bg-code: #141722;
+          --raw-dark-surface: #171717;
+          --raw-dark-surface-2: #1f1f24;
+          --raw-dark-card: #222228;
 
-          --text-primary: light-dark(#1a1815, #f3f4f8);
-          --text-secondary: light-dark(#4e4a43, #b2b7c7);
-          --text-muted: light-dark(#78736a, #7d8396);
+          /* Category semantic tokens */
+          --cat-correctness-light: #c81e2b;
+          --cat-correctness-dark: #ff8b92;
+          --cat-clarity-light: #1d4ed8;
+          --cat-clarity-dark: #93c5fd;
+          --cat-voice-light: #191f70;
+          --cat-voice-dark: #b8beff;
 
-          --accent-color: light-dark(#191f70, #b8beff);
-          --accent-strong: light-dark(#111552, #d4d8ff);
-          --accent-tint: light-dark(rgba(25, 31, 112, 0.08), rgba(184, 190, 255, 0.14));
-          --on-accent: light-dark(#ffffff, #101438);
+          /* Light defaults */
+          --bg-surface: var(--raw-warm-paper);
+          --bg-subtle: var(--raw-warm-paper-2);
+          --bg-card: var(--raw-white);
+          --text-primary: var(--raw-near-black);
+          --text-secondary: #52525b;
+          --text-muted: #71717a;
+          --accent-color: var(--raw-ink-indigo);
+          --accent-strong: var(--raw-ink-indigo-deep);
+          --on-accent: var(--raw-white);
+          --accent-tint: rgba(25, 31, 112, 0.06);
+          --accent-border: rgba(25, 31, 112, 0.18);
+          --border-subtle: #e5e2d9;
+          --border-strong: #d0ccc0;
+          --shadow-soft: 0 2px 6px rgba(23, 23, 23, 0.03), 0 18px 42px rgba(23, 23, 23, 0.05);
+          --scrollbar-thumb: #bab6ab;
+          --scrollbar-track: #f0eee8;
 
-          --border-subtle: light-dark(#dfdace, #282d3d);
-          --border-strong: light-dark(#c7c0b0, #3a4158);
+          --cat-correctness: var(--cat-correctness-light);
+          --cat-correctness-bg: #fdebec;
+          --cat-clarity: var(--cat-clarity-light);
+          --cat-clarity-bg: #eaf1ff;
+          --cat-voice: var(--cat-voice-light);
+          --cat-voice-bg: #ececf8;
+          --status-ok: #136f46;
+          --status-ok-bg: #e5f5ec;
 
-          --shadow-folio: light-dark(
-            0 24px 60px -18px rgba(24, 22, 18, 0.14),
-            0 28px 64px -18px rgba(0, 0, 0, 0.65)
-          );
-          --shadow-card: light-dark(
-            0 6px 20px -6px rgba(24, 22, 18, 0.08),
-            0 10px 26px -8px rgba(0, 0, 0, 0.45)
-          );
-
-          --font-serif:
-            "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
           --font-sans:
-            "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-          --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+            "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+            sans-serif;
+          --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
           --radius-sm: 8px;
-          --radius-md: 12px;
-          --radius-lg: 18px;
-          --radius-xl: 24px;
+          --radius-md: 14px;
+          --radius-lg: 20px;
+          --radius-pill: 999px;
 
-          --show-in-light: inline-flex;
-          --show-in-dark: none;
-        }
+          /* Fallback for browsers without light-dark() */
+          @media (prefers-color-scheme: dark) {
+            --bg-surface: var(--raw-dark-surface);
+            --bg-subtle: var(--raw-dark-surface-2);
+            --bg-card: var(--raw-dark-card);
+            --text-primary: var(--raw-warm-paper);
+            --text-secondary: #b8b7b2;
+            --text-muted: #8e8d96;
+            --accent-color: var(--raw-soft-indigo);
+            --accent-strong: var(--raw-soft-indigo-bright);
+            --on-accent: var(--raw-near-black);
+            --accent-tint: rgba(184, 190, 255, 0.1);
+            --accent-border: rgba(184, 190, 255, 0.28);
+            --border-subtle: #2b2b33;
+            --border-strong: #3d3d48;
+            --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.35), 0 24px 48px rgba(0, 0, 0, 0.4);
+            --scrollbar-thumb: #4f4f5c;
+            --scrollbar-track: #1f1f24;
 
-        @media (prefers-color-scheme: dark) {
-          :root:has(meta[name="color-scheme"][content="light dark"]) {
-            --show-in-light: none;
-            --show-in-dark: inline-flex;
+            --cat-correctness: var(--cat-correctness-dark);
+            --cat-correctness-bg: rgba(255, 139, 146, 0.14);
+            --cat-clarity: var(--cat-clarity-dark);
+            --cat-clarity-bg: rgba(147, 197, 253, 0.14);
+            --cat-voice: var(--cat-voice-dark);
+            --cat-voice-bg: rgba(184, 190, 255, 0.14);
+            --status-ok: #5ce0a0;
+            --status-ok-bg: rgba(92, 224, 160, 0.14);
+          }
+
+          @supports (color: light-dark(white, black)) {
+            --bg-surface: light-dark(var(--raw-warm-paper), var(--raw-dark-surface));
+            --bg-subtle: light-dark(var(--raw-warm-paper-2), var(--raw-dark-surface-2));
+            --bg-card: light-dark(var(--raw-white), var(--raw-dark-card));
+            --text-primary: light-dark(var(--raw-near-black), var(--raw-warm-paper));
+            --text-secondary: light-dark(#52525b, #b8b7b2);
+            --text-muted: light-dark(#71717a, #8e8d96);
+            --accent-color: light-dark(var(--raw-ink-indigo), var(--raw-soft-indigo));
+            --accent-strong: light-dark(var(--raw-ink-indigo-deep), var(--raw-soft-indigo-bright));
+            --on-accent: light-dark(var(--raw-white), var(--raw-near-black));
+            --accent-tint: light-dark(rgba(25, 31, 112, 0.06), rgba(184, 190, 255, 0.1));
+            --accent-border: light-dark(rgba(25, 31, 112, 0.18), rgba(184, 190, 255, 0.28));
+            --border-subtle: light-dark(#e5e2d9, #2b2b33);
+            --border-strong: light-dark(#d0ccc0, #3d3d48);
+            --scrollbar-thumb: light-dark(#bab6ab, #4f4f5c);
+            --scrollbar-track: light-dark(#f0eee8, #1f1f24);
+
+            --cat-correctness: light-dark(
+              var(--cat-correctness-light),
+              var(--cat-correctness-dark)
+            );
+            --cat-correctness-bg: light-dark(#fdebec, rgba(255, 139, 146, 0.14));
+            --cat-clarity: light-dark(var(--cat-clarity-light), var(--cat-clarity-dark));
+            --cat-clarity-bg: light-dark(#eaf1ff, rgba(147, 197, 253, 0.14));
+            --cat-voice: light-dark(var(--cat-voice-light), var(--cat-voice-dark));
+            --cat-voice-bg: light-dark(#ececf8, rgba(184, 190, 255, 0.14));
+            --status-ok: light-dark(#136f46, #5ce0a0);
+            --status-ok-bg: light-dark(#e5f5ec, rgba(92, 224, 160, 0.14));
+          }
+
+          color-scheme: light dark;
+          accent-color: var(--accent-color);
+          scrollbar-width: thin;
+          scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+
+          &:has(> head > meta[name="color-scheme"][content="dark"]) {
+            color-scheme: dark;
+          }
+
+          &:has(> head > meta[name="color-scheme"][content="light"]) {
+            color-scheme: light;
           }
         }
 
-        :root:has(meta[name="color-scheme"][content="dark"]) {
-          --show-in-light: none;
-          --show-in-dark: inline-flex;
+        @supports not (scrollbar-color: auto) {
+          ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+          }
+
+          ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 999px;
+          }
+
+          ::-webkit-scrollbar-track {
+            background: var(--scrollbar-track);
+          }
         }
 
-        :root:has(meta[name="color-scheme"][content="light"]) {
-          --show-in-light: inline-flex;
-          --show-in-dark: none;
+        @media (forced-colors: active) {
+          :root {
+            --bg-surface: Canvas;
+            --bg-card: Canvas;
+            --text-primary: CanvasText;
+            --text-secondary: CanvasText;
+            --accent-color: LinkText;
+            --border-subtle: CanvasText;
+            --border-strong: CanvasText;
+          }
         }
       }
 
@@ -122,38 +217,50 @@
         html {
           scroll-behavior: smooth;
           font-family: var(--font-sans);
-          background-color: var(--bg-desk);
+          background-color: var(--bg-surface);
           color: var(--text-primary);
           line-height: 1.6;
           -webkit-font-smoothing: antialiased;
+          text-rendering: optimizeLegibility;
         }
 
         body {
           min-block-size: 100dvh;
-          background-color: var(--bg-desk);
+          background-color: var(--bg-surface);
           color: var(--text-primary);
         }
 
         h1,
         h2,
         h3 {
-          font-family: var(--font-serif);
           font-weight: 600;
-          letter-spacing: -0.02em;
+          letter-spacing: -0.025em;
           line-height: 1.15;
-          color: var(--accent-color);
+          color: var(--text-primary);
         }
 
         h1 {
-          font-size: clamp(2.35rem, 1.7rem + 2.8vw, 3.85rem);
+          font-size: clamp(2.5rem, 1.7rem + 3.4vw, 4.25rem);
+          color: var(--accent-color);
         }
 
         h2 {
-          font-size: clamp(1.75rem, 1.35rem + 1.4vw, 2.45rem);
+          font-size: clamp(1.75rem, 1.35rem + 1.5vw, 2.5rem);
         }
 
         h3 {
-          font-size: clamp(1.18rem, 1.05rem + 0.35vw, 1.38rem);
+          font-size: clamp(1.12rem, 1.02rem + 0.35vw, 1.28rem);
+        }
+
+        a {
+          color: var(--accent-color);
+          text-decoration-thickness: 1px;
+          text-underline-offset: 3px;
+          transition: color 120ms ease;
+        }
+
+        a:hover {
+          color: var(--accent-strong);
         }
 
         code,
@@ -162,51 +269,48 @@
           font-family: var(--font-mono);
         }
 
+        pre {
+          color-scheme: dark;
+          accent-color: var(--accent-color);
+        }
+
         :focus-visible {
           outline: 2px solid var(--accent-color);
           outline-offset: 3px;
-          border-radius: 6px;
+          border-radius: 4px;
         }
       }
 
       @layer layout {
         .container {
-          inline-size: min(1180px, 100% - clamp(2rem, 6vw, 5rem));
+          inline-size: min(1040px, 100% - clamp(2.5rem, 7vw, 6rem));
           margin-inline: auto;
         }
 
         .section {
-          padding-block: clamp(4.5rem, 8vw, 7rem);
+          padding-block: clamp(5rem, 9vw, 8rem);
           border-block-start: 1px solid var(--border-subtle);
-          scroll-margin-block-start: 4.5rem;
-          content-visibility: auto;
-          contain-intrinsic-size: auto none auto 640px;
+          scroll-margin-block-start: 4rem;
         }
 
         .section-intro {
-          max-inline-size: 62ch;
-          margin-block-end: clamp(2.25rem, 4vw, 3.25rem);
+          max-inline-size: 56ch;
+          margin-block-end: clamp(2.5rem, 4.5vw, 3.75rem);
         }
 
         .eyebrow {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.45rem;
-          font-family: var(--font-mono);
-          font-size: 0.74rem;
+          display: inline-block;
+          font-size: 0.78rem;
           font-weight: 600;
-          letter-spacing: 0.09em;
+          letter-spacing: 0.08em;
           text-transform: uppercase;
           color: var(--accent-color);
-          background: var(--accent-tint);
-          padding: 0.3rem 0.65rem;
-          border-radius: 999px;
-          margin-block-end: 0.9rem;
+          margin-block-end: 0.85rem;
         }
 
         .lede {
-          margin-block-start: 0.85rem;
-          font-size: clamp(1.04rem, 0.98rem + 0.25vw, 1.18rem);
+          margin-block-start: 0.9rem;
+          font-size: clamp(1.06rem, 1rem + 0.3vw, 1.22rem);
           color: var(--text-secondary);
           line-height: 1.65;
         }
@@ -217,7 +321,7 @@
           position: absolute;
           inset-inline-start: 1rem;
           inset-block-start: -4rem;
-          z-index: 300;
+          z-index: 200;
           padding: 0.6rem 1rem;
           background: var(--accent-color);
           color: var(--on-accent);
@@ -242,77 +346,81 @@
           border: 0;
         }
 
+        /* Non-color branching for Brand Lockup & Theme Toggle */
         .logo-dark,
         .theme-icon-light {
-          display: var(--show-in-dark);
+          display: none;
         }
 
-        .logo-light,
-        .theme-icon-dark {
-          display: var(--show-in-light);
+        @media (prefers-color-scheme: dark) {
+          :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .logo-light,
+          :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .theme-icon-dark {
+            display: none;
+          }
+
+          :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .logo-dark,
+          :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .theme-icon-light {
+            display: inline-flex;
+          }
         }
 
-        /* Sticky Atelier Header */
+        :root:has(> head > meta[name="color-scheme"][content="dark"]) .logo-light,
+        :root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-icon-dark {
+          display: none;
+        }
+
+        :root:has(> head > meta[name="color-scheme"][content="dark"]) .logo-dark,
+        :root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-icon-light {
+          display: inline-flex;
+        }
+
+        /* Calm Sticky Header */
         .site-header {
           position: sticky;
           inset-block-start: 0;
-          z-index: 100;
-          background: color-mix(in srgb, var(--bg-desk) 88%, transparent);
+          z-index: 80;
+          background-color: color-mix(in oklab, var(--bg-surface) 88%, transparent);
           backdrop-filter: blur(14px);
           border-block-end: 1px solid var(--border-subtle);
         }
 
         .header-inner {
           display: flex;
-          align-items: center;
+          align-items: safe center;
           justify-content: space-between;
-          gap: 1rem;
-          block-size: 4.25rem;
+          gap: 1.5rem;
+          padding-block: 1.05rem;
         }
 
         .brand-link {
           display: inline-flex;
           align-items: center;
-          gap: 0.65rem;
+          padding-block: 4px;
           text-decoration: none;
         }
 
-        .brand-pill {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          inline-size: 2.15rem;
-          block-size: 2.15rem;
-          border-radius: 9px;
-          background: var(--raw-atelier-indigo);
-          color: #ffffff;
-          font-family: var(--font-serif);
-          font-weight: 700;
-          font-size: 1.15rem;
-          box-shadow: 0 2px 8px rgba(25, 31, 112, 0.25);
-        }
-
-        .brand-title {
-          font-family: var(--font-serif);
-          font-size: 1.32rem;
-          font-weight: 700;
-          color: var(--accent-color);
-          letter-spacing: -0.02em;
+        .brand-lockup-img {
+          inline-size: 144px;
+          block-size: auto;
+          aspect-ratio: 1933 / 809;
+          object-fit: contain;
         }
 
         .primary-nav ul {
           display: flex;
+          flex-wrap: wrap;
+          flex-wrap: balance;
           align-items: center;
-          gap: 1.5rem;
+          gap: 1.75rem;
           list-style: none;
-          padding: 0;
           margin: 0;
+          padding: 0;
         }
 
         .primary-nav a {
           color: var(--text-secondary);
           text-decoration: none;
-          font-size: 0.9rem;
+          font-size: 0.92rem;
           font-weight: 500;
         }
 
@@ -323,7 +431,7 @@
         .header-actions {
           display: flex;
           align-items: center;
-          gap: 0.55rem;
+          gap: 0.65rem;
         }
 
         /* Buttons */
@@ -331,110 +439,115 @@
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 0.45rem;
-          padding: 0.62rem 1.1rem;
-          font-size: 0.9rem;
-          font-weight: 600;
-          line-height: 1.2;
+          gap: 0.5rem;
+          padding: 0.65rem 1.2rem;
           border-radius: var(--radius-sm);
-          border: 1px solid var(--border-strong);
-          background: var(--bg-folio);
-          color: var(--text-primary);
+          font-size: 0.92rem;
+          font-weight: 500;
+          line-height: 1.2;
           text-decoration: none;
           cursor: pointer;
+          border: 1px solid var(--border-strong);
+          background-color: var(--bg-card);
+          color: var(--text-primary);
           transition:
             background-color 120ms ease,
-            border-color 120ms ease,
-            transform 120ms ease;
+            border-color 120ms ease;
+          white-space: nowrap;
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
           border-color: var(--accent-color);
-          background: var(--bg-card);
+          background-color: var(--bg-subtle);
+        }
+
+        .btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
         }
 
         .btn-primary {
-          background: var(--accent-color);
+          background-color: var(--accent-color);
           color: var(--on-accent);
           border-color: var(--accent-color);
+          font-weight: 600;
         }
 
-        .btn-primary:hover {
-          background: var(--accent-strong);
+        .btn-primary:hover:not(:disabled) {
+          background-color: var(--accent-strong);
           border-color: var(--accent-strong);
           color: var(--on-accent);
         }
 
         .btn-sm {
-          padding: 0.44rem 0.82rem;
-          font-size: 0.82rem;
+          padding: 0.48rem 0.85rem;
+          font-size: 0.84rem;
         }
 
         .btn-icon {
-          inline-size: 2.25rem;
-          block-size: 2.25rem;
-          padding: 0;
+          padding: 0.48rem 0.68rem;
         }
 
-        /* Hero + Real App Studio Showcase */
+        kbd {
+          display: inline-block;
+          padding: 0.12rem 0.42rem;
+          font-size: 0.78rem;
+          font-weight: 500;
+          border-radius: 5px;
+          background: var(--bg-subtle);
+          border: 1px solid var(--border-strong);
+        }
+
+        /* Spacious Hero */
         .hero {
-          padding-block: clamp(3rem, 6vw, 5rem) clamp(4rem, 7vw, 6rem);
+          padding-block: clamp(4.5rem, 9vw, 7.5rem) clamp(5rem, 9vw, 7.5rem);
         }
 
-        .hero-header {
-          max-inline-size: 760px;
-          margin-inline: auto;
-          text-align: center;
-          margin-block-end: 2.25rem;
+        .hero-intro {
+          max-inline-size: 64ch;
+          margin-block-end: clamp(3rem, 6vw, 4.5rem);
         }
 
         .hero-sub {
-          margin-block-start: 1rem;
-          font-size: clamp(1.06rem, 1rem + 0.35vw, 1.24rem);
+          margin-block: 1.25rem 2rem;
+          font-size: clamp(1.12rem, 1.02rem + 0.4vw, 1.32rem);
           color: var(--text-secondary);
-          line-height: 1.65;
+          line-height: 1.6;
         }
 
         .hero-cta-row {
-          margin-block-start: 1.65rem;
           display: flex;
           flex-wrap: wrap;
-          justify-content: center;
-          gap: 0.75rem;
+          align-items: center;
+          gap: 0.85rem;
         }
 
-        /* Interactive 6-Tab Real App Screenshot Stage */
-        .studio-showcase {
-          background: var(--bg-folio);
+        /* Quiet Interactive Demo */
+        .demo-frame {
+          background: var(--bg-card);
           border: 1px solid var(--border-strong);
-          border-radius: var(--radius-xl);
-          box-shadow: var(--shadow-folio);
-          overflow: hidden;
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-soft);
+          overflow: clip;
         }
 
-        .showcase-toolbar {
+        .demo-topbar {
           display: flex;
           flex-wrap: wrap;
           align-items: center;
           justify-content: space-between;
-          gap: 0.75rem;
-          padding: 0.85rem 1.2rem;
-          background: var(--bg-card);
+          gap: 1rem;
+          padding: 0.9rem 1.5rem;
+          background: var(--bg-subtle);
           border-block-end: 1px solid var(--border-subtle);
-        }
-
-        .window-chrome {
-          display: flex;
-          align-items: center;
-          gap: 0.65rem;
-          font-size: 0.8rem;
-          font-weight: 600;
-          color: var(--text-secondary);
+          font-size: 0.82rem;
+          color: var(--text-muted);
         }
 
         .window-dots {
           display: inline-flex;
-          gap: 6px;
+          align-items: center;
+          gap: 7px;
         }
 
         .window-dots span {
@@ -444,255 +557,64 @@
           background: var(--border-strong);
         }
 
-        .window-dots span:nth-child(1) {
-          background: #ef4444;
-        }
-        .window-dots span:nth-child(2) {
-          background: #f59e0b;
-        }
-        .window-dots span:nth-child(3) {
-          background: #22c55e;
-        }
-
-        .screen-tabs {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.35rem;
-        }
-
-        .screen-tab-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.4rem;
-          padding: 0.42rem 0.8rem;
-          border-radius: 999px;
-          border: 1px solid transparent;
-          background: transparent;
-          color: var(--text-secondary);
-          font-size: 0.8rem;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 120ms ease;
-        }
-
-        .screen-tab-btn:hover {
-          color: var(--text-primary);
-          background: var(--bg-folio);
-        }
-
-        .screen-tab-btn[aria-selected="true"] {
-          background: var(--raw-atelier-indigo);
-          color: #ffffff;
-          box-shadow: 0 2px 8px rgba(25, 31, 112, 0.22);
-        }
-
-        .screen-tab-dot {
-          inline-size: 6px;
-          block-size: 6px;
-          border-radius: 50%;
-          background: var(--raw-terracotta);
-        }
-
-        .showcase-viewport {
-          position: relative;
-          background: #efece4;
-          border-block-end: 1px solid var(--border-subtle);
-        }
-
-        .showcase-slide {
-          display: none;
-          margin: 0;
-        }
-
-        .showcase-slide.is-active {
-          display: block;
-        }
-
-        .showcase-slide img {
-          inline-size: 100%;
-          block-size: auto;
-          aspect-ratio: 1360 / 860;
-          object-fit: cover;
-          cursor: zoom-in;
-        }
-
-        .showcase-caption-bar {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-          padding: 1rem 1.35rem;
-          background: var(--bg-folio);
-          font-size: 0.9rem;
-        }
-
-        .caption-meta {
-          display: flex;
-          align-items: center;
-          gap: 0.65rem;
-          flex-wrap: wrap;
-        }
-
-        .caption-pill {
-          font-family: var(--font-mono);
-          font-size: 0.74rem;
-          font-weight: 600;
-          padding: 0.2rem 0.55rem;
-          border-radius: 6px;
-          background: var(--accent-tint);
-          color: var(--accent-color);
-        }
-
-        /* Screen Deep-Dive Bento Grid */
-        .screens-bento {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 1.5rem;
-        }
-
-        .screen-feature-card {
-          background: var(--bg-folio);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-lg);
-          overflow: hidden;
-          box-shadow: var(--shadow-card);
-          display: flex;
-          flex-direction: column;
-        }
-
-        .screen-feature-thumb {
-          background: #efece4;
-          border-block-end: 1px solid var(--border-subtle);
-          overflow: hidden;
-          cursor: zoom-in;
-        }
-
-        .screen-feature-thumb img {
-          inline-size: 100%;
-          block-size: auto;
-          aspect-ratio: 1360 / 860;
-          object-fit: cover;
-          transition: transform 220ms ease;
-        }
-
-        .screen-feature-thumb:hover img {
-          transform: scale(1.015);
-        }
-
-        .screen-feature-body {
-          padding: 1.35rem 1.5rem 1.5rem;
-          display: flex;
-          flex-direction: column;
-          gap: 0.55rem;
-          flex: 1;
-        }
-
-        .screen-feature-kicker {
-          font-family: var(--font-mono);
-          font-size: 0.73rem;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          color: var(--accent-color);
-        }
-
-        .screen-feature-body p {
-          color: var(--text-secondary);
-          font-size: 0.94rem;
-        }
-
-        .screen-spec-tags {
-          margin-block-start: auto;
-          padding-block-start: 0.65rem;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.4rem;
-        }
-
-        .spec-tag {
-          font-family: var(--font-mono);
-          font-size: 0.72rem;
-          padding: 0.2rem 0.5rem;
-          border-radius: 5px;
-          background: var(--bg-card);
-          border: 1px solid var(--border-subtle);
-          color: var(--text-secondary);
-        }
-
-        /* Interactive Inline Try-It Sandbox */
-        .demo-frame {
-          background: var(--bg-folio);
-          border: 1px solid var(--border-strong);
-          border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-card);
-          overflow: hidden;
-        }
-
-        .demo-topbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-          padding: 0.75rem 1.15rem;
-          background: var(--bg-card);
-          border-block-end: 1px solid var(--border-subtle);
-          font-size: 0.8rem;
-          color: var(--text-muted);
-        }
-
         .demo-grid {
           display: grid;
-          grid-template-columns: 1.35fr 1fr;
+          grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.85fr);
         }
 
         .demo-manuscript {
-          padding: clamp(1.35rem, 3vw, 2rem);
+          padding: clamp(1.75rem, 3.5vw, 2.75rem);
           border-inline-end: 1px solid var(--border-subtle);
           display: flex;
           flex-direction: column;
           justify-content: space-between;
-          gap: 1.25rem;
+          gap: 2rem;
         }
 
         .demo-prose {
-          font-family: var(--font-serif);
-          font-size: clamp(1.08rem, 1rem + 0.25vw, 1.22rem);
+          font-size: clamp(1.08rem, 1rem + 0.25vw, 1.2rem);
           line-height: 1.85;
           color: var(--text-primary);
         }
 
+        /* Distinct underline styles + accessible labels so color is never used alone */
         .elo-span {
-          appearance: none;
+          display: inline;
+          padding-inline: 3px;
+          padding-block: 1px;
+          border-radius: 4px;
           border: 0;
           background: transparent;
-          padding: 0.05rem 0.2rem;
-          margin-inline: -0.05rem;
-          border-radius: 4px;
+          font: inherit;
+          line-height: inherit;
           cursor: pointer;
           text-decoration-line: underline;
           text-decoration-thickness: 2px;
-          text-underline-offset: 4px;
+          text-underline-offset: 5px;
+          transition: background-color 120ms ease;
         }
 
         .elo-span[data-cat="correctness"] {
-          text-decoration-color: #d92d20;
-          background: rgba(217, 45, 32, 0.1);
+          text-decoration-color: var(--cat-correctness);
+          text-decoration-style: wavy;
+          background-color: var(--cat-correctness-bg);
         }
 
         .elo-span[data-cat="clarity"] {
-          text-decoration-color: #d97706;
-          background: rgba(217, 119, 6, 0.12);
+          text-decoration-color: var(--cat-clarity);
+          text-decoration-style: dashed;
+          background-color: var(--cat-clarity-bg);
         }
 
         .elo-span[data-cat="voice"] {
-          text-decoration-color: var(--accent-color);
-          background: var(--accent-tint);
+          text-decoration-color: var(--cat-voice);
+          text-decoration-style: solid;
+          background-color: var(--cat-voice-bg);
         }
 
         .elo-span[aria-current="true"] {
           outline: 2px solid var(--accent-color);
-          outline-offset: 1px;
+          outline-offset: 2px;
         }
 
         .demo-footer-bar {
@@ -701,36 +623,30 @@
           align-items: center;
           justify-content: space-between;
           gap: 0.75rem;
-          padding-block-start: 0.9rem;
+          padding-block-start: 1rem;
           border-block-start: 1px solid var(--border-subtle);
-          font-size: 0.8rem;
+          font-size: 0.82rem;
           color: var(--text-muted);
         }
 
-        .demo-footer-bar kbd {
-          padding: 0.12rem 0.38rem;
-          border: 1px solid var(--border-subtle);
-          border-radius: 4px;
-          background: var(--bg-card);
-          font-size: 0.75rem;
-        }
-
+        /* Right Side: Floating Suggestion Card */
         .demo-card-pane {
-          padding: clamp(1.25rem, 2.5vw, 1.75rem);
-          background: var(--bg-card);
+          padding: clamp(1.5rem, 3vw, 2.25rem);
+          background: var(--bg-surface);
           display: flex;
           flex-direction: column;
           justify-content: center;
         }
 
         .suggestion-card {
-          background: var(--bg-folio);
+          background: var(--bg-card);
           border: 1px solid var(--border-strong);
           border-radius: var(--radius-md);
-          padding: 1.2rem;
+          padding: 1.5rem;
+          box-shadow: var(--shadow-soft);
           display: flex;
           flex-direction: column;
-          gap: 0.9rem;
+          gap: 1.1rem;
         }
 
         .card-header-row {
@@ -738,175 +654,221 @@
           align-items: center;
           justify-content: space-between;
           gap: 0.5rem;
-          font-size: 0.78rem;
         }
 
         .cat-badge {
-          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.22rem 0.65rem;
+          border-radius: var(--radius-pill);
+          font-size: 0.75rem;
+          font-weight: 600;
+          letter-spacing: 0.03em;
           text-transform: uppercase;
-          letter-spacing: 0.04em;
         }
 
         .cat-badge[data-cat="correctness"] {
-          color: #d92d20;
+          background: var(--cat-correctness-bg);
+          color: var(--cat-correctness);
         }
         .cat-badge[data-cat="clarity"] {
-          color: #d97706;
+          background: var(--cat-clarity-bg);
+          color: var(--cat-clarity);
         }
         .cat-badge[data-cat="voice"] {
-          color: var(--accent-color);
+          background: var(--cat-voice-bg);
+          color: var(--cat-voice);
         }
 
         .engine-note {
           font-family: var(--font-mono);
-          color: var(--text-muted);
           font-size: 0.74rem;
+          color: var(--text-muted);
         }
 
         .diff-preview {
-          padding: 0.8rem 0.95rem;
-          background: var(--bg-card);
-          border: 1px solid var(--border-subtle);
+          padding: 0.9rem 1rem;
           border-radius: var(--radius-sm);
-          font-family: var(--font-serif);
-          font-size: 1rem;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-subtle);
+          font-size: 0.98rem;
           line-height: 1.55;
         }
 
         .diff-preview del {
-          color: #d92d20;
+          color: var(--cat-correctness);
           text-decoration: line-through;
-          margin-inline-end: 0.4rem;
+          margin-inline-end: 0.35rem;
         }
 
         .diff-preview ins {
-          color: var(--raw-emerald);
-          text-decoration: none;
+          color: var(--status-ok);
           font-weight: 600;
-          margin-inline-start: 0.4rem;
+          text-decoration: none;
+          margin-inline-start: 0.35rem;
         }
 
-        /* Architecture & Privacy Pillars */
+        /* Three Spacious Pillars (Subgrid) */
         .pillars-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
-          gap: 1.25rem;
+          grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+          gap: 1.75rem;
         }
 
         .pillar-card {
-          background: var(--bg-folio);
+          background: var(--bg-card);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
-          padding: 1.5rem;
-          display: flex;
-          flex-direction: column;
-          gap: 0.65rem;
-          box-shadow: var(--shadow-card);
+          padding: 2rem;
+          display: grid;
+          grid-row: span 3;
+          grid-template-rows: auto auto 1fr;
+          grid-template-rows: subgrid;
+          gap: 0.75rem;
         }
 
         .pillar-meta {
           font-family: var(--font-mono);
-          font-size: 0.74rem;
+          font-size: 0.76rem;
           color: var(--accent-color);
           font-weight: 600;
         }
 
         .pillar-card p {
           color: var(--text-secondary);
-          font-size: 0.93rem;
+          font-size: 0.96rem;
         }
 
-        .pillar-card .btn {
-          margin-block-start: auto;
-          align-self: flex-start;
+        /* Voice Showcase */
+        .voice-split {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+          gap: 2.5rem;
+          align-items: center;
         }
 
-        /* Terminal Quickstart */
+        .voice-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border-strong);
+          border-radius: var(--radius-lg);
+          padding: clamp(1.5rem, 3vw, 2.25rem);
+          box-shadow: var(--shadow-soft);
+        }
+
+        .voice-toggle-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          padding-block-end: 1.25rem;
+          margin-block-end: 1.25rem;
+          border-block-end: 1px solid var(--border-subtle);
+        }
+
+        .voice-quote {
+          font-size: clamp(1.05rem, 1rem + 0.25vw, 1.18rem);
+          line-height: 1.7;
+          padding: 1.25rem;
+          border-radius: var(--radius-sm);
+          background: var(--accent-tint);
+          border: 1px solid var(--accent-border);
+        }
+
+        /* Quickstart + FAQ */
         .code-figure {
-          background: var(--bg-code);
-          color: #f4f4f6;
+          background: #141418;
+          color: #f8f7f3;
           border-radius: var(--radius-md);
-          border: 1px solid #2b3042;
-          overflow: hidden;
-          margin-block-end: 2rem;
+          border: 1px solid #2e2e38;
+          overflow: clip;
+          margin-block-end: 3.5rem;
         }
 
         .code-figure figcaption {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0.65rem 1.15rem;
-          background: rgba(255, 255, 255, 0.04);
-          border-block-end: 1px solid rgba(255, 255, 255, 0.08);
+          padding: 0.75rem 1.25rem;
+          background: #1c1c22;
+          border-block-end: 1px solid #2e2e38;
           font-family: var(--font-mono);
           font-size: 0.78rem;
-          color: #a6adbb;
+          color: #a9a9b5;
         }
 
         .code-figure pre {
-          padding: 1.25rem 1.35rem;
+          padding: 1.35rem;
           overflow-x: auto;
-          font-size: 0.86rem;
+          font-size: 0.88rem;
           line-height: 1.7;
         }
 
-        /* Modals (<dialog closedby="any">) */
-        dialog.elo-dialog {
-          inline-size: min(740px, 94vw);
-          max-block-size: 88dvh;
-          border: 1px solid var(--border-strong);
-          border-radius: var(--radius-lg);
-          background: var(--bg-folio);
-          color: var(--text-primary);
-          padding: 1.65rem;
-          box-shadow: var(--shadow-folio);
-          overflow-y: auto;
+        .faq-list {
+          display: grid;
+          gap: 0.85rem;
+          max-inline-size: 720px;
         }
 
-        dialog.elo-dialog.lightbox-dialog {
-          inline-size: min(1240px, 96vw);
-          padding: 1rem;
+        .faq-item {
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          padding-inline: 1.35rem;
         }
 
-        dialog.elo-dialog::backdrop {
-          background: rgba(15, 17, 23, 0.65);
-          backdrop-filter: blur(5px);
-        }
-
-        .dialog-header {
+        .faq-item summary {
+          list-style: none;
+          cursor: pointer;
+          padding-block: 1.15rem;
+          font-weight: 600;
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 1rem;
-          padding-block-end: 1rem;
-          margin-block-end: 1.15rem;
-          border-block-end: 1px solid var(--border-subtle);
         }
 
-        .spec-table {
-          inline-size: 100%;
-          border-collapse: collapse;
-          font-size: 0.88rem;
-          margin-block: 1rem;
+        .faq-item summary::-webkit-details-marker {
+          display: none;
         }
 
-        .spec-table th,
-        .spec-table td {
-          text-align: left;
-          padding: 0.65rem 0.75rem;
-          border-block-end: 1px solid var(--border-subtle);
-        }
-
-        .spec-table th {
+        .faq-item summary::after {
+          content: "+";
           font-family: var(--font-mono);
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          color: var(--text-muted);
+          font-size: 1.2rem;
+          color: var(--accent-color);
         }
 
-        /* Footer */
+        .faq-item[open] summary::after {
+          content: "−";
+        }
+
+        .faq-body {
+          padding-block: 0.85rem 1.25rem;
+          border-block-start: 1px solid var(--border-subtle);
+          color: var(--text-secondary);
+          font-size: 0.95rem;
+        }
+
+        /* Dialog Modal */
+        dialog.elo-dialog {
+          inline-size: min(620px, 92vw);
+          border: 1px solid var(--border-strong);
+          border-radius: var(--radius-lg);
+          background: var(--bg-card);
+          color: var(--text-primary);
+          padding: 1.5rem;
+          box-shadow: var(--shadow-soft);
+        }
+
+        dialog.elo-dialog::backdrop {
+          background: rgba(15, 15, 20, 0.55);
+          backdrop-filter: blur(4px);
+        }
+
+        /* Calm Footer */
         .site-footer {
-          padding-block: 3rem;
+          padding-block: 3.5rem;
           border-block-start: 1px solid var(--border-subtle);
           font-size: 0.86rem;
           color: var(--text-muted);
@@ -917,22 +879,31 @@
           flex-wrap: wrap;
           align-items: center;
           justify-content: space-between;
-          gap: 1.25rem;
-          margin-block-end: 1rem;
+          gap: 1.5rem;
+          margin-block-end: 1.5rem;
         }
 
         .footer-links {
           display: flex;
           flex-wrap: wrap;
-          gap: 0.6rem;
+          gap: 1.25rem;
           list-style: none;
           padding: 0;
           margin: 0;
         }
 
-        @media (max-width: 900px) {
-          .screens-bento,
-          .demo-grid {
+        .footer-links a {
+          color: var(--text-secondary);
+          text-decoration: none;
+        }
+
+        .footer-links a:hover {
+          color: var(--accent-color);
+        }
+
+        @media (max-width: 860px) {
+          .demo-grid,
+          .voice-split {
             grid-template-columns: minmax(0, 1fr);
           }
 
@@ -942,9 +913,22 @@
           }
         }
 
-        @media (max-width: 720px) {
+        @media (max-width: 640px) {
           .primary-nav {
             display: none;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          html {
+            scroll-behavior: auto;
+          }
+
+          *,
+          *::before,
+          *::after {
+            animation-duration: 0.001ms !important;
+            transition-duration: 0.001ms !important;
           }
         }
       }
@@ -956,17 +940,31 @@
     <header class="site-header">
       <div class="container header-inner">
         <a class="brand-link" href="#top" aria-label="Elocutio home">
-          <span class="brand-pill" aria-hidden="true">”</span>
-          <span class="brand-title">elocutio</span>
+          <img
+            class="brand-lockup-img logo-light"
+            src="assets/brand/lockup-indigo.png"
+            alt="Elocutio"
+            width="144"
+            height="60"
+            fetchpriority="high"
+          />
+          <img
+            class="brand-lockup-img logo-dark"
+            src="assets/brand/lockup-white.png"
+            alt="Elocutio"
+            width="144"
+            height="54"
+            fetchpriority="high"
+          />
         </a>
 
         <nav class="primary-nav" aria-label="Primary navigation">
           <ul>
-            <li><a href="#showcase">App Screens</a></li>
-            <li><a href="#screens">Inside the Studio</a></li>
-            <li><a href="#interactive-demo">Interactive Sandbox</a></li>
-            <li><a href="#architecture">Privacy &amp; Architecture</a></li>
-            <li><a href="#start">Quick Start</a></li>
+            <li><a href="#demo">Live Demo</a></li>
+            <li><a href="#screens">App Screens</a></li>
+            <li><a href="#why">Why Elocutio</a></li>
+            <li><a href="#voice">Your Voice</a></li>
+            <li><a href="#start">Get Started</a></li>
           </ul>
         </nav>
 
@@ -988,7 +986,7 @@
             target="_blank"
             rel="noopener noreferrer"
           >
-            GitHub Repo
+            GitHub
           </a>
           <a class="btn btn-primary btn-sm" href="#start">Build on macOS</a>
         </div>
@@ -997,340 +995,32 @@
 
     <main id="main-content">
       <!-- ===================================================================
-           HERO + REAL 6-SCREEN MACOS APP SHOWCASE
+           HERO + QUIET INTERACTIVE DEMO
            =================================================================== -->
       <section class="hero container" id="top" aria-labelledby="hero-title">
-        <div class="hero-header">
-          <span class="eyebrow">macOS 14+ · Rust + Tauri 2 + Svelte 5 · Apache-2.0</span>
-          <h1 id="hero-title">The Private Editorial Atelier for macOS.</h1>
+        <div class="hero-intro">
+          <span class="eyebrow">macOS 14+ · Apache-2.0 · Pre-alpha</span>
+          <h1 id="hero-title">Your voice. Clearly expressed.</h1>
           <p class="hero-sub">
-            <strong>Elocutio</strong> combines a six-pillar macOS writing studio with a non-activating
-            system-wide <code>elo</code> companion. On-device Harper rules catch mechanical slips in
-            under 10 ms; 6 AI provider presets (including Apple Foundation Models on-device) power
-            deep rewrites; and a local SQLite vault keeps your Voice DNA and encrypted keys on your
-            Mac.
+            <strong>Elocutio</strong> (<em>el-oh-KOO-tee-oh</em>) is a private writing companion
+            that lives in your macOS menu bar and refines text in Mail, Slack, Notes, and Safari.
+            Local Harper rules catch typos in under 10 ms; your chosen model handles judgment; and a
+            local voice profile keeps every edit sounding like you.
           </p>
           <div class="hero-cta-row">
             <a class="btn btn-primary" href="#start">Build from Source</a>
-            <button type="button" class="btn" data-open-dialog="arch-dialog">
-              Architecture &amp; Security Spec
-            </button>
-            <button type="button" class="btn" data-open-dialog="privacy-dialog">
-              Local SQLite &amp; Privacy Vault
-            </button>
+            <a class="btn" href="#screens">Explore App Screens</a>
           </div>
         </div>
 
-        <!-- Real App Screen Switcher -->
-        <div class="studio-showcase" id="showcase" aria-label="Elocutio macOS App Screens">
-          <div class="showcase-toolbar">
-            <div class="window-chrome">
-              <div class="window-dots" aria-hidden="true">
-                <span></span><span></span><span></span>
-              </div>
-              <span id="showcase-window-title">Elocutio.app — Manuscript Atelier</span>
-            </div>
-
-            <div class="screen-tabs" role="tablist" aria-label="App Views">
-              <button
-                type="button"
-                role="tab"
-                class="screen-tab-btn"
-                aria-selected="true"
-                data-screen="manuscript"
-              >
-                <span class="screen-tab-dot" aria-hidden="true"></span>
-                Manuscript
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="screen-tab-btn"
-                aria-selected="false"
-                data-screen="analytics"
-              >
-                Analytics
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="screen-tab-btn"
-                aria-selected="false"
-                data-screen="privacy"
-              >
-                Privacy &amp; AI
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="screen-tab-btn"
-                aria-selected="false"
-                data-screen="lexicon"
-              >
-                Lexicon &amp; Rules
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="screen-tab-btn"
-                aria-selected="false"
-                data-screen="voice"
-              >
-                Voice DNA
-              </button>
-              <button
-                type="button"
-                role="tab"
-                class="screen-tab-btn"
-                aria-selected="false"
-                data-screen="apps"
-              >
-                Connected Apps
-              </button>
-            </div>
-          </div>
-
-          <div class="showcase-viewport">
-            <figure class="showcase-slide is-active" data-slide="manuscript">
-              <img
-                src="assets/screenshots/screen-manuscript.png"
-                alt="Elocutio Manuscript Atelier showing inline underlines, Margin Annotations, Editorial Index 91, and Rewrite Atelier"
-                width="1360"
-                height="860"
-                fetchpriority="high"
-                data-zoom-src="assets/screenshots/screen-manuscript.png"
-              />
-            </figure>
-
-            <figure class="showcase-slide" data-slide="analytics">
-              <img
-                src="assets/screenshots/screen-analytics.png"
-                alt="Elocutio Writing and AI Analytics dashboard showing Prose Craft Index 92/100, Editorial Time Saved, Hybrid Intelligence Split, and 7-Day Editorial Cadence"
-                width="1360"
-                height="860"
-                fetchpriority="low"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-analytics.png"
-              />
-            </figure>
-
-            <figure class="showcase-slide" data-slide="privacy">
-              <img
-                src="assets/screenshots/screen-privacy-ai.png"
-                alt="Elocutio Privacy and AI Engine screen with Provider Preset dropdown, Model Slug selector, encrypted API key vault, and Token Usage and Budget meter"
-                width="1360"
-                height="860"
-                fetchpriority="low"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-privacy-ai.png"
-              />
-            </figure>
-
-            <figure class="showcase-slide" data-slide="lexicon">
-              <img
-                src="assets/screenshots/screen-lexicon.png"
-                alt="Elocutio Personal Lexicon and Editorial Rules view showing dialect selector, searchable custom dictionary words, and Harper rule toggles"
-                width="1360"
-                height="860"
-                fetchpriority="low"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-lexicon.png"
-              />
-            </figure>
-
-            <figure class="showcase-slide" data-slide="voice">
-              <img
-                src="assets/screenshots/screen-voice-dna.png"
-                alt="Elocutio Voice DNA screen showing learned edits telemetry, recently learned replacements, writing sample analyzer, and calibrated voice traits"
-                width="1360"
-                height="860"
-                fetchpriority="low"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-voice-dna.png"
-              />
-            </figure>
-
-            <figure class="showcase-slide" data-slide="apps">
-              <img
-                src="assets/screenshots/screen-apps.png"
-                alt="Elocutio Connected Applications screen showing Apple Notes, Safari, TextEdit, Slack, Apple Mail, VS Code, Linear, and Notion toggles"
-                width="1360"
-                height="860"
-                fetchpriority="low"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-apps.png"
-              />
-            </figure>
-          </div>
-
-          <div class="showcase-caption-bar">
-            <div class="caption-meta">
-              <span class="caption-pill" id="showcase-pill">Screen 1 of 6 · Manuscript</span>
-              <span id="showcase-desc">
-                Raised warm-ivory manuscript folio with sub-10ms local Harper underlines, single-word
-                <code>+ Lexicon</code> guard, and paragraph-level AI Rewrite Atelier.
-              </span>
-            </div>
-            <button type="button" class="btn btn-sm" id="zoom-current-btn">
-              ⤢ Inspect Full Resolution
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- ===================================================================
-           INSIDE THE STUDIO — REAL SCREEN DEEP DIVES
-           =================================================================== -->
-      <section class="section container" id="screens" aria-labelledby="screens-title">
-        <div class="section-intro">
-          <span class="eyebrow">Inside the macOS App</span>
-          <h2 id="screens-title">Every screen built for writers who care about craft &amp; control.</h2>
-          <p class="lede">
-            Click any screenshot below to inspect it at full Retina resolution. Every metric,
-            dictionary word, and provider credential lives locally on your Mac inside
-            <code>elocutio.sqlite3</code>.
-          </p>
-        </div>
-
-        <div class="screens-bento">
-          <article class="screen-feature-card">
-            <div class="screen-feature-thumb">
-              <img
-                src="assets/screenshots/screen-analytics.png"
-                alt="Writing & AI Analytics screen"
-                width="1360"
-                height="860"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-analytics.png"
-              />
-            </div>
-            <div class="screen-feature-body">
-              <span class="screen-feature-kicker">01 · Writing &amp; AI Analytics</span>
-              <h3>Measure how your writing improves — and what AI actually costs.</h3>
-              <p>
-                Tracks your composite <strong>Prose Craft Index (0–100)</strong>, editorial minutes
-                saved, <strong>Hybrid Intelligence Split</strong> (on-device Harper vs. AI Co-Pilot),
-                4-pillar writing mastery, 7-day editorial cadence, and a per-model token &amp; USD
-                efficiency ledger.
-              </p>
-              <div class="screen-spec-tags">
-                <span class="spec-tag">Prose Craft Index</span>
-                <span class="spec-tag">Flesch Reading Ease</span>
-                <span class="spec-tag">Per-Model Cost Ledger</span>
-              </div>
-            </div>
-          </article>
-
-          <article class="screen-feature-card">
-            <div class="screen-feature-thumb">
-              <img
-                src="assets/screenshots/screen-privacy-ai.png"
-                alt="Privacy & AI Engine screen"
-                width="1360"
-                height="860"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-privacy-ai.png"
-              />
-            </div>
-            <div class="screen-feature-body">
-              <span class="screen-feature-kicker">02 · 6 AI Provider Presets &amp; Encrypted Vault</span>
-              <h3>Cloud when you want range. On-device when you want zero egress.</h3>
-              <p>
-                Pick from compact dropdown presets for <strong>OpenRouter</strong>,
-                <strong>Ollama (Local)</strong>, <strong>Ollama Cloud</strong>,
-                <strong>Apple Foundation Models</strong> (native macOS
-                <code>FoundationModels.framework</code> bridge on <code>127.0.0.1:11535</code>),
-                <strong>OpenAI</strong>, and <strong>Groq Cloud</strong> with live
-                <code>/v1/models</code> slug discovery.
-              </p>
-              <div class="screen-spec-tags">
-                <span class="spec-tag">AES-256-CBC SQLite + Keychain</span>
-                <span class="spec-tag">Apple Foundation Models</span>
-                <span class="spec-tag">Budget &amp; Cost Caps</span>
-              </div>
-            </div>
-          </article>
-
-          <article class="screen-feature-card">
-            <div class="screen-feature-thumb">
-              <img
-                src="assets/screenshots/screen-voice-dna.png"
-                alt="Voice DNA screen"
-                width="1360"
-                height="860"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-voice-dna.png"
-              />
-            </div>
-            <div class="screen-feature-body">
-              <span class="screen-feature-kicker">03 · Local Voice DNA Calibration</span>
-              <h3>Learns your rhythm and diction without training a cloud model.</h3>
-              <p>
-                Extracts sentence cadence, formality register, punctuation habits, and verb
-                preferences from your writing samples and accepted/dismissed edits. An 8-gram copy
-                guard rejects any rewrite that repeats your sample phrases verbatim.
-              </p>
-              <div class="screen-spec-tags">
-                <span class="spec-tag">Local Style Card</span>
-                <span class="spec-tag">Accepted-Edit Telemetry</span>
-                <span class="spec-tag">8-Gram Copy Guard</span>
-              </div>
-            </div>
-          </article>
-
-          <article class="screen-feature-card">
-            <div class="screen-feature-thumb">
-              <img
-                src="assets/screenshots/screen-lexicon.png"
-                alt="Personal Lexicon & Editorial Rules screen"
-                width="1360"
-                height="860"
-                loading="lazy"
-                data-zoom-src="assets/screenshots/screen-lexicon.png"
-              />
-            </div>
-            <div class="screen-feature-body">
-              <span class="screen-feature-kicker">04 · Personal Lexicon &amp; Rule Engine</span>
-              <h3>Built to scale past 1,000+ custom domain terms and rule overrides.</h3>
-              <p>
-                Switch between US, UK, Canadian, Australian, and Indian English dialects, search and
-                prune your personal dictionary with strict single-word token validation, and toggle
-                individual Harper lint rules in real time.
-              </p>
-              <div class="screen-spec-tags">
-                <span class="spec-tag">5 English Dialects</span>
-                <span class="spec-tag">Single-Word Token Guard</span>
-                <span class="spec-tag">110+ Harper Lints</span>
-              </div>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <!-- ===================================================================
-           INTERACTIVE INLINE SANDBOX
-           =================================================================== -->
-      <section
-        class="section container"
-        id="interactive-demo"
-        aria-labelledby="interactive-demo-title"
-      >
-        <div class="section-intro">
-          <span class="eyebrow">Try the Suggestion Engine</span>
-          <h2 id="interactive-demo-title">Test how local Harper rules and AI suggestions merge.</h2>
-          <p class="lede">
-            Click any underlined span in the passage below to inspect the diff card, apply the
-            replacement, or dismiss it.
-          </p>
-        </div>
-
-        <div class="demo-frame" aria-label="Interactive suggestion preview">
+        <!-- Focused Interactive Manuscript -->
+        <div class="demo-frame" id="demo" aria-label="Interactive suggestion preview">
           <div class="demo-topbar">
             <div style="display: flex; align-items: center; gap: 0.75rem">
               <div class="window-dots" aria-hidden="true">
                 <span></span><span></span><span></span>
               </div>
-              <span>Elocutio Overlay — Active in Apple Notes, Safari, TextEdit &amp; Slack</span>
+              <span>Apple Mail — Release note draft</span>
             </div>
             <span>Click any underlined phrase to inspect</span>
           </div>
@@ -1340,10 +1030,7 @@
               <div class="demo-prose" id="manuscript-stage" aria-live="polite"></div>
 
               <div class="demo-footer-bar">
-                <span>
-                  <kbd>⌥⌘E</kbd> Rewrite Selection · <kbd>⌥⌘A</kbd> Analyze Field ·
-                  <kbd>⌥⌘Z</kbd> Undo Last Edit
-                </span>
+                <span> <kbd>⌥⌘E</kbd> Rewrite · <kbd>⌥⌘A</kbd> Analyze · <kbd>⌥⌘Z</kbd> Undo </span>
                 <button type="button" class="btn btn-sm" id="demo-reset-btn" hidden>
                   Reset passage
                 </button>
@@ -1375,7 +1062,7 @@
                   "
                 >
                   <button type="button" class="btn btn-primary btn-sm" id="demo-accept-btn">
-                    Apply Edit
+                    Apply edit
                   </button>
                   <button type="button" class="btn btn-sm" id="demo-dismiss-btn">Dismiss</button>
                 </div>
@@ -1386,213 +1073,290 @@
       </section>
 
       <!-- ===================================================================
-           ARCHITECTURE & PRIVACY PILLARS (IN-PAGE MODALS, NO .MD LINKS)
+           REAL MACOS APP SCREENS — SAME CALM WINDOW FRAME
            =================================================================== -->
-      <section class="section container" id="architecture" aria-labelledby="arch-title">
+      <section class="section container" id="screens" aria-labelledby="screens-title">
         <div class="section-intro">
-          <span class="eyebrow">Architecture &amp; Privacy</span>
-          <h2 id="arch-title">Engineered with a strict two-process trust boundary.</h2>
+          <span class="eyebrow">Inside the macOS App</span>
+          <h2 id="screens-title">Six focused views. One local SQLite vault.</h2>
           <p class="lede">
-            The highlighter subprocess reads Accessibility fields and renders non-activating
-            underlines; the Tauri main process owns SQLite, Keychain secrets, and network egress.
+            Switch between the real screens of the macOS studio below — from the live manuscript
+            editor and writing analytics to on-device AI provider presets, custom lexicon, and Voice
+            DNA calibration.
+          </p>
+        </div>
+
+        <div class="demo-frame" aria-label="Elocutio macOS application screens">
+          <div class="demo-topbar">
+            <div style="display: flex; align-items: center; gap: 0.75rem">
+              <div class="window-dots" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <span id="app-screen-title">Elocutio.app — Manuscript Atelier</span>
+            </div>
+            <div
+              role="tablist"
+              aria-label="Application screens"
+              style="display: flex; flex-wrap: wrap; gap: 0.4rem"
+            >
+              <button
+                type="button"
+                role="tab"
+                class="btn btn-sm btn-primary"
+                aria-selected="true"
+                data-app-screen="manuscript"
+              >
+                Manuscript
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="btn btn-sm"
+                aria-selected="false"
+                data-app-screen="analytics"
+              >
+                Analytics
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="btn btn-sm"
+                aria-selected="false"
+                data-app-screen="privacy"
+              >
+                Privacy &amp; AI
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="btn btn-sm"
+                aria-selected="false"
+                data-app-screen="lexicon"
+              >
+                Lexicon
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="btn btn-sm"
+                aria-selected="false"
+                data-app-screen="voice"
+              >
+                Voice DNA
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="btn btn-sm"
+                aria-selected="false"
+                data-app-screen="apps"
+              >
+                Apps
+              </button>
+            </div>
+          </div>
+
+          <div style="background: var(--bg-subtle); border-block-end: 1px solid var(--border-subtle)">
+            <img
+              id="app-screen-img"
+              src="assets/screenshots/screen-manuscript.png"
+              alt="Elocutio Manuscript Atelier screen"
+              width="1360"
+              height="860"
+              loading="lazy"
+              style="inline-size: 100%; block-size: auto; display: block"
+            />
+          </div>
+
+          <div
+            class="demo-topbar"
+            style="border-block-end: 0; background: var(--bg-card); color: var(--text-secondary)"
+          >
+            <span id="app-screen-caption">
+              Live manuscript editor with sub-10 ms local Harper underlines, single-word + Lexicon
+              guard, and paragraph-level AI rewrites.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           WHY ELOCUTIO — THREE CALM PILLARS
+           =================================================================== -->
+      <section class="section container" id="why" aria-labelledby="why-title">
+        <div class="section-intro">
+          <span class="eyebrow">Why Elocutio</span>
+          <h2 id="why-title">An editor, not a subscription gatekeeper.</h2>
+          <p class="lede">
+            Local-first correctness, bring-your-own-key intelligence, and zero middleman servers
+            between your Mac and the provider you trust.
           </p>
         </div>
 
         <div class="pillars-grid">
           <article class="pillar-card">
-            <span class="pillar-meta">01 · Process Isolation</span>
-            <h3>Two-Process macOS Architecture</h3>
+            <span class="pillar-meta">01 · &lt;10 ms on-device</span>
+            <h3>Instant local rules</h3>
             <p>
-              Accessibility text capture and pasteboard + <kbd>⌘V</kbd> write-ladder injection run
-              in an isolated subprocess with zero network or Keychain access.
+              Built on an Apache-2.0 fork of Harper Desktop. Spelling, punctuation, and agreement
+              checks run directly on your Mac in under 10 ms — even completely offline.
             </p>
-            <button type="button" class="btn btn-sm" data-open-dialog="arch-dialog">
-              View Process &amp; IPC Diagram
-            </button>
           </article>
 
           <article class="pillar-card">
-            <span class="pillar-meta">02 · Local SQLite Vault</span>
-            <h3>AES-256-CBC + Keychain Storage</h3>
+            <span class="pillar-meta">02 · ~$0.28 per 1,000 emails</span>
+            <h3>Bring your own model</h3>
             <p>
-              <code>elocutio.sqlite3</code> stores your custom lexicon, rule overrides, Voice DNA,
-              token ledger, and AES-256-CBC encrypted API credentials with PBKDF2-HMAC-SHA256.
+              Use OpenRouter, Claude Haiku 5.5, OpenAI, Gemini, or local Ollama. Your API key stays
+              in the macOS Keychain, and you pay your provider directly with no markup.
             </p>
-            <button type="button" class="btn btn-sm" data-open-dialog="privacy-dialog">
-              Inspect SQLite Schema &amp; Data Flows
-            </button>
           </article>
 
           <article class="pillar-card">
-            <span class="pillar-meta">03 · Adaptive macOS Chrome</span>
-            <h3>Template Menu Bar &amp; Floating “elo”</h3>
+            <span class="pillar-meta">03 · Non-activating overlay</span>
+            <h3>Stays out of your way</h3>
             <p>
-              Uses macOS WindowServer template rendering so the menu-bar icon adapts automatically to
-              dark and light wallpapers, paired with a focus-preserving floating <code>elo</code>
-              pill.
+              The floating suggestion card never steals keyboard focus. Edits apply cleanly via
+              Accessibility or verified pasteboard (<kbd>⌘V</kbd>) across native and Chromium apps.
             </p>
-            <button type="button" class="btn btn-sm" data-open-dialog="voice-dialog">
-              Inspect Style Card JSON
-            </button>
           </article>
         </div>
       </section>
 
       <!-- ===================================================================
-           QUICK START
+           VOICE DNA — ONE CLEAR COMPARISON
+           =================================================================== -->
+      <section class="section container" id="voice" aria-labelledby="voice-title">
+        <div class="voice-split">
+          <div>
+            <span class="eyebrow">Local Voice Profile</span>
+            <h2 id="voice-title">Small edits. Your voice intact.</h2>
+            <p class="lede" style="margin-block-end: 1.5rem">
+              Elocutio never fine-tunes a cloud model on your writing. It builds a compact,
+              explainable <strong>Style Card</strong> on your Mac from samples you paste (analyzed
+              locally and immediately discarded) and edits you accept.
+            </p>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.75rem">
+              <button type="button" class="btn btn-sm" id="inspect-json-btn">
+                Inspect Style Card JSON
+              </button>
+              <button type="button" class="btn btn-sm" id="inspect-voice-how-btn">
+                How Voice Learning Works →
+              </button>
+            </div>
+          </div>
+
+          <div class="voice-card">
+            <div class="voice-toggle-bar">
+              <div>
+                <label for="voice-use-toggle" style="font-weight: 600; cursor: pointer">
+                  Use my voice in rewrites
+                </label>
+                <div style="font-size: 0.8rem; color: var(--text-muted)">
+                  Off by default · 8-gram copy guard prevents repeating sample text
+                </div>
+              </div>
+              <input type="checkbox" id="voice-use-toggle" checked />
+            </div>
+
+            <p
+              style="
+                font-size: 0.82rem;
+                color: var(--text-muted);
+                margin-block-end: 0.6rem;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                font-weight: 600;
+              "
+              id="voice-output-heading"
+            >
+              Rewrite with your local Style Card
+            </p>
+
+            <blockquote class="voice-quote" id="voice-output-text">
+              “We’re moving the migration back two days — the schema suite is still failing in CI,
+              and I want a clean run before we cut over.”
+            </blockquote>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           GET STARTED + ESSENTIAL FAQ
            =================================================================== -->
       <section class="section container" id="start" aria-labelledby="start-title">
         <div class="section-intro">
           <span class="eyebrow">Get Started</span>
-          <h2 id="start-title">Build and run Elocutio on macOS.</h2>
+          <h2 id="start-title">Build and run on macOS.</h2>
           <p class="lede">
-            Clone the open-source repository to run the full Elocutio Editorial Atelier and menu-bar
-            companion on macOS 14 Sonoma or later.
+            Elocutio is in pre-alpha (M1 in progress). Clone the repository to build the menu-bar
+            companion and shared Rust workspace from source.
           </p>
         </div>
 
         <figure class="code-figure">
           <figcaption>
-            <span>Terminal — macOS 14+ · Rust 1.85+ · Node 22+ · pnpm 10+</span>
+            <span>Terminal — macOS 14 Sonoma or later</span>
             <button type="button" class="btn btn-sm" id="copy-commands-btn">Copy</button>
           </figcaption>
           <pre
             tabindex="0"
-          ><code id="quickstart-code">git clone https://github.com/pri-te-sh/elocutio.git
+          ><code id="quickstart-code">git clone git@github.com:pri-te-sh/elocutio.git
 cd elocutio
-cargo test --all
-cd apps/macos &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
+./scripts/bootstrap.sh
+just macos-dev</code></pre>
         </figure>
+
+        <div class="faq-list" aria-label="Frequently asked questions">
+          <details class="faq-item" name="faq">
+            <summary>Why is Elocutio distributed outside the Mac App Store?</summary>
+            <div class="faq-body">
+              <p>
+                Reading and replacing text across other apps requires the macOS Accessibility API,
+                which the App Sandbox does not permit. Release builds target a Developer ID–signed,
+                Apple-notarized DMG and Homebrew cask.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-item" name="faq">
+            <summary>What leaves my Mac when I use an LLM provider?</summary>
+            <div class="faq-body">
+              <p>
+                In local-only mode, nothing leaves your Mac. With a configured provider, only the
+                text being analyzed (plus your compact Style Card if you turn on
+                <em>Use my voice</em>) is sent directly to that provider using the key in your macOS
+                Keychain.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-item" name="faq">
+            <summary>What is explicitly out of scope for v1?</summary>
+            <div class="faq-body">
+              <p>
+                Google Docs (canvas-rendered; Gmail, Notion, Slack, and Linear are covered by the
+                planned browser extension), plagiarism scores, AI-detector scores, and enterprise
+                SSO. Windows, iOS, and Android follow the macOS release on the shared Rust core.
+              </p>
+            </div>
+          </details>
+        </div>
       </section>
     </main>
 
-    <!-- =====================================================================
-         IN-PAGE NATIVE DIALOGS (REPLACES RAW .MD LINKS)
-         ===================================================================== -->
-    <dialog class="elo-dialog" id="arch-dialog" closedby="any" aria-labelledby="arch-dialog-title">
-      <div class="dialog-header">
-        <h2 id="arch-dialog-title" style="font-size: 1.3rem">
-          Two-Process Architecture &amp; Write Ladder
-        </h2>
-        <form method="dialog">
-          <button type="submit" class="btn btn-sm" value="close">Close</button>
-        </form>
-      </div>
-      <p style="color: var(--text-secondary); margin-block-end: 1rem">
-        Elocutio separates secret/network ownership from cross-app Accessibility access so API keys
-        never enter the process that inspects external windows:
-      </p>
-      <figure class="code-figure" style="margin-block-end: 1rem">
-        <figcaption>
-          <span>Process Boundary</span>
-          <span>JSON Lines over Local IPC</span>
-        </figcaption>
-        <pre tabindex="0"><code>┌──────────────────── Tauri Main Process (Rust) ─────────────────────┐
-│  • Tray icon (NSImage template) · Window manager · Global hotkeys  │
-│  • SQLite (elocutio.sqlite3) + AES-256-CBC credential vault        │
-│  • 6 AI Providers + Embedded Apple FoundationModels HTTP bridge    │
-└─────────────────────────────────┬──────────────────────────────────┘
-                                  │ Versioned Local IPC
-┌─────────────────────────────────▼──────────────────────────────────┐
-│  Highlighter &amp; Overlay Engine (macOS Accessibility)                │
-│  • Focused AXUIElement reader · Secure-input &amp; password-field gate │
-│  • On-device harper-core (&lt;10 ms) · Non-activating "elo" overlay   │
-│  • Write ladder: AXValue fast path → Pasteboard + ⌘V + read-back   │
-└────────────────────────────────────────────────────────────────────┘</code></pre>
-      </figure>
-      <table class="spec-table">
-        <thead>
-          <tr>
-            <th>Capability</th>
-            <th>Tauri Main Process</th>
-            <th>Highlighter Subprocess</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>API Keys (Keychain + Encrypted SQLite)</td>
-            <td>Yes</td>
-            <td>Never</td>
-          </tr>
-          <tr>
-            <td>Network Egress (OpenRouter / OpenAI / Groq)</td>
-            <td>Yes</td>
-            <td>Never</td>
-          </tr>
-          <tr>
-            <td>macOS Accessibility &amp; Non-Activating Overlay</td>
-            <td>Coordinator</td>
-            <td>Direct AX Broker</td>
-          </tr>
-        </tbody>
-      </table>
-    </dialog>
-
-    <dialog
-      class="elo-dialog"
-      id="privacy-dialog"
-      closedby="any"
-      aria-labelledby="privacy-dialog-title"
-    >
-      <div class="dialog-header">
-        <h2 id="privacy-dialog-title" style="font-size: 1.3rem">
-          Local SQLite Vault &amp; Data Privacy
-        </h2>
-        <form method="dialog">
-          <button type="submit" class="btn btn-sm" value="close">Close</button>
-        </form>
-      </div>
-      <p style="color: var(--text-secondary); margin-block-end: 0.75rem">
-        All personalization and telemetry live on your Mac in
-        <code>~/Library/Application Support/elocutio/elocutio.sqlite3</code>. There is no Elocutio
-        cloud account or middleman server.
-      </p>
-      <table class="spec-table">
-        <thead>
-          <tr>
-            <th>SQLite Table / File</th>
-            <th>Contents</th>
-            <th>Protection &amp; Control</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>encrypted_credentials</code></td>
-            <td>Provider API keys</td>
-            <td>AES-256-CBC + 10k-iter PBKDF2-HMAC-SHA256 + macOS Keychain</td>
-          </tr>
-          <tr>
-            <td><code>ai_token_usage</code></td>
-            <td>Model slug, prompt/completion tokens, USD cost, latency</td>
-            <td>Stores zero user prose; clearable anytime</td>
-          </tr>
-          <tr>
-            <td><code>dictionary_words</code></td>
-            <td>Custom single-word lexicon entries</td>
-            <td>Synced with <code>user_dictionary.txt</code>; searchable &amp; editable</td>
-          </tr>
-          <tr>
-            <td><code>editorial_rules</code></td>
-            <td>Per-rule Harper lint enable/disable overrides</td>
-            <td>Instant toggle in Lexicon &amp; Rules</td>
-          </tr>
-          <tr>
-            <td><code>voice_profile</code> &amp; <code>edit_events</code></td>
-            <td>Calibrated Voice DNA traits &amp; accepted/dismissed edit counts</td>
-            <td>Local-only learning; one-click reset</td>
-          </tr>
-        </tbody>
-      </table>
-    </dialog>
-
-    <dialog
-      class="elo-dialog"
-      id="voice-dialog"
-      closedby="any"
-      aria-labelledby="voice-dialog-title"
-    >
-      <div class="dialog-header">
-        <h2 id="voice-dialog-title" style="font-size: 1.3rem">
+    <!-- Native Modal Dialog for Style Card JSON -->
+    <dialog class="elo-dialog" id="stylecard-dialog" closedby="any" aria-labelledby="dialog-title">
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          margin-block-end: 1rem;
+        "
+      >
+        <h2 id="dialog-title" style="font-size: 1.15rem">
           Local Voice Style Card (elocutio-voice)
         </h2>
         <form method="dialog">
@@ -1602,83 +1366,101 @@ cd apps/macos &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
       <figure class="code-figure" style="margin-block-end: 0">
         <figcaption>
           <span>style_card.json (~165 tokens)</span>
-          <span>Raw writing samples discarded after local extraction</span>
+          <span>Raw samples discarded</span>
         </figcaption>
         <pre tabindex="0"><code>{
-  "schema_version": 2,
-  "learn_from_edits": true,
-  "cadence": { "mean_sentence_words": 14.6, "rhythm": "short-long contrast" },
-  "register": { "label": "Executive Technical", "formality": 0.78 },
+  "schema_version": 1,
+  "learn_from_edits": false,
+  "use_my_voice": false,
+  "cadence": { "mean_sentence_words": 14.8, "rhythm": "short-long contrast" },
   "punctuation": { "oxford_comma": true, "em_dash_preference": "spaced" },
-  "diction": { "prefer": ["ship", "verify", "prune"], "avoid": ["utilize", "facilitate"] },
-  "copy_guard": { "max_ngram_overlap": 8 }
+  "diction": { "voice": "active, verb-first", "sign_off": "Best," },
+  "copy_guard": { "max_ngram_overlap": 7 }
 }</code></pre>
       </figure>
     </dialog>
 
     <dialog
-      class="elo-dialog lightbox-dialog"
-      id="lightbox-dialog"
+      class="elo-dialog"
+      id="voice-how-dialog"
       closedby="any"
-      aria-labelledby="lightbox-title"
+      aria-labelledby="voice-how-title"
     >
-      <div class="dialog-header">
-        <h2 id="lightbox-title" style="font-size: 1.1rem">Elocutio App Screen Preview</h2>
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          margin-block-end: 1rem;
+        "
+      >
+        <h2 id="voice-how-title" style="font-size: 1.15rem">How Local Voice Learning Works</h2>
         <form method="dialog">
-          <button type="submit" class="btn btn-sm" value="close">Close (Esc)</button>
+          <button type="submit" class="btn btn-sm" value="close">Close</button>
         </form>
       </div>
-      <img
-        id="lightbox-img"
-        src="assets/screenshots/screen-manuscript.png"
-        alt="Full resolution Elocutio screen"
-        width="1360"
-        height="860"
-        style="inline-size: 100%; block-size: auto; border-radius: 10px"
-      />
+      <div style="color: var(--text-secondary); font-size: 0.94rem; display: grid; gap: 0.75rem">
+        <p>
+          <strong>1. Local Feature Extraction:</strong> When you paste a writing sample in the Voice
+          DNA tab, <code>elocutio-voice</code> computes sentence cadence, formality register,
+          punctuation habits, and verb preferences in memory on your Mac and discards the raw text.
+        </p>
+        <p>
+          <strong>2. Accepted &amp; Dismissed Edit Telemetry:</strong> When
+          <em>Learn from edits</em> is enabled, accepted and dismissed suggestions in
+          <code>elocutio.sqlite3</code> refine your active traits without sending samples to any
+          server.
+        </p>
+        <p>
+          <strong>3. 8-Gram Copy Guard:</strong> Every AI rewrite is checked against an 8-gram
+          overlap filter before being shown, preventing any model from repeating phrases from your
+          samples verbatim.
+        </p>
+      </div>
     </dialog>
 
     <footer class="site-footer">
       <div class="container">
         <div class="footer-row">
-          <div style="display: flex; align-items: center; gap: 0.6rem">
-            <span class="brand-pill" aria-hidden="true" style="inline-size: 1.75rem; block-size: 1.75rem; font-size: 0.95rem">”</span>
-            <strong style="font-family: var(--font-serif); color: var(--text-primary); font-size: 1.05rem">
-              Elocutio Editorial Atelier
-            </strong>
-          </div>
-
+          <img
+            class="brand-lockup-img logo-light"
+            src="assets/brand/lockup-indigo.png"
+            alt="Elocutio"
+            width="140"
+            height="59"
+            loading="lazy"
+          />
+          <img
+            class="brand-lockup-img logo-dark"
+            src="assets/brand/lockup-white.png"
+            alt="Elocutio"
+            width="140"
+            height="52"
+            loading="lazy"
+          />
           <ul class="footer-links">
-            <li>
-              <button type="button" class="btn btn-sm" data-open-dialog="arch-dialog">
-                Architecture
-              </button>
-            </li>
-            <li>
-              <button type="button" class="btn btn-sm" data-open-dialog="privacy-dialog">
-                Privacy &amp; SQLite Vault
-              </button>
-            </li>
-            <li>
-              <button type="button" class="btn btn-sm" data-open-dialog="voice-dialog">
-                Voice Style Card
-              </button>
-            </li>
+            <li><a href="#demo">Live Demo</a></li>
+            <li><a href="#screens">App Screens</a></li>
+            <li><a href="#why">Why Elocutio</a></li>
+            <li><a href="#voice">Voice Profile</a></li>
+            <li><a href="#start">Get Started</a></li>
             <li>
               <a
-                class="btn btn-sm"
                 href="https://github.com/pri-te-sh/elocutio"
                 target="_blank"
                 rel="noopener noreferrer"
+                >GitHub (Apache-2.0)</a
               >
-                GitHub (Apache-2.0)
-              </a>
             </li>
           </ul>
         </div>
         <p>
-          Open-source under the Apache-2.0 License. Derived from Harper (Apache-2.0). Not affiliated
-          with Automattic, Grammarly, Inc., or Superhuman.
+          Derived from
+          <a href="https://github.com/Automattic/harper" target="_blank" rel="noopener noreferrer"
+            >Harper</a
+          >
+          (Apache-2.0). Not affiliated with Automattic, Grammarly, Inc., or Superhuman.
         </p>
       </div>
     </footer>
@@ -1712,154 +1494,45 @@ cd apps/macos &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
           }
         });
 
-        // 2. Hero Real App Screen Switcher
-        const SCREEN_META = {
-          manuscript: {
-            title: "Elocutio.app — Manuscript Atelier",
-            pill: "Screen 1 of 6 · Manuscript",
-            desc: "Raised warm-ivory manuscript folio with sub-10ms local Harper underlines, single-word + Lexicon guard, and paragraph-level AI Rewrite Atelier.",
-            src: "assets/screenshots/screen-manuscript.png",
-          },
-          analytics: {
-            title: "Elocutio.app — Writing & AI Analytics",
-            pill: "Screen 2 of 6 · Analytics",
-            desc: "Prose Craft Index (92/100), Editorial Time Saved, Hybrid Intelligence Split (76% On-Device vs. 24% AI), 4-Pillar Mastery, and 7-Day Cadence.",
-            src: "assets/screenshots/screen-analytics.png",
-          },
-          privacy: {
-            title: "Elocutio.app — Privacy & AI Engine",
-            pill: "Screen 3 of 6 · Privacy & AI",
-            desc: "Compact dropdown selectors for 6 AI providers (OpenRouter, Ollama Local/Cloud, Apple Foundation Models, OpenAI, Groq) + AES-256-CBC encrypted key vault.",
-            src: "assets/screenshots/screen-privacy-ai.png",
-          },
-          lexicon: {
-            title: "Elocutio.app — Personal Lexicon & Editorial Rules",
-            pill: "Screen 4 of 6 · Lexicon & Rules",
-            desc: "Dialect switcher (US, UK, CA, AU, IN), searchable custom dictionary built for 1,000+ words, and granular Harper lint toggles.",
-            src: "assets/screenshots/screen-lexicon.png",
-          },
-          voice: {
-            title: "Elocutio.app — Voice DNA Calibration",
-            pill: "Screen 5 of 6 · Voice DNA",
-            desc: "Live telemetry from learned edits, recently learned phrase replacements, sample analyzer, and calibrated stylistic traits.",
-            src: "assets/screenshots/screen-voice-dna.png",
-          },
-          apps: {
-            title: "Elocutio.app — Connected macOS Applications",
-            pill: "Screen 6 of 6 · Connected Apps",
-            desc: "Per-application enablement across Apple Notes, Safari, TextEdit, Slack, Apple Mail, VS Code, Linear, and Notion.",
-            src: "assets/screenshots/screen-apps.png",
-          },
-        };
-
-        let currentScreenKey = "manuscript";
-        const tabBtns = document.querySelectorAll(".screen-tab-btn");
-        const slides = document.querySelectorAll(".showcase-slide");
-        const winTitleEl = document.getElementById("showcase-window-title");
-        const pillEl = document.getElementById("showcase-pill");
-        const descEl = document.getElementById("showcase-desc");
-
-        function selectScreen(key) {
-          const meta = SCREEN_META[key];
-          if (!meta) return;
-          currentScreenKey = key;
-          tabBtns.forEach((btn) => {
-            btn.setAttribute("aria-selected", btn.dataset.screen === key ? "true" : "false");
-          });
-          slides.forEach((slide) => {
-            slide.classList.toggle("is-active", slide.dataset.slide === key);
-          });
-          winTitleEl.textContent = meta.title;
-          pillEl.textContent = meta.pill;
-          descEl.textContent = meta.desc;
-        }
-
-        tabBtns.forEach((btn) => {
-          btn.addEventListener("click", () => selectScreen(btn.dataset.screen));
+        window.addEventListener("storage", (event) => {
+          if (event.key === "color-scheme") {
+            metaScheme.content = event.newValue ?? "light dark";
+          }
         });
 
-        // 3. Light-dismiss Dialogs + Safari closedBy Fallback (light-dismiss-a-dialog guide)
-        const allDialogs = document.querySelectorAll("dialog.elo-dialog");
-        if (!("closedBy" in HTMLDialogElement.prototype)) {
-          allDialogs.forEach((dialog) => {
-            dialog.addEventListener("click", (event) => {
-              if (event.target !== dialog) return;
-              const rect = dialog.getBoundingClientRect();
-              const isDialogContent =
-                rect.top <= event.clientY &&
-                event.clientY <= rect.top + rect.height &&
-                rect.left <= event.clientX &&
-                event.clientX <= rect.left + rect.width;
-              if (isDialogContent) return;
-              dialog.close();
-            });
-          });
-        }
-
-        document.querySelectorAll("[data-open-dialog]").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const dlg = document.getElementById(btn.dataset.openDialog);
-            if (dlg) dlg.showModal();
-          });
-        });
-
-        // Screenshot Zoom Lightbox
-        const lightboxDialog = document.getElementById("lightbox-dialog");
-        const lightboxImg = document.getElementById("lightbox-img");
-        const lightboxTitle = document.getElementById("lightbox-title");
-
-        function openLightbox(src, altText) {
-          lightboxImg.src = src;
-          lightboxImg.alt = altText || "Elocutio screen preview";
-          lightboxTitle.textContent = altText || "Elocutio App Screen Preview";
-          lightboxDialog.showModal();
-        }
-
-        document.querySelectorAll("[data-zoom-src]").forEach((img) => {
-          img.addEventListener("click", () => openLightbox(img.dataset.zoomSrc, img.alt));
-        });
-
-        document.getElementById("zoom-current-btn").addEventListener("click", () => {
-          const meta = SCREEN_META[currentScreenKey];
-          openLightbox(meta.src, meta.title);
-        });
-
-        // 4. Interactive Manuscript Sandbox
+        // 2. Calm Interactive Manuscript Demo
         const INITIAL_SEGMENTS = [
-          { text: "Welcome to the Elocutio Editor. " },
+          { text: "We plan to ship the macOS menu-bar build on Thursday. " },
           {
             id: "s1",
             cat: "correctness",
-            catLabel: "Correctness · Confused Words",
+            catLabel: "Correctness · Spelling",
             engine: "Harper · 3 ms local",
-            original: "Their",
-            replacement: "There",
-            explanation:
-              "Caught locally on-device by Harper in 3 ms: use “There” instead of the possessive “Their”.",
+            original: "Definately",
+            replacement: "Definitely",
+            explanation: "Caught locally on-device by Harper in 3 ms without a network call.",
           },
-          { text: " are several common mistakes in this short passage. " },
+          { text: " let me know if the installer prompts cleanly. " },
           {
             id: "s2",
             cat: "clarity",
             catLabel: "Clarity · Conciseness",
-            engine: "Claude Haiku 4.5 / Apple FM",
+            engine: "Claude Haiku 5.5 · BYOK",
             original: "At this point in time, local checks are running",
             replacement: "Local checks now run",
-            explanation:
-              "Replaces a six-word throat-clearing phrase with a direct active verb.",
+            explanation: "Replaces a six-word throat-clearing phrase with a direct active verb.",
           },
           { text: " in under 4 ms on Apple Silicon, and " },
           {
             id: "s3",
             cat: "voice",
-            catLabel: "Voice DNA · Word Choice",
-            engine: "elocutio-voice · Local SQLite",
-            original: "instantaneously",
-            replacement: "instantly",
-            explanation:
-              "Matches your calibrated Voice DNA preference for crisp adverbs over multi-syllable padding.",
+            catLabel: "Voice Profile · Diction",
+            engine: "elocutio-voice · Local Style Card",
+            original: "we utilized a two-process architecture",
+            replacement: "we built a two-process architecture",
+            explanation: "Matches your preference for plain verbs (“built”) over corporate jargon.",
           },
-          { text: " without sending your private drafts to the cloud." },
+          { text: " so API keys stay strictly inside the main process." },
         ];
 
         let segments = [];
@@ -1905,7 +1578,7 @@ cd apps/macos &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
             } else if (seg.status === "accepted") {
               const span = document.createElement("span");
               span.textContent = seg.replacement;
-              span.style.fontWeight = "600";
+              span.style.fontWeight = "500";
               p.append(span);
             } else {
               p.append(document.createTextNode(seg.text || seg.original));
@@ -1921,7 +1594,7 @@ cd apps/macos &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
             sourceTagEl.textContent = "0 suggestions remaining";
             diffBoxEl.textContent = "Every suggestion has been reviewed.";
             explanationEl.textContent =
-              "When your draft is clean, the floating elo companion collapses quietly out of the way.";
+              "When your draft is clean, the floating widget collapses quietly out of the way.";
             acceptBtn.disabled = true;
             dismissBtn.disabled = true;
             return;
@@ -1959,7 +1632,118 @@ cd apps/macos &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
         resetBtn.addEventListener("click", resetSegments);
         resetSegments();
 
-        // 5. Copy Terminal Commands
+        // 3. Voice DNA Switch
+        const voiceToggle = document.getElementById("voice-use-toggle");
+        const voiceHeading = document.getElementById("voice-output-heading");
+        const voiceText = document.getElementById("voice-output-text");
+
+        voiceToggle.addEventListener("change", () => {
+          if (voiceToggle.checked) {
+            voiceHeading.textContent = "Rewrite with your local Style Card";
+            voiceText.textContent =
+              "“We’re moving the migration back two days — the schema suite is still failing in CI, and I want a clean run before we cut over.”";
+          } else {
+            voiceHeading.textContent = "Standard LLM rewrite (Voice off)";
+            voiceText.textContent =
+              "“Please be advised that we will need to postpone the migration by two days due to ongoing schema test failures in our CI pipeline.”";
+          }
+        });
+
+        // 4. Style Card & Voice How Modals + Safari closedBy Fallback
+        const styleDialog = document.getElementById("stylecard-dialog");
+        const voiceHowDialog = document.getElementById("voice-how-dialog");
+        document
+          .getElementById("inspect-json-btn")
+          .addEventListener("click", () => styleDialog.showModal());
+        document
+          .getElementById("inspect-voice-how-btn")
+          .addEventListener("click", () => voiceHowDialog.showModal());
+
+        if (!("closedBy" in HTMLDialogElement.prototype)) {
+          [styleDialog, voiceHowDialog].forEach((dialog) => {
+            dialog.addEventListener("click", (event) => {
+              if (event.target !== dialog) return;
+              const rect = dialog.getBoundingClientRect();
+              const isDialogContent =
+                rect.top <= event.clientY &&
+                event.clientY <= rect.top + rect.height &&
+                rect.left <= event.clientX &&
+                event.clientX <= rect.left + rect.width;
+              if (isDialogContent) return;
+              dialog.close();
+            });
+          });
+        }
+
+        // 5. Real macOS App Screens Switcher
+        const APP_SCREENS = {
+          manuscript: {
+            title: "Elocutio.app — Manuscript Atelier",
+            src: "assets/screenshots/screen-manuscript.png",
+            alt: "Elocutio Manuscript Atelier screen",
+            caption:
+              "Live manuscript editor with sub-10 ms local Harper underlines, single-word + Lexicon guard, and paragraph-level AI rewrites.",
+          },
+          analytics: {
+            title: "Elocutio.app — Writing & AI Analytics",
+            src: "assets/screenshots/screen-analytics.png",
+            alt: "Elocutio Writing and AI Analytics screen",
+            caption:
+              "Tracks Prose Craft Index (92/100), editorial time saved, Hybrid Intelligence Split (76% On-Device vs. 24% AI), and 7-day cadence.",
+          },
+          privacy: {
+            title: "Elocutio.app — Privacy & AI Engine",
+            src: "assets/screenshots/screen-privacy-ai.png",
+            alt: "Elocutio Privacy and AI Engine screen",
+            caption:
+              "Dropdown presets for OpenRouter, Ollama Local/Cloud, Apple Foundation Models on-device, OpenAI, and Groq + AES-256-CBC encrypted API keys.",
+          },
+          lexicon: {
+            title: "Elocutio.app — Personal Lexicon & Rules",
+            src: "assets/screenshots/screen-lexicon.png",
+            alt: "Elocutio Personal Lexicon and Rules screen",
+            caption:
+              "Dialect switcher (US, UK, CA, AU, IN), searchable custom dictionary built for 1,000+ words, and granular Harper lint toggles.",
+          },
+          voice: {
+            title: "Elocutio.app — Voice DNA",
+            src: "assets/screenshots/screen-voice-dna.png",
+            alt: "Elocutio Voice DNA screen",
+            caption:
+              "Local stylistic fingerprinting from writing samples and accepted/dismissed edits stored in elocutio.sqlite3.",
+          },
+          apps: {
+            title: "Elocutio.app — Connected Applications",
+            src: "assets/screenshots/screen-apps.png",
+            alt: "Elocutio Connected Applications screen",
+            caption:
+              "Per-application enablement across Apple Notes, Safari, TextEdit, Slack, Apple Mail, VS Code, Linear, and Notion.",
+          },
+        };
+
+        const screenBtns = document.querySelectorAll("[data-app-screen]");
+        const screenImgEl = document.getElementById("app-screen-img");
+        const screenTitleEl = document.getElementById("app-screen-title");
+        const screenCaptionEl = document.getElementById("app-screen-caption");
+
+        screenBtns.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const key = btn.dataset.appScreen;
+            const info = APP_SCREENS[key];
+            if (!info) return;
+            screenBtns.forEach((b) => {
+              const active = b.dataset.appScreen === key;
+              b.setAttribute("aria-selected", active ? "true" : "false");
+              b.classList.toggle("btn-primary", active);
+            });
+            screenImgEl.src = info.src;
+            screenImgEl.alt = info.alt;
+            screenTitleEl.textContent = info.title;
+            screenCaptionEl.textContent = info.caption;
+          });
+        });
+
+        // 6. Copy Terminal Commands
         const copyBtn = document.getElementById("copy-commands-btn");
         const codeEl = document.getElementById("quickstart-code");
         copyBtn.addEventListener("click", async () => {

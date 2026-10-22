@@ -631,9 +631,6 @@
         color: var(--white);
         cursor: pointer;
       }
-      .poster[disabled] {
-        cursor: default;
-      }
       .poster-mark {
         position: absolute;
         top: clamp(22px, 4vw, 48px);
@@ -663,9 +660,6 @@
       }
       .poster:hover .poster-play {
         transform: scale(1.05);
-      }
-      .poster[disabled] .poster-play {
-        display: none;
       }
       .poster-play svg {
         width: 34%;
@@ -2344,20 +2338,7 @@
         // ---------- Tour video ----------
         const video = $("tour-video");
         const poster = $("poster");
-        const src = video.querySelector("source").getAttribute("src");
-        let available = false;
-        fetch(src, { method: "HEAD" })
-          .then((r) => {
-            available = r.ok;
-            if (!available) throw 0;
-          })
-          .catch(() => {
-            poster.disabled = true;
-            poster.setAttribute("aria-label", "Tour video coming soon");
-            $("poster-sub").textContent = "Tour video coming soon";
-          });
         poster.addEventListener("click", () => {
-          if (!available) return;
           poster.hidden = true;
           video.hidden = false;
           video.play().catch(() => {});

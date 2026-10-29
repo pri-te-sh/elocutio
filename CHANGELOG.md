@@ -146,6 +146,10 @@ to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Elocutio can be downloaded: pushing a version tag builds a universal
+  (Apple silicon + Intel) app, packages `Elocutio-macOS.dmg`, and publishes it
+  to GitHub Releases, signing and notarizing it when Developer ID secrets are
+  configured. The website and README link to the latest DMG.
 - The overlay's floating widget now appears only while text is selected, as a
   two-button pill (rewrite, suggestions) attached under the selection; a rewrite
   started from it replaces just the selected text. Pausing elo for an app moved

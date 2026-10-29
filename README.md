@@ -25,6 +25,15 @@
   <img src="assets/screenshots/screen-manuscript.png" alt="Elocutio Studio — manuscript editor" width="880" />
 </p>
 
+## Download
+
+**[Download Elocutio for Mac](https://github.com/pri-te-sh/elocutio/releases/latest/download/Elocutio-macOS.dmg)** — one DMG for Apple silicon and Intel, macOS 14 or later. Every version is on the [releases page](https://github.com/pri-te-sh/elocutio/releases).
+
+1. Open the DMG and drag **Elocutio** to **Applications**.
+2. Open Elocutio. Pre-alpha builds are not notarized yet, so if macOS says it cannot verify the app, open **System Settings → Privacy & Security** and click **Open Anyway** (once).
+3. Allow **Accessibility** when asked, so Elocutio can read and edit the field you are typing in.
+4. Add an API key in Elocutio Studio → Privacy & AI, or choose Ollama or Apple's on-device model.
+
 ## What works today
 
 **In every app (the `elo` overlay)**
@@ -137,7 +146,7 @@ just macos-build-signed "Apple Development: Your Name (TEAMID)"
 
 No Apple Developer identity? `just dev-cert` creates a stable self-signed one.
 
-Release builds are ad-hoc signed and not notarized until the v1 Developer ID release, so Gatekeeper requires right-click → Open. The [progress dashboard](docs/PROGRESS.md) tracks milestones from repository evidence (`just progress-serve`).
+**Releases.** Pushing a version tag (`git tag v0.1.0 && git push origin v0.1.0`) runs the [release workflow](.github/workflows/release.yml): it builds a universal app, packages `Elocutio-macOS.dmg` with `scripts/package-macos.sh`, and publishes it to GitHub Releases. With Developer ID secrets configured it also signs and notarizes the app; see [MAINTAINING.md](docs/MAINTAINING.md#releases). The [progress dashboard](docs/PROGRESS.md) tracks milestones from repository evidence (`just progress-serve`).
 
 ## Repository layout
 

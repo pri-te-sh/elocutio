@@ -1406,6 +1406,43 @@
         color: var(--soft-indigo);
         user-select: none;
       }
+      .install-steps {
+        list-style: none;
+        counter-reset: step;
+        margin: 28px 0 0;
+        padding: 0;
+        font-size: 15px;
+        color: var(--text-2);
+      }
+      .install-steps li {
+        counter-increment: step;
+        position: relative;
+        padding: 0 0 14px 38px;
+      }
+      .install-steps li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 1px;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        background: var(--indigo);
+        color: var(--white);
+        font-size: 13px;
+        font-weight: 600;
+        display: grid;
+        place-items: center;
+      }
+      .install-steps b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .hero-meta a {
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
       .reqs {
         list-style: none;
         margin: 24px 0 0;
@@ -1547,6 +1584,7 @@
           <a href="#studio">The studio</a>
           <a href="#privacy">Privacy</a>
           <a href="#roadmap">Roadmap</a>
+          <a href="#start">Download</a>
           <a class="btn btn-ghost" href="https://github.com/pri-te-sh/elocutio">
             <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
               <path
@@ -1572,7 +1610,23 @@
               the model you choose, in a voice that still sounds like you.
             </p>
             <div class="hero-cta">
-              <a class="btn btn-primary" href="#start">Build it on your Mac</a>
+              <a
+                class="btn btn-primary"
+                href="https://github.com/pri-te-sh/elocutio/releases/latest/download/Elocutio-macOS.dmg"
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M4 16.5h12" />
+                </svg>
+                Download for Mac
+              </a>
               <a class="btn btn-ghost" href="#tour">
                 <svg viewBox="0 0 20 20" aria-hidden="true" fill="currentColor">
                   <path
@@ -1582,7 +1636,10 @@
                 Watch the tour
               </a>
             </div>
-            <p class="hero-meta">Apache-2.0 · Bring your own key, or run fully on-device</p>
+            <p class="hero-meta">
+              Free and open source · macOS 14+ · Apple silicon and Intel ·
+              <a href="#start">Install guide</a>
+            </p>
           </div>
 
           <div>
@@ -2139,31 +2196,71 @@
         <div class="wrap split">
           <div class="section-head">
             <p class="eyebrow">Get started</p>
-            <h2 id="start-title">Build it on your Mac.</h2>
+            <h2 id="start-title">Download Elocutio.</h2>
             <p>
-              Four commands. The app runs from your menu bar and asks for Accessibility permission
-              so it can read the field you’re writing in.
+              One download for Apple silicon and Intel Macs. Drag it to Applications, open it, and
+              it lives in your menu bar.
             </p>
+            <div class="hero-cta">
+              <a
+                class="btn btn-primary"
+                href="https://github.com/pri-te-sh/elocutio/releases/latest/download/Elocutio-macOS.dmg"
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M4 16.5h12" />
+                </svg>
+                Download for Mac
+              </a>
+              <a class="btn btn-ghost" href="https://github.com/pri-te-sh/elocutio/releases">
+                All releases
+              </a>
+            </div>
+            <ol class="install-steps">
+              <li><b>Open the download</b> and drag Elocutio to Applications.</li>
+              <li>
+                <b>Open Elocutio.</b> Pre-alpha builds aren’t notarized yet, so if macOS says it
+                can’t verify the app, open System Settings → Privacy &amp; Security and click
+                <b>Open Anyway</b>. You only do this once.
+              </li>
+              <li>
+                <b>Allow Accessibility</b> when asked, so Elocutio can read the field you’re writing
+                in.
+              </li>
+              <li>
+                <b>Choose a model:</b> add an API key, or use Ollama or Apple’s on-device model.
+              </li>
+            </ol>
             <ul class="reqs">
               <li><span>macOS</span><b>14 Sonoma or later</b></li>
-              <li><span>Toolchain</span><b>Xcode CLT, Rust, Node 22+, pnpm</b></li>
+              <li><span>Mac</span><b>Apple silicon or Intel</b></li>
               <li><span>A model</span><b>An API key, or a local model</b></li>
             </ul>
-            <p class="footnote">
-              Builds are unsigned until v1. On first launch, right-click the app and choose Open.
-            </p>
           </div>
-          <div class="terminal">
-            <div class="terminal-bar">
-              <span>Terminal</span>
-              <button class="copy" id="copy" aria-label="Copy commands">Copy</button>
-            </div>
-            <pre
-              id="cmds"
-            ><span class="p">$ </span>git clone https://github.com/pri-te-sh/elocutio.git
+          <div>
+            <div class="terminal">
+              <div class="terminal-bar">
+                <span>Or build it from source</span>
+                <button class="copy" id="copy" aria-label="Copy commands">Copy</button>
+              </div>
+              <pre
+                id="cmds"
+              ><span class="p">$ </span>git clone https://github.com/pri-te-sh/elocutio.git
 <span class="p">$ </span>cd elocutio
 <span class="p">$ </span>./scripts/bootstrap.sh
 <span class="p">$ </span>just macos-dev</pre>
+            </div>
+            <p class="footnote">
+              Building needs the Xcode Command Line Tools, Rust, Node 22+, pnpm, and
+              <code>just</code>.
+            </p>
           </div>
         </div>
       </section>

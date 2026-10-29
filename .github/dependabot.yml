@@ -4,6 +4,9 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
+    # Open PRs are not rebased each time main moves: every rebase re-runs CI.
+    # Comment "@dependabot rebase" on a PR to refresh it before merging.
+    rebase-strategy: disabled
     groups:
       rust-dependencies:
         patterns: ["*"]
@@ -11,6 +14,9 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
+    # Open PRs are not rebased each time main moves: every rebase re-runs CI.
+    # Comment "@dependabot rebase" on a PR to refresh it before merging.
+    rebase-strategy: disabled
     groups:
       js-dependencies:
         patterns: ["*"]
@@ -18,3 +24,6 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
+    # Open PRs are not rebased each time main moves: every rebase re-runs CI.
+    # Comment "@dependabot rebase" on a PR to refresh it before merging.
+    rebase-strategy: disabled

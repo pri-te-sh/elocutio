@@ -58,7 +58,9 @@ what catches problems:
   concurrency groups.
 - Do not add macOS matrix builds or a macOS job to routine CI without a budget
   review.
-- Dependabot checks monthly, one grouped PR per ecosystem.
+- Dependabot checks monthly, one grouped PR per ecosystem, and does not rebase
+  open PRs when `main` moves (each rebase would re-run CI). Comment
+  `@dependabot rebase` on a PR to refresh it before merging.
 
 ## Discussions
 

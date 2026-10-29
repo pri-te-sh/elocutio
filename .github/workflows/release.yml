@@ -57,7 +57,7 @@ jobs:
       TAG: ${{ inputs.tag || github.ref_name }}
       DRY_RUN: ${{ inputs.dry_run || 'false' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable

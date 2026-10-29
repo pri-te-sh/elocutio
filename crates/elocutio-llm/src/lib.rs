@@ -30,7 +30,7 @@ pub use error::{ErrorKind, ProviderError};
 pub use provider::{
     OpenAiCompatibleAdapter, OpenRouterAdapter, Provider, adapter_for, require_adapter,
 };
-pub use stream::{SseDecoder, SseFrame, StreamEvent};
+pub use stream::{SseDecoder, SseFrame, StreamEvent, StreamEventDecoder};
 
 /// A provider Elocutio can talk to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

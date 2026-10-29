@@ -130,6 +130,16 @@ pub struct VoiceProfile {
     /// The sample text itself is never stored; only these hashes are.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub sample_fingerprints: BTreeSet<u64>,
+    /// For fingerprints that more than one sample produced: how many samples
+    /// beyond the first hold it.
+    ///
+    /// Removing one sample must not drop an n-gram another sample still
+    /// contains, so shared fingerprints are reference counted. Only shared
+    /// fingerprints appear here, so a profile whose samples share nothing
+    /// serializes exactly as before, and older profiles (which lack the
+    /// field) count every fingerprint once.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sample_fingerprint_shares: BTreeMap<u64, u32>,
     /// The n-gram size the fingerprints were computed with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fingerprint_ngram_size: Option<usize>,
@@ -177,6 +187,7 @@ impl VoiceProfile {
             summary: String::new(),
             traits: BTreeMap::new(),
             sample_fingerprints: BTreeSet::new(),
+            sample_fingerprint_shares: BTreeMap::new(),
             fingerprint_ngram_size: None,
             applied_voice_events: 0,
         }
@@ -281,12 +292,20 @@ pub fn clear_trait_override(profile: &mut VoiceProfile, key: &str) -> bool {
 /// Add the fingerprints of one sample to the profile.
 ///
 /// The sample text is used to compute the hashes and then discarded; only the
-/// hashes are kept.
+/// hashes are kept. A fingerprint another sample already holds is counted
+/// again, so removing either sample later keeps it for the other.
 pub fn add_sample_guards(profile: &mut VoiceProfile, sample: &str, n: usize) -> usize {
     let n = n.max(1);
     let fingerprints = crate::copy_guard::ngram_fingerprints(sample, n);
     let added = fingerprints.len();
-    profile.sample_fingerprints.extend(fingerprints);
+    for fingerprint in fingerprints {
+        if !profile.sample_fingerprints.insert(fingerprint) {
+            *profile
+                .sample_fingerprint_shares
+                .entry(fingerprint)
+                .or_insert(0) += 1;
+        }
+    }
     profile.fingerprint_ngram_size = Some(n);
     added
 }
@@ -294,13 +313,21 @@ pub fn add_sample_guards(profile: &mut VoiceProfile, sample: &str, n: usize) -> 
 /// Remove the fingerprints of one sample from the profile.
 ///
 /// The sample text is used to recompute the hashes; only matching hashes are
-/// removed, so other samples are untouched.
+/// released, and a hash that another sample also produced stays until that
+/// sample is removed too. Returns how many of the sample's hashes were
+/// released.
 pub fn remove_sample_guards(profile: &mut VoiceProfile, sample: &str, n: usize) -> usize {
     let n = n.max(1);
     let fingerprints = crate::copy_guard::ngram_fingerprints(sample, n);
     let mut removed = 0;
     for fingerprint in fingerprints {
-        if profile.sample_fingerprints.remove(&fingerprint) {
+        if let Some(shares) = profile.sample_fingerprint_shares.get_mut(&fingerprint) {
+            *shares -= 1;
+            if *shares == 0 {
+                profile.sample_fingerprint_shares.remove(&fingerprint);
+            }
+            removed += 1;
+        } else if profile.sample_fingerprints.remove(&fingerprint) {
             removed += 1;
         }
     }
@@ -333,9 +360,12 @@ pub fn learn_from_suggestions(
     set_learned_number(
         profile,
         "accepted_edits",
-        summary.events as f64,
+        summary.accepted as f64,
         0.9,
-        format!("{} feedback events", summary.events),
+        format!(
+            "{} accepted of {} feedback events",
+            summary.accepted, summary.events
+        ),
     );
     set_learned_number(
         profile,
@@ -701,6 +731,47 @@ mod tests {
             profile.trait_value("dismissed_edits"),
             Some(&TraitValue::Number(1.0))
         );
+        // Dismissals are not acceptances.
+        assert_eq!(
+            profile.trait_value("accepted_edits"),
+            Some(&TraitValue::Number(1.0))
+        );
+    }
+
+    #[test]
+    fn removing_a_sample_keeps_fingerprints_another_sample_shares() {
+        let mut profile = profile();
+        let shared = "the quick brown fox jumps over the lazy dog";
+        let first = format!("{shared} and keeps running.");
+        let second = format!("Yesterday {shared} again.");
+        add_sample_guards(&mut profile, &first, 8);
+        add_sample_guards(&mut profile, &second, 8);
+        let shared_prints = crate::copy_guard::ngram_fingerprints(shared, 8);
+        assert!(!shared_prints.is_empty());
+
+        remove_sample_guards(&mut profile, &first, 8);
+        assert!(shared_prints.is_subset(&profile.sample_fingerprints));
+        assert_eq!(
+            profile.sample_fingerprints,
+            crate::copy_guard::ngram_fingerprints(&second, 8)
+        );
+
+        remove_sample_guards(&mut profile, &second, 8);
+        assert!(profile.sample_fingerprints.is_empty());
+        assert!(profile.sample_fingerprint_shares.is_empty());
+    }
+
+    #[test]
+    fn fingerprint_shares_round_trip_through_json() {
+        let mut profile = profile();
+        let sample = "one two three four five six seven eight nine";
+        add_sample_guards(&mut profile, sample, 8);
+        add_sample_guards(&mut profile, sample, 8);
+        let json = serde_json::to_string(&profile).unwrap();
+        let mut restored: VoiceProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, profile);
+        remove_sample_guards(&mut restored, sample, 8);
+        assert!(!restored.sample_fingerprints.is_empty());
     }
 
     #[test]

@@ -566,14 +566,18 @@ pub fn summarize_suggestions(
 }
 
 /// Whether a text contains a contraction.
+///
+/// Typographic apostrophes ("don’t") count the same as ASCII ones.
 pub fn has_contraction(text: &str) -> bool {
-    text.split_whitespace().any(|word| {
-        let word =
-            word.trim_matches(|character: char| !character.is_alphabetic() && character != '\'');
-        ["n't", "'ll", "'re", "'ve", "'m", "'d", "'s"]
-            .iter()
-            .any(|suffix| word.ends_with(suffix))
-    })
+    crate::features::normalize_apostrophes(text)
+        .split_whitespace()
+        .any(|word| {
+            let word = word
+                .trim_matches(|character: char| !character.is_alphabetic() && character != '\'');
+            ["n't", "'ll", "'re", "'ve", "'m", "'d", "'s"]
+                .iter()
+                .any(|suffix| word.ends_with(suffix))
+        })
 }
 
 #[cfg(test)]
@@ -599,6 +603,13 @@ mod tests {
         );
         event.final_text = "we're going".into();
         event
+    }
+
+    #[test]
+    fn curly_apostrophes_are_contractions() {
+        assert!(has_contraction("we don\u{2019}t know"));
+        assert!(has_contraction("it\u{02BC}s fine"));
+        assert!(!has_contraction("we do not know"));
     }
 
     #[test]

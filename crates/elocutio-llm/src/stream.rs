@@ -76,6 +76,9 @@ impl SseFrame {
 #[derive(Debug, Default)]
 pub struct SseDecoder {
     buffer: String,
+    /// How far into `buffer` the frame-boundary search has already looked,
+    /// so a large frame arriving in many small chunks is scanned once.
+    scanned: usize,
     /// Bytes that arrived but do not yet form a complete UTF-8 character.
     ///
     /// A network chunk can end in the middle of a multi-byte character. The
@@ -104,19 +107,28 @@ impl SseDecoder {
     pub fn push(&mut self, chunk: &str) -> Vec<SseFrame> {
         self.buffer.push_str(chunk);
         let mut frames = Vec::new();
+        // Frames are parsed in place; the consumed prefix is drained once at
+        // the end, so a chunk holding many frames is not re-copied per frame.
+        let mut consumed = 0;
+        let mut search_from = self.scanned;
 
-        while let Some((content_end, terminator_len)) = next_frame_boundary(&self.buffer) {
-            let raw = self.buffer[..content_end].to_string();
-            self.buffer = self.buffer[content_end + terminator_len..].to_string();
-
-            if let Some(frame) = parse_sse_frame(&raw) {
+        while let Some((content_end, rest_start)) =
+            next_frame_boundary(&self.buffer, consumed, search_from)
+        {
+            if let Some(frame) = parse_sse_frame(&self.buffer[consumed..content_end]) {
                 if frame.data.trim() == DONE_SENTINEL {
                     self.done = true;
                 }
                 frames.push(frame);
             }
+            consumed = rest_start;
+            search_from = rest_start;
         }
 
+        self.buffer.drain(..consumed);
+        // A terminator can straddle the next chunk boundary ("\r\n" + "\r\n"),
+        // so the last three bytes are scanned again next time.
+        self.scanned = self.buffer.len().saturating_sub(3);
         frames
     }
 
@@ -125,26 +137,47 @@ impl SseDecoder {
     /// This is the entry point for a network stream. A chunk that ends in the
     /// middle of a multi-byte UTF-8 character is held back until the rest of
     /// the character arrives, so the decoded text is never corrupted.
+    ///
+    /// Bytes that are not valid UTF-8 become U+FFFD, the same as a lossy
+    /// decode would produce; the frames around them are kept.
     pub fn push_bytes(&mut self, bytes: &[u8]) -> Vec<SseFrame> {
         self.pending_bytes.extend_from_slice(bytes);
 
-        let valid_len = match std::str::from_utf8(&self.pending_bytes) {
-            Ok(_) => self.pending_bytes.len(),
-            // An incomplete character at the very end: wait for more bytes.
-            Err(error) if error.error_len().is_none() => error.valid_up_to(),
-            // Genuinely invalid UTF-8. Drop it rather than loop forever.
-            Err(_) => {
-                self.pending_bytes.clear();
-                return Vec::new();
+        let mut text = String::new();
+        let mut consumed = 0;
+        loop {
+            match std::str::from_utf8(&self.pending_bytes[consumed..]) {
+                Ok(valid) => {
+                    text.push_str(valid);
+                    consumed = self.pending_bytes.len();
+                    break;
+                }
+                Err(error) => {
+                    let valid_end = consumed + error.valid_up_to();
+                    let valid = std::str::from_utf8(&self.pending_bytes[consumed..valid_end])
+                        .expect("valid_up_to marks a valid prefix");
+                    text.push_str(valid);
+                    match error.error_len() {
+                        // Genuinely invalid bytes: replace them and go on.
+                        Some(invalid_len) => {
+                            text.push(char::REPLACEMENT_CHARACTER);
+                            consumed = valid_end + invalid_len;
+                        }
+                        // An incomplete character at the very end: wait for
+                        // the rest of it.
+                        None => {
+                            consumed = valid_end;
+                            break;
+                        }
+                    }
+                }
             }
-        };
-
-        if valid_len == 0 {
-            return Vec::new();
         }
 
-        let text = String::from_utf8_lossy(&self.pending_bytes[..valid_len]).into_owned();
-        self.pending_bytes.drain(..valid_len);
+        self.pending_bytes.drain(..consumed);
+        if text.is_empty() {
+            return Vec::new();
+        }
         self.push(&text)
     }
 
@@ -153,6 +186,7 @@ impl SseDecoder {
     /// Some servers close the connection without a trailing blank line; the
     /// trailing partial frame still carries useful data.
     pub fn finish(&mut self) -> Option<SseFrame> {
+        self.scanned = 0;
         if self.buffer.trim().is_empty() {
             self.buffer.clear();
             return None;
@@ -166,22 +200,42 @@ impl SseDecoder {
     }
 }
 
-/// Find the end of the next complete SSE frame in `buffer`.
+/// Find the end of the next complete SSE frame in `buffer`, for the frame
+/// that starts at `frame_start`. The search for the terminator begins at
+/// `search_from` (at or after `frame_start`), which lets the caller skip text
+/// it already scanned.
 ///
 /// Returns `(end_of_frame, start_of_rest)` as byte offsets, or `None` when
 /// the buffer does not hold a complete frame yet.
-fn next_frame_boundary(buffer: &str) -> Option<(usize, usize)> {
+fn next_frame_boundary(
+    buffer: &str,
+    frame_start: usize,
+    search_from: usize,
+) -> Option<(usize, usize)> {
     // A frame ends at a blank line. Three line-terminator shapes end a
-    // frame: `LF LF`, `CRLF CRLF`, and the mixed `LF CRLF`.
-    let candidates = [
-        buffer.find("\n\n").map(|index| (index, 2)),
-        buffer.find("\r\n\r\n").map(|index| (index, 4)),
-        buffer.find("\n\r\n").map(|index| (index, 3)),
-    ];
-    candidates
-        .into_iter()
-        .flatten()
-        .min_by_key(|(index, _)| *index)
+    // frame: `LF LF`, `CRLF CRLF`, and the mixed `LF CRLF`. Every shape
+    // contains a line feed followed by an empty line, so one pass over the
+    // line feeds finds the earliest terminator.
+    let bytes = buffer.as_bytes();
+    let search_from = search_from.max(frame_start);
+    let mut index = search_from;
+    while let Some(offset) = bytes[index..].iter().position(|&byte| byte == b'\n') {
+        let newline = index + offset;
+        let after = &bytes[newline + 1..];
+        if after.starts_with(b"\n") {
+            return Some((newline, newline + 2));
+        }
+        if after.starts_with(b"\r\n") {
+            let crlf_crlf = newline > frame_start && bytes[newline - 1] == b'\r';
+            return Some(if crlf_crlf {
+                (newline - 1, newline + 3)
+            } else {
+                (newline, newline + 3)
+            });
+        }
+        index = newline + 1;
+    }
+    None
 }
 
 /// Parse one complete SSE frame body (the text between frame separators).
@@ -303,10 +357,24 @@ pub struct CompletionTokenDetails {
 pub struct ChunkError {
     #[serde(default)]
     pub message: Option<String>,
-    #[serde(default)]
+    /// Providers send the code as a string (`"overloaded_error"`) or as a
+    /// number (`502`); both are kept as text.
+    #[serde(default, deserialize_with = "deserialize_code")]
     pub code: Option<String>,
     #[serde(default)]
     pub r#type: Option<String>,
+}
+
+/// Read an error code that may be a JSON string or number.
+fn deserialize_code<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| match value {
+        serde_json::Value::String(text) => Some(text),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }))
 }
 
 /// Normalize an OpenAI-style finish reason.
@@ -322,32 +390,41 @@ pub fn normalize_finish_reason(reason: Option<&str>) -> FinishReason {
     }
 }
 
-/// Turn one decoded SSE frame into canonical stream events.
-///
-/// The `data` payload of an OpenAI-style stream is a JSON chunk. A frame
-/// whose payload is the `[DONE]` sentinel ends the stream. Anything that
-/// cannot be understood produces an [`StreamEvent::Error`] rather than
-/// silently dropping text.
-pub fn events_from_frame(frame: &SseFrame) -> Vec<StreamEvent> {
+/// What one SSE frame said, before stream-level state decides when the
+/// stream is over.
+enum FrameContent {
+    /// Nothing to report.
+    Empty,
+    /// The `[DONE]` sentinel.
+    Done,
+    /// A chunk's events, plus the finish reason it announced, if any.
+    Chunk {
+        events: Vec<StreamEvent>,
+        finish_reason: Option<FinishReason>,
+    },
+}
+
+fn read_frame(frame: &SseFrame) -> FrameContent {
     let data = frame.data.trim();
     if data.is_empty() {
-        return Vec::new();
+        return FrameContent::Empty;
     }
     if data == DONE_SENTINEL {
-        return vec![StreamEvent::Done {
-            finish_reason: FinishReason::Stop,
-        }];
+        return FrameContent::Done;
     }
 
     let chunk: ChatCompletionChunk = match serde_json::from_str(data) {
         Ok(chunk) => chunk,
         Err(error) => {
-            return vec![StreamEvent::Error {
-                error: ProviderError::new(
-                    ErrorKind::Unknown,
-                    format!("The provider sent a stream chunk we could not read: {error}"),
-                ),
-            }];
+            return FrameContent::Chunk {
+                events: vec![StreamEvent::Error {
+                    error: ProviderError::new(
+                        ErrorKind::Unknown,
+                        format!("The provider sent a stream chunk we could not read: {error}"),
+                    ),
+                }],
+                finish_reason: None,
+            };
         }
     };
 
@@ -363,7 +440,10 @@ pub fn events_from_frame(frame: &SseFrame) -> Vec<StreamEvent> {
                     .unwrap_or_else(|| "The provider reported an error mid-stream.".to_string()),
             ),
         });
-        return events;
+        return FrameContent::Chunk {
+            events,
+            finish_reason: None,
+        };
     }
 
     if let Some(model) = chunk.model {
@@ -399,25 +479,127 @@ pub fn events_from_frame(frame: &SseFrame) -> Vec<StreamEvent> {
         });
     }
 
-    // The finish reason comes last so a consumer that stops at `Done` has
-    // already seen the usage block.
-    for choice in &chunk.choices {
-        if let Some(reason) = choice.finish_reason.as_deref() {
-            events.push(StreamEvent::Done {
-                finish_reason: normalize_finish_reason(Some(reason)),
-            });
+    let finish_reason = chunk
+        .choices
+        .iter()
+        .find_map(|choice| choice.finish_reason.as_deref())
+        .map(|reason| normalize_finish_reason(Some(reason)));
+
+    FrameContent::Chunk {
+        events,
+        finish_reason,
+    }
+}
+
+/// Turn one decoded SSE frame into canonical stream events, statelessly.
+///
+/// The `data` payload of an OpenAI-style stream is a JSON chunk. A frame
+/// whose payload is the `[DONE]` sentinel ends the stream. Anything that
+/// cannot be understood produces an [`StreamEvent::Error`] rather than
+/// silently dropping text.
+///
+/// Without state, this emits `Done` as soon as a chunk carries a
+/// `finish_reason`. OpenRouter and OpenAI (with `include_usage`) send the
+/// usage block in a *later* chunk, so a consumer that stops at this `Done`
+/// loses the usage. Prefer [`StreamEventDecoder`], which holds `Done` until
+/// the stream really ends.
+pub fn events_from_frame(frame: &SseFrame) -> Vec<StreamEvent> {
+    match read_frame(frame) {
+        FrameContent::Empty => Vec::new(),
+        FrameContent::Done => vec![StreamEvent::Done {
+            finish_reason: FinishReason::Stop,
+        }],
+        FrameContent::Chunk {
+            mut events,
+            finish_reason,
+        } => {
+            if let Some(finish_reason) = finish_reason {
+                events.push(StreamEvent::Done { finish_reason });
+            }
+            events
+        }
+    }
+}
+
+/// Turns SSE frames into canonical events, emitting `Done` only when the
+/// stream really ends.
+///
+/// A chunk's `finish_reason` is recorded, not acted on: providers commonly
+/// send the usage block in a later chunk, before `[DONE]`. `Done` (carrying
+/// the recorded reason) is emitted on the `[DONE]` sentinel, or by
+/// [`StreamEventDecoder::finish`] when the connection closes without one.
+/// After a terminal event (`Done` or `Error`) further frames are ignored.
+#[derive(Debug, Default)]
+pub struct StreamEventDecoder {
+    finish_reason: Option<FinishReason>,
+    finished: bool,
+}
+
+impl StreamEventDecoder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// True once a terminal event has been emitted.
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    /// The events one frame produces.
+    pub fn events(&mut self, frame: &SseFrame) -> Vec<StreamEvent> {
+        if self.finished {
+            return Vec::new();
+        }
+        match read_frame(frame) {
+            FrameContent::Empty => Vec::new(),
+            FrameContent::Done => {
+                self.finished = true;
+                vec![StreamEvent::Done {
+                    finish_reason: self.finish_reason.unwrap_or(FinishReason::Stop),
+                }]
+            }
+            FrameContent::Chunk {
+                events,
+                finish_reason,
+            } => {
+                if finish_reason.is_some() {
+                    self.finish_reason = finish_reason;
+                }
+                if events.iter().any(StreamEvent::is_terminal) {
+                    self.finished = true;
+                }
+                events
+            }
         }
     }
 
-    events
+    /// End the stream when the connection closed.
+    ///
+    /// Returns the `Done` event a stream without a `[DONE]` sentinel never
+    /// sent, carrying the recorded finish reason (`Unknown` when the provider
+    /// never named one). Returns `None` when the stream already ended.
+    pub fn finish(&mut self) -> Option<StreamEvent> {
+        if self.finished {
+            return None;
+        }
+        self.finished = true;
+        Some(StreamEvent::Done {
+            finish_reason: self.finish_reason.unwrap_or(FinishReason::Unknown),
+        })
+    }
 }
 
 /// Turn a whole SSE document into canonical stream events.
+///
+/// The result always ends with exactly one terminal event.
 pub fn events_from_sse_document(document: &str) -> Vec<StreamEvent> {
-    parse_sse_document(document)
+    let mut decoder = StreamEventDecoder::new();
+    let mut events: Vec<StreamEvent> = parse_sse_document(document)
         .iter()
-        .flat_map(events_from_frame)
-        .collect()
+        .flat_map(|frame| decoder.events(frame))
+        .collect();
+    events.extend(decoder.finish());
+    events
 }
 
 #[cfg(test)]
@@ -653,6 +835,126 @@ mod tests {
             }
             other => panic!("expected an error event, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn usage_after_the_finish_reason_is_kept() {
+        let document = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let events = events_from_sse_document(document);
+        assert_eq!(events.len(), 3, "{events:?}");
+        assert_eq!(events[0].text(), Some("Hi"));
+        assert!(matches!(
+            events[1],
+            StreamEvent::Usage {
+                usage: Usage {
+                    input_tokens: 7,
+                    output_tokens: 3,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(
+            events[2],
+            StreamEvent::Done {
+                finish_reason: FinishReason::Length
+            }
+        );
+    }
+
+    #[test]
+    fn a_stream_without_the_sentinel_still_ends_with_done() {
+        let document = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: {\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}"
+        );
+        let events = events_from_sse_document(document);
+        assert!(matches!(events[1], StreamEvent::Usage { .. }), "{events:?}");
+        assert_eq!(
+            events.last(),
+            Some(&StreamEvent::Done {
+                finish_reason: FinishReason::Stop
+            })
+        );
+
+        // Cut off before any finish reason: the end is still reported.
+        let events = events_from_sse_document("data: {\"choices\":[]}\n\n");
+        assert_eq!(
+            events,
+            vec![StreamEvent::Done {
+                finish_reason: FinishReason::Unknown
+            }]
+        );
+    }
+
+    #[test]
+    fn the_event_decoder_stops_after_a_terminal_event() {
+        let mut decoder = StreamEventDecoder::new();
+        let done = SseFrame {
+            data: DONE_SENTINEL.into(),
+            ..SseFrame::default()
+        };
+        assert!(decoder.events(&done)[0].is_terminal());
+        assert!(decoder.is_finished());
+        assert!(decoder.events(&done).is_empty());
+        assert!(decoder.finish().is_none());
+    }
+
+    #[test]
+    fn a_numeric_error_code_is_read() {
+        let document = "data: {\"error\":{\"message\":\"bad gateway\",\"code\":502}}\n\n";
+        let events = events_from_sse_document(document);
+        assert_eq!(events.len(), 1, "{events:?}");
+        match &events[0] {
+            StreamEvent::Error { error } => assert_eq!(error.message, "bad gateway"),
+            other => panic!("expected an error event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn invalid_utf8_is_replaced_without_dropping_frames() {
+        let mut decoder = SseDecoder::new();
+        let mut bytes = b"data: one\n\ndata: t".to_vec();
+        bytes.push(0xFF);
+        bytes.extend_from_slice(b"wo\n\ndata: caf\xC3");
+        let frames = decoder.push_bytes(&bytes);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].data, "one");
+        assert_eq!(frames[1].data, "t\u{FFFD}wo");
+        // The incomplete trailing character is still held back.
+        let frames = decoder.push_bytes(b"\xA9\n\n");
+        assert_eq!(frames[0].data, "caf\u{e9}");
+    }
+
+    #[test]
+    fn terminators_split_across_chunks_are_found() {
+        for document in ["data: a\r\n\r\ndata: b\r\n\r\n", "data: a\n\ndata: b\n\r\n"] {
+            let expected = parse_sse_document(document);
+            assert_eq!(expected.len(), 2, "{document:?}");
+            for size in 1..document.len() {
+                let mut decoder = SseDecoder::new();
+                let mut frames = Vec::new();
+                for chunk in document.as_bytes().chunks(size) {
+                    frames.extend(decoder.push_bytes(chunk));
+                }
+                frames.extend(decoder.finish());
+                assert_eq!(frames, expected, "{document:?} in chunks of {size}");
+            }
+        }
+    }
+
+    #[test]
+    fn many_frames_in_one_push_are_decoded_in_order() {
+        let document: String = (0..500).map(|index| format!("data: {index}\n\n")).collect();
+        let mut decoder = SseDecoder::new();
+        let frames = decoder.push(&document);
+        assert_eq!(frames.len(), 500);
+        assert_eq!(frames[499].data, "499");
+        assert!(decoder.finish().is_none());
     }
 
     #[test]

@@ -194,9 +194,23 @@ pub fn sentence_spans(text: &str) -> Vec<&str> {
     sentences
 }
 
+/// Replace typographic apostrophes (U+2019, U+02BC) with ASCII `'`.
+///
+/// macOS smart quotes turn "don't" into "don’t"; contraction checks fold
+/// both spellings together.
+pub(crate) fn normalize_apostrophes(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains(['\u{2019}', '\u{02BC}']) {
+        std::borrow::Cow::Owned(text.replace(['\u{2019}', '\u{02BC}'], "'"))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
 /// Count contractions in already-lowercased text.
+///
+/// Typographic apostrophes count the same as ASCII ones.
 pub fn contractions_count(lower: &str) -> usize {
-    lower
+    normalize_apostrophes(lower)
         .split_whitespace()
         .filter(|word| {
             let word = word
@@ -239,5 +253,9 @@ mod tests {
     #[test]
     fn contractions_are_counted() {
         assert_eq!(contractions_count("we're it's don't"), 3);
+        assert_eq!(
+            contractions_count("we\u{2019}re it\u{2019}s don\u{02BC}t"),
+            3
+        );
     }
 }

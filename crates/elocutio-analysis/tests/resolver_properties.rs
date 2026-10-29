@@ -49,7 +49,7 @@ fn fragment() -> impl Strategy<Value = String> {
 /// document where the quote is unique.
 fn unique_document(needle: &str) -> String {
     let candidate = format!("prefix {needle} suffix");
-    if candidate.matches(needle).count() == 1 {
+    if occurrences(&candidate, needle) == 1 {
         return candidate;
     }
 
@@ -81,8 +81,16 @@ fn edit(original: &str, replacement: &str) -> RawEdit {
 }
 
 /// A quote is resolvable iff it occurs exactly once in the text.
+///
+/// Overlapping occurrences count: "aa" occurs twice in "aaa", and the
+/// resolver rightly treats that quote as ambiguous.
 fn occurrences(text: &str, needle: &str) -> usize {
-    text.matches(needle).count()
+    if needle.is_empty() {
+        return text.matches(needle).count();
+    }
+    text.char_indices()
+        .filter(|(index, _)| text[*index..].starts_with(needle))
+        .count()
 }
 
 proptest! {

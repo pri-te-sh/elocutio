@@ -28,7 +28,8 @@ pub use golden::{
 };
 pub use merge::{
     DEFAULT_SUGGESTION_LIMIT, DropReason, DroppedSuggestion, MergeReport, MergeResult,
-    SuggestionSource, cap_suggestions, merge, merge_with_limit, rank_suggestions,
+    SuggestionSource, cap_suggestions, merge, merge_with_limit, merge_with_limit_within,
+    rank_suggestions,
 };
 pub use parse::{AnalysisResult, RejectedEdit, parse_response};
 pub use prompt::{

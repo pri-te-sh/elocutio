@@ -5,15 +5,25 @@ name: CI
 # a macOS runner to compile, so the app checks live in
 # `.github/workflows/macos-app.yml`.
 #
-# That workflow is NOT label-only any more: it also runs automatically on every
-# push and pull request that touches the app, so the 11k lines of Rust that
-# make up the product are inside an automatic gate. The `paths` filter keeps
-# the expensive macOS job off unrelated doc-only changes.
+# Changes that only touch the website (the single-page site and its media) skip
+# CI: nothing here builds or tests them, and GitHub Pages deploys them anyway.
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "index.html"
+      - ".nojekyll"
+      - "assets/site/**"
+      - "assets/video/**"
+      - "assets/screenshots/**"
   pull_request:
+    paths-ignore:
+      - "index.html"
+      - ".nojekyll"
+      - "assets/site/**"
+      - "assets/video/**"
+      - "assets/screenshots/**"
   workflow_dispatch:
 
 permissions:

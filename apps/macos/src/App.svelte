@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
 
@@ -51,6 +51,9 @@
     word_count: number;
     source_text: string;
     card_command: string | null;
+    // Incremented by Rust each time a new card command is queued. Optional so the
+    // overlay keeps working against builds that do not send it yet.
+    card_command_seq?: number;
   }
 
   interface EloRewriteResponse {
@@ -283,6 +286,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   let editorTone = $state<string>("Neutral");
   let editorInlineCardPos = $state<{ x: number; y: number } | null>(null);
   let editorInlineCardMode = $state<"mini" | "rewrite">("mini");
+  let editorStatusMsg = $state<string | null>(null);
   let backdropEl = $state<HTMLDivElement | null>(null);
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
 
@@ -300,6 +304,10 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   let aiRewriteLoading = $state(false);
   let aiRewriteError = $state<string | null>(null);
   let aiRewriteResult = $state<string | null>(null);
+  // Manuscript text the pending/visible rewrite was produced from, so "Replace" can
+  // tell whether the writer kept typing while the model was working.
+  let aiRewriteSourceText = "";
+  let aiRewriteConflict = $state<string | null>(null);
   let selectedRewriteTone = $state<string>("improve");
 
   // Settings & Configuration State
@@ -418,6 +426,15 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   let customInstruction = $state<string>("");
   let providerStatusMsg = $state<string | null>(null);
   let providerStatusIsError = $state<boolean>(false);
+
+  // Which provider-page groups were actually read from Rust. Save never writes a group
+  // that failed to load, so a transient startup error cannot reset it to defaults.
+  let providerGroupsLoaded = $state({
+    provider: false,
+    customInstruction: false,
+    budget: false,
+    costCap: false,
+  });
 
   // ---------------------------------------------------------------------------
   // Helper: Short Action Label for Compact Mini-Popover (Image 3)
@@ -872,11 +889,10 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
     if (isOverlayWindow) {
       document.documentElement.classList.add("elo-overlay-mode");
-      initOverlayMode();
-    } else {
-      document.documentElement.classList.remove("elo-overlay-mode");
-      initStudioMode();
+      return initOverlayMode();
     }
+    document.documentElement.classList.remove("elo-overlay-mode");
+    return initStudioMode();
   });
 
   // ---------------------------------------------------------------------------
@@ -914,7 +930,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   function initOverlayMode() {
-    refreshOverlaySnapshot();
+    void refreshOverlaySnapshot();
 
     const onCaptPointerUp = (e: PointerEvent) => {
       if (!e.isTrusted || e.button !== 0 || isDraggingElo || draggedDuringPress) {
@@ -961,7 +977,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     window.addEventListener("click", onCaptClick, true);
 
     const unlistenPromise = listen<EloOverlaySnapshot>("elo-overlay-snapshot", (event) => {
-      handleIncomingSnapshot(event.payload);
+      handleIncomingSnapshot(event.payload, true);
     });
 
     const unlistenClickPromise = listen<{ x: number; y: number }>("elo-overlay-click", (event) => {
@@ -1014,10 +1030,20 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       },
     );
 
-    const pollTimer = setInterval(refreshOverlaySnapshot, 180);
+    // Rust pushes `elo-overlay-snapshot` whenever the overlay state changes; this slow
+    // poll is only a safety net for a missed event. It also re-sends the hit regions,
+    // because Rust clears its copy of the card rect on its own in a few paths.
+    const pollTimer = setInterval(() => {
+      void refreshOverlaySnapshot();
+      void syncOverlayRegions(true);
+    }, OVERLAY_FALLBACK_POLL_MS);
 
     return () => {
       clearInterval(pollTimer);
+      if (dragMoveFrame !== null) {
+        cancelAnimationFrame(dragMoveFrame);
+        dragMoveFrame = null;
+      }
       window.removeEventListener("pointerup", onCaptPointerUp, true);
       window.removeEventListener("click", onCaptClick, true);
       unlistenPromise.then((unlisten) => unlisten());
@@ -1028,16 +1054,59 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     };
   }
 
+  const OVERLAY_FALLBACK_POLL_MS = 1200;
+
+  // Bumped whenever a snapshot is applied (pushed or polled). A poll that resolves after
+  // a newer snapshot landed is stale and gets dropped.
+  let overlaySnapGeneration = 0;
+  // JSON of the last applied snapshot, so identical pushes/polls don't churn state.
+  let overlaySnapKey = "";
+  // Highest `card_command_seq` already seen; null until the first snapshot arrives.
+  let lastCardCommandSeq: number | null = null;
+
   async function refreshOverlaySnapshot() {
+    const generationAtRequest = overlaySnapGeneration;
     try {
       const snap = await invoke<EloOverlaySnapshot>("get_elo_overlay_snapshot");
-      handleIncomingSnapshot(snap);
+      if (generationAtRequest !== overlaySnapGeneration) return;
+      handleIncomingSnapshot(snap, false);
     } catch {
       // Ignore transient IPC errors
     }
   }
 
-  function handleIncomingSnapshot(snap: EloOverlaySnapshot) {
+  function handleIncomingSnapshot(snap: EloOverlaySnapshot, pushed: boolean) {
+    overlaySnapGeneration += 1;
+    const key = JSON.stringify(snap);
+    if (key !== overlaySnapKey) {
+      overlaySnapKey = key;
+      applyOverlaySnapshot(snap);
+    }
+    const cmd = takeNewCardCommand(snap, pushed);
+    if (cmd) {
+      handleOverlayCardCommand(cmd);
+    }
+  }
+
+  // Rust keeps the last card command inside the shared snapshot, so a snapshot that still
+  // carries it is not a new key press. With `card_command_seq` each command runs exactly
+  // once whichever path delivers it first. Without it, only the pushed event counts:
+  // Rust emits exactly one event per queued command, while polls re-read the same one.
+  function takeNewCardCommand(snap: EloOverlaySnapshot, pushed: boolean): string | null {
+    const seq = snap.card_command_seq;
+    if (typeof seq === "number") {
+      const prev = lastCardCommandSeq;
+      if (prev === null || seq > prev) lastCardCommandSeq = seq;
+      if (!snap.card_command) return null;
+      // The first poll after load only records a baseline: whatever command it carries
+      // was queued before this webview existed.
+      if (prev === null) return pushed ? snap.card_command : null;
+      return seq > prev ? snap.card_command : null;
+    }
+    return pushed ? snap.card_command : null;
+  }
+
+  function applyOverlaySnapshot(snap: EloOverlaySnapshot) {
     const prevBundle = overlaySnap.app_bundle_id;
     overlaySnap = snap;
 
@@ -1057,12 +1126,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         overlayPopoverMode = "closed";
       }
     }
-
-    if (snap.card_command) {
-      handleOverlayCardCommand(snap.card_command);
-    }
-
-    syncOverlayRegions();
+    // Region sync happens in the $effect below once the derived rects settle.
   }
 
   function handleOverlayCardCommand(cmd: string) {
@@ -1089,8 +1153,18 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     }
   }
 
-  async function syncOverlayRegions() {
+  let lastSentRegionsKey = "";
+
+  function overlayRegionsKey(): string {
+    return JSON.stringify([effectiveWidgetRect, effectiveCardRect, isDraggingElo]);
+  }
+
+  // `force = false` skips the IPC when Rust was already sent these exact regions.
+  async function syncOverlayRegions(force = true) {
     if (!isOverlayWindow) return;
+    const key = overlayRegionsKey();
+    if (!force && key === lastSentRegionsKey) return;
+    lastSentRegionsKey = key;
     try {
       await invoke("set_elo_overlay_regions", {
         widgetRect: effectiveWidgetRect,
@@ -1098,7 +1172,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         isDragging: isDraggingElo,
       });
     } catch {
-      // Ignore
+      lastSentRegionsKey = "";
     }
   }
 
@@ -1110,7 +1184,8 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       void _w;
       void _c;
       void _d;
-      syncOverlayRegions();
+      // Derived rects are rebuilt on every snapshot; only send when the values moved.
+      syncOverlayRegions(false);
       if (overlayPopoverMode !== "rewrite" && overlayInputFocused) {
         releaseOverlayPromptInput();
       }
@@ -1148,7 +1223,13 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       y: baseWidgetRect.y,
     };
     dragCurrentOffset = { x: 0, y: 0 };
+    pendingDragOffset = { x: 0, y: 0 };
   }
+
+  // Pointer moves arrive far faster than frames; each offset change re-derives the widget
+  // rect and sends regions to Rust, so apply at most one offset per animation frame.
+  let pendingDragOffset = { x: 0, y: 0 };
+  let dragMoveFrame: number | null = null;
 
   function onEloWidgetPointerMove(e: PointerEvent) {
     if (!pointerDownOnElo) return;
@@ -1162,13 +1243,23 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       syncOverlayRegions();
     }
     if (isDraggingElo) {
-      dragCurrentOffset = { x: dx, y: dy };
+      pendingDragOffset = { x: dx, y: dy };
+      if (dragMoveFrame === null) {
+        dragMoveFrame = requestAnimationFrame(() => {
+          dragMoveFrame = null;
+          if (isDraggingElo) dragCurrentOffset = pendingDragOffset;
+        });
+      }
     }
   }
 
   async function onEloWidgetPointerUp(e: PointerEvent) {
     if (!pointerDownOnElo) return;
     pointerDownOnElo = false;
+    if (dragMoveFrame !== null) {
+      cancelAnimationFrame(dragMoveFrame);
+      dragMoveFrame = null;
+    }
     const current = e.currentTarget as HTMLElement;
     if (current.hasPointerCapture(e.pointerId)) {
       current.releasePointerCapture(e.pointerId);
@@ -1176,23 +1267,29 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     const wasDragging = isDraggingElo && draggedDuringPress;
     isDraggingElo = false;
 
-    if (wasDragging && overlaySnap.field_rect) {
-      const w = 104;
-      const h = 38;
-      const fr = overlaySnap.field_rect;
-      const baseX = Math.max(fr.x + 6, fr.x + fr.width - w - 8);
-      const baseY = fr.height < 56 ? fr.y + fr.height + 4 : fr.y + fr.height - h - 8;
-      const finalX = dragStartWidget.x + dragCurrentOffset.x;
-      const finalY = dragStartWidget.y + dragCurrentOffset.y;
-      await invoke("save_elo_widget_offset", {
-        bundleId: overlaySnap.app_bundle_id || "default",
-        offsetX: finalX - baseX,
-        offsetY: finalY - baseY,
-      });
-      await refreshOverlaySnapshot();
+    try {
+      if (wasDragging && overlaySnap.field_rect) {
+        const w = 104;
+        const h = 38;
+        const fr = overlaySnap.field_rect;
+        const baseX = Math.max(fr.x + 6, fr.x + fr.width - w - 8);
+        const baseY = fr.height < 56 ? fr.y + fr.height + 4 : fr.y + fr.height - h - 8;
+        const finalX = dragStartWidget.x + pendingDragOffset.x;
+        const finalY = dragStartWidget.y + pendingDragOffset.y;
+        await invoke("save_elo_widget_offset", {
+          bundleId: overlaySnap.app_bundle_id || "default",
+          offsetX: finalX - baseX,
+          offsetY: finalY - baseY,
+        });
+        await refreshOverlaySnapshot();
+      }
+    } catch {
+      // Ignore: the widget falls back to its saved position
+    } finally {
+      dragCurrentOffset = { x: 0, y: 0 };
+      pendingDragOffset = { x: 0, y: 0 };
+      syncOverlayRegions();
     }
-    dragCurrentOffset = { x: 0, y: 0 };
-    syncOverlayRegions();
   }
 
   function openRewritePopover(e: MouseEvent) {
@@ -1248,15 +1345,19 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   async function pauseEloForCurrentApp() {
     eloPowerMenuOpen = false;
     overlayPopoverMode = "closed";
-    if (overlaySnap.app_bundle_id) {
-      await invoke("set_integration_enabled", {
-        bundleId: overlaySnap.app_bundle_id,
-        enabled: false,
-      });
-    } else {
-      await invoke("stop_highlighter_service");
+    try {
+      if (overlaySnap.app_bundle_id) {
+        await invoke("set_integration_enabled", {
+          bundleId: overlaySnap.app_bundle_id,
+          enabled: false,
+        });
+      } else {
+        await invoke("stop_highlighter_service");
+      }
+      await refreshOverlaySnapshot();
+    } catch {
+      // Ignore: elo stays active and the next snapshot reflects the real state
     }
-    await refreshOverlaySnapshot();
   }
 
   // Hovering or clicking an inline word underline opens the Compact Quick-Fix Mini-Popover (Image 3)
@@ -1290,6 +1391,9 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
     overlayMoreMenuOpen = false;
     overlaySnap.alerts = overlaySnap.alerts.filter((a) => a.id !== alertId);
+    // The local copy no longer matches what Rust last sent; let the next snapshot
+    // through even if Rust has not changed yet (e.g. the apply failed).
+    overlaySnapKey = "";
     if (overlayPopoverMode === "mini" || overlaySnap.alerts.length === 0) {
       overlayPopoverMode = "closed";
     } else if (overlayActiveAlertId === alertId) {
@@ -1356,13 +1460,25 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   // ---------------------------------------------------------------------------
   // Mode B: Desktop Studio & Settings Logic
   // ---------------------------------------------------------------------------
-  async function initStudioMode() {
-    await runEditorCheck();
-    await loadAllSettings();
-    await checkStudioLaunchRequest();
+  function initStudioMode() {
+    let disposed = false;
+    let launchPoll: ReturnType<typeof setInterval> | null = null;
 
-    const launchPoll = setInterval(checkStudioLaunchRequest, 600);
-    return () => clearInterval(launchPoll);
+    void (async () => {
+      await Promise.all([runEditorCheck(), loadAllSettings()]);
+      if (disposed) return;
+      await checkStudioLaunchRequest();
+      if (disposed) return;
+      launchPoll = setInterval(checkStudioLaunchRequest, 600);
+    })();
+
+    return () => {
+      disposed = true;
+      if (launchPoll) clearInterval(launchPoll);
+      if (lintDebounceTimer) clearTimeout(lintDebounceTimer);
+      if (studioAiDebounceTimer) clearTimeout(studioAiDebounceTimer);
+      if (editorStatusTimer) clearTimeout(editorStatusTimer);
+    };
   }
 
   async function checkStudioLaunchRequest() {
@@ -1391,72 +1507,188 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     }
   }
 
+  // Local Harper pass once typing pauses; the cloud pass waits for a longer idle period.
+  const EDITOR_CHECK_DEBOUNCE_MS = 280;
+  const STUDIO_AI_IDLE_MS = 3500;
+
   let lintDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let studioAiDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let editorStatusTimer: ReturnType<typeof setTimeout> | null = null;
   let lastStudioAiAnalyzedText = "";
+
+  // Every check_text_local request is numbered; only the newest result may land, and only
+  // while the manuscript still equals the text that was sent.
+  let editorLintSeq = 0;
+  // The text that `editorLints` offsets (Unicode code points) currently describe.
+  let editorLintsBaseText = SAMPLE_WELCOME;
+  // One local check at a time; requests made meanwhile coalesce into a single rerun.
+  let editorCheckLoop: Promise<void> | null = null;
+  let editorCheckRerun = false;
+
+  function showEditorStatus(msg: string) {
+    editorStatusMsg = msg;
+    if (editorStatusTimer) clearTimeout(editorStatusTimer);
+    editorStatusTimer = setTimeout(() => {
+      editorStatusMsg = null;
+      editorStatusTimer = null;
+    }, 5000);
+  }
+
+  // Lint offsets count Unicode code points (Rust `char`s) while textarea selection APIs
+  // count UTF-16 units; convert at that boundary so emoji don't skew positions.
+  function codePointToUtf16(text: string, codePoints: number): number {
+    let units = 0;
+    let count = 0;
+    for (const ch of text) {
+      if (count >= codePoints) break;
+      units += ch.length;
+      count++;
+    }
+    return units;
+  }
+
+  function utf16ToCodePoint(text: string, units: number): number {
+    let seen = 0;
+    let count = 0;
+    for (const ch of text) {
+      if (seen >= units) break;
+      seen += ch.length;
+      count++;
+    }
+    return count;
+  }
+
+  // Keeps lint offsets on the right characters between an edit and the next check: lints
+  // before the edit stay, lints after it shift, lints touching it are dropped.
+  function remapEditorLintsTo(next: string) {
+    const prevText = editorLintsBaseText;
+    if (next === prevText) return;
+    editorLintsBaseText = next;
+    if (editorLints.length === 0) return;
+
+    const a = Array.from(prevText);
+    const b = Array.from(next);
+    const max = Math.min(a.length, b.length);
+    let prefix = 0;
+    while (prefix < max && a[prefix] === b[prefix]) prefix++;
+    let suffix = 0;
+    while (suffix < max - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix]) {
+      suffix++;
+    }
+    const editEnd = a.length - suffix;
+    const delta = b.length - a.length;
+
+    const remapped: LocalLintItem[] = [];
+    for (const lint of editorLints) {
+      if (lint.end < prefix) {
+        remapped.push(lint);
+      } else if (lint.start > editEnd) {
+        remapped.push({ ...lint, start: lint.start + delta, end: lint.end + delta });
+      }
+    }
+    editorLints = remapped;
+    if (editorSelectedLintId && !remapped.some((l) => l.id === editorSelectedLintId)) {
+      editorSelectedLintId = remapped[0]?.id ?? null;
+      editorInlineCardPos = null;
+    }
+  }
+
+  $effect.pre(() => {
+    const text = editorText;
+    untrack(() => remapEditorLintsTo(text));
+  });
+
+  function applyEditorLintResults(items: LocalLintItem[], text: string) {
+    editorLints = items;
+    editorLintsBaseText = text;
+    if (editorSelectedLintId && !items.some((i) => i.id === editorSelectedLintId)) {
+      editorSelectedLintId = items[0]?.id ?? null;
+      if (editorInlineCardMode === "mini") editorInlineCardPos = null;
+    } else if (!editorSelectedLintId && items.length > 0) {
+      editorSelectedLintId = items[0].id;
+    }
+  }
 
   function scheduleEditorCheck() {
     if (lintDebounceTimer) clearTimeout(lintDebounceTimer);
+    // Still typing: hold the cloud pass until the writer is idle again.
+    if (studioAiDebounceTimer) {
+      clearTimeout(studioAiDebounceTimer);
+      studioAiDebounceTimer = null;
+    }
     lintDebounceTimer = setTimeout(() => {
-      runEditorCheck();
-    }, 90);
+      lintDebounceTimer = null;
+      void runEditorCheck();
+    }, EDITOR_CHECK_DEBOUNCE_MS);
   }
 
   function scheduleStudioAiAnalysis(snapshotText: string) {
     if (studioAiDebounceTimer) clearTimeout(studioAiDebounceTimer);
+    studioAiDebounceTimer = null;
     const trimmed = snapshotText.trim();
     if (!trimmed || localOnlyMode || trimmed === lastStudioAiAnalyzedText) {
       return;
     }
     studioAiDebounceTimer = setTimeout(async () => {
-      const current = editorText.trim();
+      studioAiDebounceTimer = null;
+      const text = editorText;
+      const current = text.trim();
       if (!current || localOnlyMode || current !== trimmed) return;
+      if (current === lastStudioAiAnalyzedText) return;
       lastStudioAiAnalyzedText = current;
       try {
-        const updated = await invoke<boolean>("analyze_studio_text", {
-          text: editorText,
-        });
-        if (updated && editorText.trim() === current) {
-          const items = await invoke<LocalLintItem[]>("check_text_local", {
-            text: editorText,
-          });
-          editorLints = items;
-          if (!editorSelectedLintId && items.length > 0) {
-            editorSelectedLintId = items[0].id;
-          }
-        }
+        const updated = await invoke<boolean>("analyze_studio_text", { text });
+        if (!updated || editorText !== text) return;
+        const seq = ++editorLintSeq;
+        const items = await invoke<LocalLintItem[]>("check_text_local", { text });
+        if (seq !== editorLintSeq || editorText !== text) return;
+        applyEditorLintResults(items, text);
       } catch {
         // Ignore AI background errors; local Harper suggestions stay active
       }
-    }, 900);
+    }, STUDIO_AI_IDLE_MS);
   }
 
-  async function runEditorCheck() {
+  async function performEditorCheck() {
+    const text = editorText;
+    const seq = ++editorLintSeq;
     try {
-      const items = await invoke<LocalLintItem[]>("check_text_local", {
-        text: editorText,
-      });
-      editorLints = items;
-      if (editorSelectedLintId && !items.some((i) => i.id === editorSelectedLintId)) {
-        editorSelectedLintId = items[0]?.id ?? null;
-        if (editorInlineCardMode === "mini") editorInlineCardPos = null;
-      } else if (!editorSelectedLintId && items.length > 0) {
-        editorSelectedLintId = items[0].id;
-      }
+      const items = await invoke<LocalLintItem[]>("check_text_local", { text });
+      // Stale: the writer kept typing (a fresh check is scheduled) or a newer one landed.
+      if (seq !== editorLintSeq || editorText !== text) return;
+      applyEditorLintResults(items, text);
 
-      if (editorText.trim().length > 0) {
+      if (text.trim().length > 0) {
         const toneResp = await invoke<{
           label: string;
           confidence: number;
-        }>("detect_text_tone", { text: editorText });
-        editorTone = toneResp.label;
-        scheduleStudioAiAnalysis(editorText);
+        }>("detect_text_tone", { text });
+        if (editorText === text) editorTone = toneResp.label;
+        scheduleStudioAiAnalysis(text);
       } else {
         editorTone = "Neutral";
       }
     } catch {
       // Ignore
     }
+  }
+
+  function runEditorCheck(): Promise<void> {
+    if (editorCheckLoop) {
+      editorCheckRerun = true;
+      return editorCheckLoop;
+    }
+    editorCheckLoop = (async () => {
+      try {
+        do {
+          editorCheckRerun = false;
+          await performEditorCheck();
+        } while (editorCheckRerun);
+      } finally {
+        editorCheckLoop = null;
+      }
+    })();
+    return editorCheckLoop;
   }
 
   function syncScroll() {
@@ -1468,7 +1700,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
   function handleTextareaClick(e: MouseEvent) {
     if (!textareaEl) return;
-    const caret = textareaEl.selectionStart ?? 0;
+    const caret = utf16ToCodePoint(editorText, textareaEl.selectionStart ?? 0);
     const hit = editorLints.find((l) => caret >= l.start && caret <= l.end);
     if (hit) {
       editorSelectedLintId = hit.id;
@@ -1488,17 +1720,58 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     editorInlineCardPos = null;
     if (textareaEl) {
       textareaEl.focus();
-      textareaEl.setSelectionRange(lint.start, lint.end);
+      textareaEl.setSelectionRange(
+        codePointToUtf16(editorText, lint.start),
+        codePointToUtf16(editorText, lint.end),
+      );
     }
   }
 
-  function applyEditorSuggestion(lint: LocalLintItem, replacement: string) {
+  // Where `lint` sits in the manuscript right now (code points), or null if the text it
+  // flagged is no longer there. `allowSearch` also accepts a single exact occurrence
+  // elsewhere, which suits long sentence-level lints after nearby edits.
+  function locateEditorLint(
+    lint: LocalLintItem,
+    chars: string[],
+    allowSearch = false,
+  ): { start: number; end: number } | null {
+    const matchesAt = (start: number, end: number) =>
+      start >= 0 && end >= start && end <= chars.length
+        ? chars.slice(start, end).join("") === lint.original
+        : false;
+    const live = editorLints.find((l) => l.id === lint.id);
+    if (live && matchesAt(live.start, live.end)) return { start: live.start, end: live.end };
+    if (matchesAt(lint.start, lint.end)) return { start: lint.start, end: lint.end };
+    if (allowSearch && lint.original) {
+      const text = chars.join("");
+      const at = text.indexOf(lint.original);
+      if (at >= 0 && text.indexOf(lint.original, at + 1) === -1) {
+        const start = utf16ToCodePoint(text, at);
+        return { start, end: start + Array.from(lint.original).length };
+      }
+    }
+    return null;
+  }
+
+  function applyEditorSuggestion(
+    lint: LocalLintItem,
+    replacement: string,
+    allowSearch = false,
+  ): boolean {
     const chars = Array.from(editorText);
-    const before = chars.slice(0, lint.start).join("");
-    const after = chars.slice(lint.end).join("");
+    const range = locateEditorLint(lint, chars, allowSearch);
+    if (!range) {
+      showEditorStatus(
+        "That passage changed since elo checked it, so the edit wasn't applied. Fresh suggestions are on the way.",
+      );
+      void runEditorCheck();
+      return false;
+    }
+    const before = chars.slice(0, range.start).join("");
+    const after = chars.slice(range.end).join("");
     editorText = `${before}${replacement}${after}`;
     editorInlineCardPos = null;
-    runEditorCheck();
+    void runEditorCheck();
     invoke<PersonalizationDbStatus>("record_studio_edit_feedback", {
       kind: "accepted",
       category: lint.category_label || "Grammar",
@@ -1509,6 +1782,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         personalizationDb = status;
       })
       .catch(() => {});
+    return true;
   }
 
   function acceptAllEditorSuggestions() {
@@ -1519,12 +1793,24 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     if (list.length === 0) return;
 
     const sortedDesc = [...list].sort((a, b) => b.start - a.start);
-    let chars = Array.from(editorText);
+    const chars = Array.from(editorText);
+    // Applied back to front, so each lint must end before the previous edit began.
+    let editedFrom = chars.length;
+    let skipped = 0;
     for (const lint of sortedDesc) {
       const first = lint.suggestions[0];
       if (!first) continue;
+      if (
+        lint.end > editedFrom ||
+        lint.start > lint.end ||
+        chars.slice(lint.start, lint.end).join("") !== lint.original
+      ) {
+        skipped++;
+        continue;
+      }
       const replChars = Array.from(first.text);
       chars.splice(lint.start, lint.end - lint.start, ...replChars);
+      editedFrom = lint.start;
       invoke<PersonalizationDbStatus>("record_studio_edit_feedback", {
         kind: "accepted",
         category: lint.category_label || "Grammar",
@@ -1538,7 +1824,12 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     }
     editorText = chars.join("");
     editorInlineCardPos = null;
-    runEditorCheck();
+    if (skipped > 0) {
+      showEditorStatus(
+        `Skipped ${skipped} ${skipped === 1 ? "suggestion" : "suggestions"} whose text changed or overlapped another edit.`,
+      );
+    }
+    void runEditorCheck();
   }
 
   function dismissEditorLint(lintId: string) {
@@ -1603,7 +1894,9 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         sourceOverride: lint.original,
       });
       if (resp.rewritten && resp.rewritten.trim()) {
-        applyEditorSuggestion(lint, resp.rewritten.trim());
+        // The writer may have edited during the request; this re-locates the sentence
+        // in the current text and refuses if it is gone.
+        applyEditorSuggestion(lint, resp.rewritten.trim(), true);
       }
     } catch {
       // Ignore
@@ -1695,17 +1988,20 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     aiRewriteLoading = true;
     aiRewriteError = null;
     aiRewriteResult = null;
+    aiRewriteConflict = null;
+    const sourceText = editorText;
     const startedAt = Date.now();
     try {
       const resp = await invoke<EloRewriteResponse>("elo_rewrite_focused_text", {
         mode,
         customPrompt: customPrompt ?? null,
-        sourceOverride: editorText,
+        sourceOverride: sourceText,
       });
       const elapsed = Date.now() - startedAt;
       if (elapsed < 450) {
         await new Promise((r) => setTimeout(r, 450 - elapsed));
       }
+      aiRewriteSourceText = sourceText;
       aiRewriteResult = resp.rewritten;
     } catch (err) {
       aiRewriteError = String(err);
@@ -1714,36 +2010,82 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     }
   }
 
+  // Replacing the whole manuscript would silently drop anything typed while the model was
+  // working, so the first click after such edits only warns; a second click confirms.
+  function replaceManuscriptWithRewrite(closeInlineCard: boolean) {
+    if (!aiRewriteResult) return;
+    if (editorText !== aiRewriteSourceText && !aiRewriteConflict) {
+      aiRewriteConflict =
+        "You edited the manuscript while elo was rewriting. Replace again to overwrite those edits, or Discard.";
+      return;
+    }
+    editorText = aiRewriteResult;
+    aiRewriteResult = null;
+    aiRewriteConflict = null;
+    if (closeInlineCard) editorInlineCardPos = null;
+    void runEditorCheck();
+  }
+
+  function discardAiRewrite() {
+    aiRewriteResult = null;
+    aiRewriteConflict = null;
+  }
+
   // ---------------------------------------------------------------------------
   // Settings Loaders & Mutators
   // ---------------------------------------------------------------------------
+  // Every getter runs in parallel and settles on its own: one failing command leaves only
+  // its own setting at the default instead of every setting read after it.
   async function loadAllSettings() {
-    try {
-      axStatus = await invoke<string>("get_accessibility_permission_status");
-      serviceRunning = await invoke<boolean>("get_highlighter_service_status");
-      autoEnableNewApps = await invoke<boolean>("get_auto_enable_new_apps");
-      integrations = await invoke<IntegrationItem[]>("get_integrations");
-      dialectName = await invoke<string>("get_dialect_name");
-      dictionaryWords = await invoke<string[]>("get_dictionary");
-      lintRules = await invoke<LintRuleView[]>("get_lint_rules");
-      voiceTraits = await invoke<VoiceTraitView[]>("get_voice_traits");
-      learnFromEdits = await invoke<boolean>("get_learn_from_edits");
-      localOnlyMode = await invoke<boolean>("get_local_only");
-      providerSettings = await invoke<ProviderSettings>("get_provider_settings");
-      customInstruction = await invoke<string>("get_custom_instruction");
-      const savedBudget = await invoke<number | null>("get_budget");
-      budgetInput = savedBudget !== null ? String(savedBudget) : "";
-      const savedCap = await invoke<number | null>("get_cost_cap");
-      costCapInput = savedCap !== null ? String(savedCap) : "";
-      usageSummary = await invoke<UsageSummaryView>("get_usage_summary", {
-        limit: 20,
+    const load = <T,>(cmd: string, args?: Record<string, unknown>, apply?: (v: T) => void) =>
+      invoke<T>(cmd, args).then((value) => {
+        apply?.(value);
+        return value;
       });
+
+    const [providerResult] = await Promise.allSettled([
+      load<ProviderSettings>("get_provider_settings", undefined, (v) => {
+        providerSettings = v;
+        providerGroupsLoaded.provider = true;
+      }),
+      load<string>("get_accessibility_permission_status", undefined, (v) => (axStatus = v)),
+      load<boolean>("get_highlighter_service_status", undefined, (v) => (serviceRunning = v)),
+      load<boolean>("get_auto_enable_new_apps", undefined, (v) => (autoEnableNewApps = v)),
+      load<IntegrationItem[]>("get_integrations", undefined, (v) => (integrations = v)),
+      load<string>("get_dialect_name", undefined, (v) => (dialectName = v)),
+      load<string[]>("get_dictionary", undefined, (v) => (dictionaryWords = v)),
+      load<LintRuleView[]>("get_lint_rules", undefined, (v) => (lintRules = v)),
+      load<VoiceTraitView[]>("get_voice_traits", undefined, (v) => (voiceTraits = v)),
+      load<boolean>("get_learn_from_edits", undefined, (v) => (learnFromEdits = v)),
+      load<boolean>("get_local_only", undefined, (v) => (localOnlyMode = v)),
+      load<string>("get_custom_instruction", undefined, (v) => {
+        customInstruction = v;
+        providerGroupsLoaded.customInstruction = true;
+      }),
+      load<number | null>("get_budget", undefined, (v) => {
+        budgetInput = v !== null ? String(v) : "";
+        providerGroupsLoaded.budget = true;
+      }),
+      load<number | null>("get_cost_cap", undefined, (v) => {
+        costCapInput = v !== null ? String(v) : "";
+        providerGroupsLoaded.costCap = true;
+      }),
+      load<UsageSummaryView>("get_usage_summary", { limit: 20 }, (v) => (usageSummary = v)),
+      load<PersonalizationDbStatus>(
+        "get_personalization_db_status",
+        undefined,
+        (v) => (personalizationDb = v),
+      ),
+      load<WritingAnalyticsSnapshot>(
+        "get_writing_analytics",
+        undefined,
+        (v) => (writingAnalytics = v),
+      ),
+    ]);
+
+    if (providerResult.status === "fulfilled") {
       selectedPresetId = detectPresetFromUrl(providerSettings.kind, providerSettings.base_url);
-      refreshPresetModels(selectedPresetId, providerSettings.base_url);
-      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
-      writingAnalytics = await invoke<WritingAnalyticsSnapshot>("get_writing_analytics");
-    } catch {
-      // Ignore
+      void refreshPresetModels(selectedPresetId, providerSettings.base_url);
     }
   }
 
@@ -1770,40 +2112,71 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     return "openrouter";
   }
 
-  async function refreshPresetModels(presetId: string, baseUrl: string) {
+  // Model lists can come back out of order when presets are switched quickly; only the
+  // newest request may update the list. Returns null when a newer request superseded it.
+  let presetModelsRequest = 0;
+
+  async function refreshPresetModels(
+    presetId: string,
+    baseUrl: string,
+  ): Promise<PresetModelSlug[] | null> {
+    const request = ++presetModelsRequest;
     fetchingModels = true;
+    let slugs: PresetModelSlug[];
     try {
-      presetModelSlugs = await invoke<PresetModelSlug[]>("fetch_provider_preset_models", {
+      slugs = await invoke<PresetModelSlug[]>("fetch_provider_preset_models", {
         presetId,
         baseUrl,
       });
     } catch {
-      presetModelSlugs = [];
-    } finally {
-      fetchingModels = false;
+      slugs = [];
     }
+    if (request !== presetModelsRequest) return null;
+    presetModelSlugs = slugs;
+    fetchingModels = false;
+    return slugs;
   }
 
+  // set_provider_* writes go through one queue so two quick switches (or a switch and a
+  // Save) cannot interleave their kind/base URL/model writes.
+  let providerWriteQueue: Promise<unknown> = Promise.resolve();
+
+  function queueProviderWrite<T>(write: () => Promise<T>): Promise<T> {
+    const run = providerWriteQueue.then(write, write);
+    providerWriteQueue = run.catch(() => {});
+    return run;
+  }
+
+  let presetSwitchToken = 0;
+
   async function selectProviderPreset(preset: ProviderPresetDef) {
+    const token = ++presetSwitchToken;
     selectedPresetId = preset.id;
     providerSettings.kind = preset.kind;
     providerSettings.base_url = preset.baseUrl;
     providerStatusMsg = null;
     customModelSlugMode = false;
-    await refreshPresetModels(preset.id, preset.baseUrl);
-    if (
-      presetModelSlugs.length > 0 &&
-      !presetModelSlugs.some((m) => m.slug === providerSettings.model)
-    ) {
-      providerSettings.model = presetModelSlugs[0].slug;
-    } else if (!providerSettings.model.trim()) {
-      providerSettings.model = preset.defaultModel;
+    const slugs = await refreshPresetModels(preset.id, preset.baseUrl);
+    if (slugs === null || token !== presetSwitchToken) return;
+    let model = providerSettings.model;
+    if (slugs.length > 0 && !slugs.some((m) => m.slug === model)) {
+      model = slugs[0].slug;
+    } else if (!model.trim()) {
+      model = preset.defaultModel;
     }
+    providerSettings.model = model;
     try {
-      await invoke("set_provider_kind", { kind: preset.kind });
-      await invoke("set_provider_base_url", { baseUrl: preset.baseUrl });
-      await invoke("set_provider_model", { model: providerSettings.model });
-      providerSettings = await invoke<ProviderSettings>("get_provider_settings");
+      await queueProviderWrite(async () => {
+        if (token !== presetSwitchToken) return;
+        await invoke("set_provider_kind", { kind: preset.kind });
+        await invoke("set_provider_base_url", { baseUrl: preset.baseUrl });
+        await invoke("set_provider_model", { model });
+        const fresh = await invoke<ProviderSettings>("get_provider_settings");
+        if (token === presetSwitchToken) {
+          providerSettings = fresh;
+          providerGroupsLoaded.provider = true;
+        }
+      });
     } catch {
       // Ignore
     }
@@ -1815,6 +2188,8 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     if (preset) {
       await selectProviderPreset(preset);
     } else {
+      // Drops any preset switch still waiting on its model list.
+      presetSwitchToken++;
       selectedPresetId = "custom";
       providerSettings.kind = "open_ai_compatible";
       customModelSlugMode = true;
@@ -1890,7 +2265,12 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
       await runEditorCheck();
     } catch {
-      lintRules = await invoke<LintRuleView[]>("get_lint_rules");
+      try {
+        lintRules = await invoke<LintRuleView[]>("get_lint_rules");
+      } catch {
+        // Could not re-read the rules: undo the optimistic toggle instead.
+        lintRules = lintRules.map((r) => (r.key === ruleKey ? { ...r, enabled: !enabled } : r));
+      }
     }
   }
 
@@ -1910,8 +2290,9 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
   async function removeDictionaryWord(word: string) {
     try {
-      const updated = dictionaryWords.filter((w) => w !== word);
-      await invoke("set_dictionary", { words: updated });
+      // Removed in Rust under the config lock, so words the overlay webview added in
+      // the meantime survive (a read-modify-write from here could drop them).
+      await invoke("remove_from_dictionary", { word });
       dictionaryWords = await invoke<string[]>("get_dictionary");
       personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
       await runEditorCheck();
@@ -1946,47 +2327,77 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     }
   }
 
-  async function saveProviderSettings() {
+  // Returns false when the save failed. Groups that never loaded from Rust are skipped:
+  // the form only holds defaults for them, and writing those would wipe real settings.
+  async function saveProviderSettings(): Promise<boolean> {
     providerStatusMsg = null;
+    const loaded = { ...providerGroupsLoaded };
+    const skipped: string[] = [];
     try {
-      await invoke("set_provider_kind", { kind: providerSettings.kind });
-      await invoke("set_provider_base_url", {
-        baseUrl: providerSettings.base_url,
+      await queueProviderWrite(async () => {
+        if (loaded.provider) {
+          await invoke("set_provider_kind", { kind: providerSettings.kind });
+          await invoke("set_provider_base_url", {
+            baseUrl: providerSettings.base_url,
+          });
+          await invoke("set_provider_model", { model: providerSettings.model });
+        } else {
+          skipped.push("provider, base URL and model");
+        }
+        if (loaded.customInstruction) {
+          await invoke("set_custom_instruction", {
+            instruction: customInstruction,
+          });
+        } else {
+          skipped.push("custom instruction");
+        }
+        if (loaded.budget) {
+          const parsedBudget = budgetInput.trim() === "" ? null : Number(budgetInput.trim());
+          await invoke("set_budget", {
+            budgetUsd: parsedBudget !== null && Number.isFinite(parsedBudget) ? parsedBudget : null,
+          });
+        } else {
+          skipped.push("budget");
+        }
+        if (loaded.costCap) {
+          const parsedCap = costCapInput.trim() === "" ? null : Number(costCapInput.trim());
+          await invoke("set_cost_cap", {
+            costCapUsd: parsedCap !== null && Number.isFinite(parsedCap) ? parsedCap : null,
+          });
+        } else {
+          skipped.push("cost cap");
+        }
+        if (apiKeyInput.trim()) {
+          await invoke("set_openrouter_key", { key: apiKeyInput.trim() });
+          apiKeyInput = "";
+        }
+        if (loaded.provider) {
+          providerSettings = await invoke<ProviderSettings>("get_provider_settings");
+        }
       });
-      await invoke("set_provider_model", { model: providerSettings.model });
-      await invoke("set_custom_instruction", {
-        instruction: customInstruction,
-      });
-      const parsedBudget = budgetInput.trim() === "" ? null : Number(budgetInput.trim());
-      await invoke("set_budget", {
-        budgetUsd: parsedBudget !== null && Number.isFinite(parsedBudget) ? parsedBudget : null,
-      });
-      const parsedCap = costCapInput.trim() === "" ? null : Number(costCapInput.trim());
-      await invoke("set_cost_cap", {
-        costCapUsd: parsedCap !== null && Number.isFinite(parsedCap) ? parsedCap : null,
-      });
-      if (apiKeyInput.trim()) {
-        await invoke("set_openrouter_key", { key: apiKeyInput.trim() });
-        apiKeyInput = "";
-      }
-      providerSettings = await invoke<ProviderSettings>("get_provider_settings");
       usageSummary = await invoke<UsageSummaryView>("get_usage_summary", {
         limit: 20,
       });
       personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
-      providerStatusIsError = false;
-      providerStatusMsg = "Saved provider configuration, budget, and AES-256 encrypted key.";
+      providerStatusIsError = skipped.length > 0;
+      providerStatusMsg =
+        skipped.length > 0
+          ? `Saved, but left the ${skipped.join(", ")} unchanged because they failed to load. Reopen Elocutio to retry.`
+          : "Saved provider configuration, budget, and AES-256 encrypted key.";
+      return true;
     } catch (err) {
       providerStatusIsError = true;
       providerStatusMsg = String(err);
+      return false;
     }
   }
 
   async function testProviderConnection() {
     providerStatusIsError = false;
     providerStatusMsg = "Testing provider connection…";
+    // A failed save already put its error in the status line; don't test stale settings.
+    if (!(await saveProviderSettings())) return;
     try {
-      await saveProviderSettings();
       const status = await invoke<{
         label: string | null;
         usage: number | null;
@@ -1999,6 +2410,21 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     } catch (err) {
       providerStatusIsError = true;
       providerStatusMsg = String(err);
+    }
+  }
+
+  async function onLearnFromEditsChange(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    try {
+      learnFromEdits = await invoke<boolean>("set_learn_from_edits", {
+        enabled: input.checked,
+      });
+      personalizationDb = await invoke<PersonalizationDbStatus>("get_personalization_db_status");
+    } catch {
+      // Ignore
+    } finally {
+      // `checked` is one-way bound, so put the switch back if the write did not stick.
+      input.checked = learnFromEdits;
     }
   }
 </script>
@@ -3343,25 +3769,21 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                           <button
                             type="button"
                             class="elo-btn-accept sm"
-                            onclick={() => {
-                              if (aiRewriteResult) {
-                                editorText = aiRewriteResult;
-                                aiRewriteResult = null;
-                                editorInlineCardPos = null;
-                                runEditorCheck();
-                              }
-                            }}
+                            onclick={() => replaceManuscriptWithRewrite(true)}
                           >
                             Replace in Editor
                           </button>
                           <button
                             type="button"
                             class="elo-btn-dismiss sm"
-                            onclick={() => (aiRewriteResult = null)}
+                            onclick={discardAiRewrite}
                           >
                             Discard
                           </button>
                         </div>
+                        {#if aiRewriteConflict}
+                          <p class="rewrite-err">{aiRewriteConflict}</p>
+                        {/if}
                       {/if}
 
                       {#if aiRewriteError}
@@ -3643,6 +4065,11 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                 </button>
               {/if}
             </div>
+            {#if editorStatusMsg}
+              <p class="status-feedback is-error editor-status-note" role="status">
+                {editorStatusMsg}
+              </p>
+            {/if}
 
             <!-- 3. LITERARY MARGIN NOTES FEED -->
             <div class="margin-notes-feed scroller">
@@ -3802,24 +4229,17 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                     <button
                       type="button"
                       class="elo-btn-accept sm"
-                      onclick={() => {
-                        if (aiRewriteResult) {
-                          editorText = aiRewriteResult;
-                          aiRewriteResult = null;
-                          runEditorCheck();
-                        }
-                      }}
+                      onclick={() => replaceManuscriptWithRewrite(false)}
                     >
                       Replace Manuscript
                     </button>
-                    <button
-                      type="button"
-                      class="elo-btn-dismiss sm"
-                      onclick={() => (aiRewriteResult = null)}
-                    >
+                    <button type="button" class="elo-btn-dismiss sm" onclick={discardAiRewrite}>
                       Discard
                     </button>
                   </div>
+                  {#if aiRewriteConflict}
+                    <p class="ai-error-msg">{aiRewriteConflict}</p>
+                  {/if}
                 </div>
               {:else}
                 <div class="atelier-preset-chips">
@@ -4441,14 +4861,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                     type="checkbox"
                     {...{ switch: "" } as Record<string, string>}
                     checked={learnFromEdits}
-                    onchange={async (e) => {
-                      learnFromEdits = await invoke<boolean>("set_learn_from_edits", {
-                        enabled: (e.currentTarget as HTMLInputElement).checked,
-                      });
-                      personalizationDb = await invoke<PersonalizationDbStatus>(
-                        "get_personalization_db_status",
-                      );
-                    }}
+                    onchange={onLearnFromEditsChange}
                   />
                 </label>
               </div>
@@ -6519,6 +6932,11 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     justify-content: space-between;
     padding: 0 4px;
     gap: 8px;
+  }
+
+  .editor-status-note {
+    padding: 0 4px;
+    line-height: 1.4;
   }
 
   .margin-section-left {

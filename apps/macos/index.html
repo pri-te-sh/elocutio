@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Elocutio</title>
+    <script>
+      // Make the overlay window transparent before any CSS or app code loads, so it never
+      // flashes the opaque Studio background. Mirrors the `#elo-overlay` check in App.svelte.
+      if (window.location.hash === "#elo-overlay") {
+        document.documentElement.classList.add("elo-overlay-mode");
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>

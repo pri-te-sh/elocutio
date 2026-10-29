@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 const host = process.env.TAURI_DEV_HOST;
+// Tauri sets TAURI_ENV_DEBUG for `tauri dev` and `tauri build --debug`.
+const tauriDebug = Boolean(process.env.TAURI_ENV_DEBUG) && process.env.TAURI_ENV_DEBUG !== "false";
 
 export default defineConfig({
   plugins: [svelte()],
@@ -24,7 +26,8 @@ export default defineConfig({
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {
     target: "safari15",
-    minify: false,
-    sourcemap: true,
+    // Release builds ship minified without source maps.
+    minify: tauriDebug ? false : "esbuild",
+    sourcemap: tauriDebug,
   },
 });

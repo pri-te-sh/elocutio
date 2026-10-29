@@ -18,8 +18,7 @@ build/
 .turbo/
 *.tsbuildinfo
 
-# Tauri
-apps/desktop/src-tauri/target/
+# Tauri (build output lands in target/, covered above)
 *.app
 *.dmg
 *.pkg
@@ -45,6 +44,7 @@ __pycache__/
 
 # Local-only tooling
 plugins/
+Claude outputs/
 
 # IDE and editor state
 .idea/
@@ -60,7 +60,6 @@ progress/publish/
 
 # here.now local publish state (claim tokens, version ids)
 .herenow/
-progress/publish/
 
 # Local fixtures and private samples
 fixtures/private/

@@ -18,6 +18,11 @@
 //! Overlap is detected on **both** the UTF-16 and the grapheme axis, because
 //! a span can be empty on one axis while still covering visible text on the
 //! other.
+//!
+//! Model suggestions straight out of [`crate::parse_response`] carry
+//! paragraph-relative spans and ids of the form `p3:e7`. Two such suggestions
+//! from different paragraphs are never compared, since equal offsets in two
+//! paragraphs are different text.
 
 use elocutio_core::{Resolution, Severity, Suggestion, TextSpan};
 use serde::{Deserialize, Serialize};
@@ -167,10 +172,9 @@ struct Rank {
 /// applies.
 fn is_interior(span: &TextSpan, document_end: Option<usize>) -> bool {
     let starts_at_edge = span.utf16_start == 0 || span.grapheme_start == 0;
-    let ends_at_edge = match document_end {
-        Some(end) => span.utf16_end >= end || span.grapheme_end >= end,
-        None => false,
-    };
+    // `document_end` is a UTF-16 length, so only the UTF-16 end is compared;
+    // a grapheme count is smaller for any text with surrogate pairs.
+    let ends_at_edge = document_end.is_some_and(|end| span.utf16_end >= end);
     !(starts_at_edge || ends_at_edge)
 }
 
@@ -190,12 +194,13 @@ fn rank_of(suggestion: &Suggestion, document_end: Option<usize>) -> Rank {
 ///
 /// The result is stable and deterministic: two runs over the same input
 /// always produce the same order.
+///
+/// The document length is not known here, so only a span at the very start
+/// counts as an edge span. (The furthest suggestion end is not the document
+/// end; using it would demote the last suggestion for no reason.) Use
+/// [`rank_suggestions_within`] when the length is known.
 pub fn rank_suggestions(suggestions: &[Suggestion]) -> Vec<Suggestion> {
-    let document_end = suggestions
-        .iter()
-        .map(|suggestion| suggestion.span.utf16_end)
-        .max();
-    rank_suggestions_within(suggestions, document_end)
+    rank_suggestions_within(suggestions, None)
 }
 
 /// Rank a list of suggestions, treating `document_end` as the end of the
@@ -224,6 +229,31 @@ fn is_duplicate(a: &Suggestion, b: &Suggestion) -> bool {
     a.span.same_range(&b.span) && a.replacement == b.replacement
 }
 
+/// The paragraph a resolver-made suggestion id (`p3:e7`) belongs to.
+///
+/// Ids of any other shape (local lints, hand-made ids) have no paragraph
+/// scope and are compared with every suggestion.
+fn paragraph_scope(id: &str) -> Option<&str> {
+    let (paragraph, edit) = id.split_once(':')?;
+    let numbered = |value: &str, prefix: char| {
+        value
+            .strip_prefix(prefix)
+            .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+    };
+    (numbered(paragraph, 'p') && numbered(edit, 'e')).then_some(paragraph)
+}
+
+/// Can the two suggestions' spans be compared at all?
+///
+/// Spans from two different paragraphs are each relative to their own
+/// paragraph, so equal offsets do not mean the same text.
+fn share_coordinates(a: &Suggestion, b: &Suggestion) -> bool {
+    match (paragraph_scope(&a.id), paragraph_scope(&b.id)) {
+        (Some(a), Some(b)) => a == b,
+        _ => true,
+    }
+}
+
 /// Merge local lint suggestions with LLM suggestions.
 ///
 /// * Local suggestions take precedence: when a local lint and an LLM
@@ -244,13 +274,23 @@ pub fn merge(local: &[Suggestion], llm: &[Suggestion]) -> Vec<Suggestion> {
 ///
 /// This is the report-bearing form of [`merge`]. `limit` caps how many
 /// suggestions are kept; `0` means "no cap".
+///
+/// The document length is unknown here, so only spans at the very start
+/// count as edge spans; see [`merge_with_limit_within`].
 pub fn merge_with_limit(local: &[Suggestion], llm: &[Suggestion], limit: usize) -> MergeResult {
-    let document_end = local
-        .iter()
-        .chain(llm.iter())
-        .map(|suggestion| suggestion.span.utf16_end)
-        .max();
+    merge_with_limit_within(local, llm, limit, None)
+}
 
+/// [`merge_with_limit`] for a document whose length is known.
+///
+/// `document_end` is the document length in UTF-16 units; a span that ends
+/// there is an edge span for ranking.
+pub fn merge_with_limit_within(
+    local: &[Suggestion],
+    llm: &[Suggestion],
+    limit: usize,
+    document_end: Option<usize>,
+) -> MergeResult {
     let mut kept: Vec<(Suggestion, SuggestionSource)> = Vec::new();
     let mut dropped: Vec<DroppedSuggestion> = Vec::new();
 
@@ -271,7 +311,9 @@ pub fn merge_with_limit(local: &[Suggestion], llm: &[Suggestion], limit: usize) 
 
         for suggestion in ordered {
             let conflict = kept.iter().find(|(existing, _)| {
-                is_duplicate(existing, suggestion) || existing.span.overlaps(&suggestion.span)
+                share_coordinates(existing, suggestion)
+                    && (is_duplicate(existing, suggestion)
+                        || existing.span.overlaps(&suggestion.span))
             });
 
             if let Some((existing, _)) = conflict {
@@ -483,7 +525,9 @@ mod tests {
 
     #[test]
     fn llm_fills_gaps_between_local_suggestions() {
-        let local = suggestion("local:1", 0, 5, Severity::High, Resolution::Exact);
+        // Neither span starts at offset 0, so both are interior and the
+        // order is by position.
+        let local = suggestion("local:1", 1, 5, Severity::High, Resolution::Exact);
         let llm = suggestion("llm:1", 10, 15, Severity::High, Resolution::Exact);
         let merged = merge(std::slice::from_ref(&local), std::slice::from_ref(&llm));
         assert_eq!(merged.len(), 2);
@@ -657,6 +701,51 @@ mod tests {
         assert!(explanation.interior);
         assert!(explanation.reason.contains("high"));
         assert!(explanation.reason.contains("exact"));
+    }
+
+    #[test]
+    fn suggestions_from_different_paragraphs_are_not_compared() {
+        // Paragraph-relative spans: "Teh" at 0..3 in p1, "Thier" at 0..5 in p2.
+        let first = suggestion("p1:e1", 0, 3, Severity::High, Resolution::Exact);
+        let second = suggestion("p2:e1", 0, 5, Severity::High, Resolution::Exact);
+        let result = merge_with_limit(&[], &[first, second], 20);
+        assert_eq!(result.suggestions.len(), 2);
+        assert!(result.report.dropped.is_empty());
+
+        // Within one paragraph, and against unscoped ids, overlap still counts.
+        let same = suggestion("p1:e2", 1, 4, Severity::Low, Resolution::Exact);
+        let local = suggestion("local:1", 0, 2, Severity::High, Resolution::Exact);
+        let base = suggestion("p1:e1", 0, 3, Severity::High, Resolution::Exact);
+        assert_eq!(
+            merge_with_limit(&[], &[base.clone(), same], 20)
+                .suggestions
+                .len(),
+            1
+        );
+        assert_eq!(merge_with_limit(&[local], &[base], 20).suggestions.len(), 1);
+    }
+
+    #[test]
+    fn the_last_suggestion_is_not_an_edge_span_without_a_document_length() {
+        let early = suggestion("early", 5, 10, Severity::Medium, Resolution::Exact);
+        let last = suggestion("last", 20, 25, Severity::Medium, Resolution::Exact);
+        // Rank by position only: neither span touches a known document edge.
+        let ranked = rank_suggestions(&[last.clone(), early.clone()]);
+        assert_eq!(ranked[0].id, "early");
+        let merged = merge_with_limit(&[], &[last.clone(), early.clone()], 20);
+        assert_eq!(merged.suggestions[0].id, "early");
+        // With the real length, a span at the end is an edge span.
+        let merged = merge_with_limit_within(&[], &[last, early], 20, Some(25));
+        assert_eq!(merged.suggestions[0].id, "early");
+    }
+
+    #[test]
+    fn the_document_end_is_compared_on_the_utf16_axis_only() {
+        // An emoji-heavy span: 4 graphemes but 8 UTF-16 units, in a document
+        // of 20 UTF-16 units. It is interior.
+        let mut span = suggestion("emoji", 4, 12, Severity::Medium, Resolution::Exact);
+        span.span = TextSpan::new(4, 12, 2, 20);
+        assert!(explain_rank(&span, Some(20)).interior);
     }
 
     #[test]

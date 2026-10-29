@@ -17,9 +17,70 @@ pub struct RawEdit {
     pub original: String,
     /// Replacement text. An empty string means delete.
     pub replacement: String,
+    /// Accepted case-insensitively, with a few common synonyms, because
+    /// models do not always echo the schema's spelling.
+    #[serde(deserialize_with = "deserialize_category")]
     pub category: Category,
+    #[serde(deserialize_with = "deserialize_severity")]
     pub severity: Severity,
+    #[serde(default)]
     pub explanation: String,
+}
+
+/// Normalise a model-supplied enum label: lowercase, `snake_case`.
+fn label_key(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .map(|character| match character {
+            ' ' | '-' => '_',
+            other => other.to_ascii_lowercase(),
+        })
+        .collect()
+}
+
+/// Parse a category label leniently ("Grammar", "word choice", "typo").
+fn parse_category(value: &str) -> Option<Category> {
+    Some(match label_key(value).as_str() {
+        "grammar" | "grammatical" => Category::Grammar,
+        "spelling" | "typo" | "misspelling" => Category::Spelling,
+        "punctuation" => Category::Punctuation,
+        "capitalization" | "capitalisation" | "case" => Category::Capitalization,
+        "clarity" | "clear" => Category::Clarity,
+        "conciseness" | "concision" | "concise" | "wordiness" => Category::Conciseness,
+        "word_choice" | "wordchoice" | "vocabulary" | "diction" => Category::WordChoice,
+        "consistency" => Category::Consistency,
+        "tone" => Category::Tone,
+        "style" => Category::Style,
+        "formatting" | "format" => Category::Formatting,
+        _ => return None,
+    })
+}
+
+/// Parse a severity label leniently ("High", "critical", "minor").
+fn parse_severity(value: &str) -> Option<Severity> {
+    Some(match label_key(value).as_str() {
+        "high" | "critical" | "major" | "severe" | "error" => Severity::High,
+        "medium" | "moderate" | "med" | "warning" => Severity::Medium,
+        "low" | "minor" | "trivial" | "info" | "suggestion" => Severity::Low,
+        _ => return None,
+    })
+}
+
+fn deserialize_category<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Category, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    parse_category(&value)
+        .ok_or_else(|| serde::de::Error::custom(format!("unknown category {value:?}")))
+}
+
+fn deserialize_severity<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Severity, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    parse_severity(&value)
+        .ok_or_else(|| serde::de::Error::custom(format!("unknown severity {value:?}")))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -49,20 +110,21 @@ pub fn resolve_edit(
     }
 
     let id = id.into();
-    let mut last_error = match resolve_exact(paragraph_id, paragraph, edit, id.clone()) {
+    // A stricter matcher that found several occurrences settles the question:
+    // a looser matcher cannot tell them apart either, so it must not guess.
+    match resolve_exact(paragraph_id, paragraph, edit, id.clone()) {
         Ok(suggestion) => return Ok(suggestion),
-        Err(error) => error,
-    };
+        Err(ResolveError::Ambiguous) => return Err(ResolveError::Ambiguous),
+        Err(_) => {}
+    }
 
     match resolve_normalized(paragraph_id, paragraph, edit, id.clone()) {
         Ok(suggestion) => return Ok(suggestion),
-        Err(error) => last_error = prefer_error(last_error, error),
+        Err(ResolveError::Ambiguous) => return Err(ResolveError::Ambiguous),
+        Err(_) => {}
     }
 
-    match resolve_fuzzy(paragraph_id, paragraph, edit, id) {
-        Ok(suggestion) => Ok(suggestion),
-        Err(error) => Err(prefer_error(last_error, error)),
-    }
+    resolve_fuzzy(paragraph_id, paragraph, edit, id)
 }
 
 /// Exact substring matching.
@@ -79,13 +141,7 @@ pub fn resolve_exact(
         return Err(ResolveError::NoChange);
     }
 
-    let mut matches = paragraph.match_indices(&edit.original);
-    let Some((byte_start, _)) = matches.next() else {
-        return Err(ResolveError::NoMatch);
-    };
-    if matches.next().is_some() {
-        return Err(ResolveError::Ambiguous);
-    }
+    let byte_start = find_unique(paragraph, &edit.original)?;
 
     build_suggestion(
         paragraph_id,
@@ -110,13 +166,7 @@ fn resolve_normalized(
         return Err(ResolveError::NoMatch);
     }
 
-    let mut matches = normalized.match_indices(&needle);
-    let Some((start, _)) = matches.next() else {
-        return Err(ResolveError::NoMatch);
-    };
-    if matches.next().is_some() {
-        return Err(ResolveError::Ambiguous);
-    }
+    let start = find_unique(&normalized, &needle)?;
 
     let end = start + needle.len();
     let byte_start = *map.get(start).ok_or(ResolveError::NoMatch)?;
@@ -143,51 +193,22 @@ fn resolve_fuzzy(
     id: String,
 ) -> Result<Suggestion, ResolveError> {
     let (normalized, map) = normalize(paragraph);
-    let needle = normalize(&edit.original).0;
-    let needle_chars = needle.chars().collect::<Vec<_>>();
-    if needle_chars.is_empty() {
+    let needle = normalize(&edit.original).0.chars().collect::<Vec<_>>();
+    if needle.is_empty() {
         return Err(ResolveError::NoMatch);
     }
 
     let chars = normalized.char_indices().collect::<Vec<_>>();
-    if chars.len() < needle_chars.len() {
-        return Err(ResolveError::NoMatch);
-    }
+    let text = chars
+        .iter()
+        .map(|(_, character)| *character)
+        .collect::<Vec<_>>();
+    let threshold = (needle.len() / 4).max(1);
+    let (start, end) = fuzzy_find(&needle, &text, threshold)?;
 
-    let mut best: Option<(usize, usize, usize)> = None; // (distance, start_byte, end_byte)
-    let mut ties = 0;
-
-    for start_index in 0..=(chars.len() - needle_chars.len()) {
-        let start_byte = chars[start_index].0;
-        let end_index = start_index + needle_chars.len();
-        let end_byte = if end_index < chars.len() {
-            chars[end_index].0
-        } else {
-            normalized.len()
-        };
-        let candidate = normalized[start_byte..end_byte].chars().collect::<Vec<_>>();
-        let distance = levenshtein(&needle_chars, &candidate);
-
-        match best {
-            Some((best_distance, _, _)) if distance > best_distance => {}
-            Some((best_distance, _, _)) if distance == best_distance => ties += 1,
-            _ => {
-                best = Some((distance, start_byte, end_byte));
-                ties = 1;
-            }
-        }
-    }
-
-    let Some((distance, start, end)) = best else {
-        return Err(ResolveError::NoMatch);
-    };
-    let threshold = (needle_chars.len() / 4).max(1);
-    if distance > threshold {
-        return Err(ResolveError::NoMatch);
-    }
-    if ties > 1 {
-        return Err(ResolveError::Ambiguous);
-    }
+    let char_to_byte = |index: usize| chars.get(index).map_or(normalized.len(), |(byte, _)| *byte);
+    let start = char_to_byte(start);
+    let end = char_to_byte(end);
 
     let byte_start = *map.get(start).ok_or(ResolveError::NoMatch)?;
     let byte_end = map.get(end).copied().unwrap_or(paragraph.len());
@@ -204,6 +225,175 @@ fn resolve_fuzzy(
         byte_end,
         Resolution::Fuzzy,
     )
+}
+
+/// One cell of the approximate-matching table: the best alignment of a
+/// needle prefix against text that ends at the current column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Alignment {
+    /// Edit distance of the alignment.
+    cost: usize,
+    /// Characters that matched exactly. Among equally cheap alignments the
+    /// one that matches more characters is the better explanation of the
+    /// quote, so "wrld," lands on "world," rather than "orld,".
+    matches: usize,
+    /// Text index (in chars) where the alignment starts.
+    start: usize,
+}
+
+impl Alignment {
+    /// Lower is better: cost, then more matches, then an earlier start.
+    fn key(&self) -> (usize, std::cmp::Reverse<usize>, usize) {
+        (self.cost, std::cmp::Reverse(self.matches), self.start)
+    }
+
+    fn step(self, cost: usize, matched: bool) -> Self {
+        Self {
+            cost: self.cost + cost,
+            matches: self.matches + usize::from(matched),
+            start: self.start,
+        }
+    }
+}
+
+/// Find the substring of `text` closest to `needle` (semi-global alignment).
+///
+/// Unlike a fixed-width window, the match may be shorter or longer than the
+/// needle, so a quote that drops or adds a character still lands on the
+/// intended words. Runs in `O(needle × text)` time and `O(needle)` memory.
+///
+/// Returns the `[start, end)` char range of the match. Two equally close
+/// matches are only ambiguous when they do not overlap: overlapping ties are
+/// shifted copies of the same occurrence, not different occurrences.
+fn fuzzy_find(
+    needle: &[char],
+    text: &[char],
+    threshold: usize,
+) -> Result<(usize, usize), ResolveError> {
+    let rows = needle.len();
+    // Column for "no text consumed yet": the needle prefix must be deleted.
+    let mut previous: Vec<Alignment> = (0..=rows)
+        .map(|row| Alignment {
+            cost: row,
+            matches: 0,
+            start: 0,
+        })
+        .collect();
+    let mut current = previous.clone();
+    // Every acceptable match: its alignment and its end (exclusive).
+    let mut candidates: Vec<(Alignment, usize)> = Vec::new();
+
+    for (column, &text_char) in text.iter().enumerate() {
+        let end = column + 1;
+        // A match may start anywhere, for free.
+        current[0] = Alignment {
+            cost: 0,
+            matches: 0,
+            start: end,
+        };
+        for row in 1..=rows {
+            let matched = needle[row - 1] == text_char;
+            let diagonal = previous[row - 1].step(usize::from(!matched), matched);
+            // The text has a character the needle lacks.
+            let extra_text = previous[row].step(1, false);
+            // The needle has a character the text lacks.
+            let missing_text = current[row - 1].step(1, false);
+            current[row] = [diagonal, extra_text, missing_text]
+                .into_iter()
+                .min_by_key(Alignment::key)
+                .expect("three options");
+        }
+        let cell = current[rows];
+        if cell.cost <= threshold && cell.start < end {
+            candidates.push((cell, end));
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+
+    let Some(&(best, best_end)) = candidates
+        .iter()
+        .min_by_key(|(alignment, end)| (alignment.key(), *end))
+    else {
+        return Err(ResolveError::NoMatch);
+    };
+    let disjoint_tie = candidates.iter().any(|(alignment, end)| {
+        alignment.cost == best.cost && (*end <= best.start || alignment.start >= best_end)
+    });
+    if disjoint_tie {
+        return Err(ResolveError::Ambiguous);
+    }
+
+    Ok(snap_to_words(needle, text, best.start, best_end, threshold))
+}
+
+/// Tidy a fuzzy match so it covers whole words.
+///
+/// Whitespace the quote does not have is trimmed from the edges, and a match
+/// that starts or ends mid-word is widened to the word boundary when the
+/// quote itself starts or ends with a word character and the wider span is
+/// still within the distance threshold.
+fn snap_to_words(
+    needle: &[char],
+    text: &[char],
+    mut start: usize,
+    mut end: usize,
+    threshold: usize,
+) -> (usize, usize) {
+    let is_word = |character: char| character.is_alphanumeric() || character == '\'';
+    let first = needle[0];
+    let last = needle[needle.len() - 1];
+    let original = (start, end);
+
+    if !first.is_whitespace() {
+        while start < end && text[start].is_whitespace() {
+            start += 1;
+        }
+    }
+    if !last.is_whitespace() {
+        while end > start && text[end - 1].is_whitespace() {
+            end -= 1;
+        }
+    }
+    if start >= end {
+        return original;
+    }
+
+    if is_word(first) {
+        let mut widened = start;
+        while widened > 0 && is_word(text[widened - 1]) && is_word(text[widened]) {
+            widened -= 1;
+        }
+        if widened < start && levenshtein(needle, &text[widened..end]) <= threshold {
+            start = widened;
+        }
+    }
+    if is_word(last) {
+        let mut widened = end;
+        while widened < text.len() && is_word(text[widened]) && is_word(text[widened - 1]) {
+            widened += 1;
+        }
+        if widened > end && levenshtein(needle, &text[start..widened]) <= threshold {
+            end = widened;
+        }
+    }
+
+    (start, end)
+}
+
+/// The byte offset of the only occurrence of `needle` in `haystack`.
+///
+/// Overlapping repeats count: "that that" occurs twice in "that that that".
+fn find_unique(haystack: &str, needle: &str) -> Result<usize, ResolveError> {
+    let Some(start) = haystack.find(needle) else {
+        return Err(ResolveError::NoMatch);
+    };
+    // Search again one character after the first match, so an overlapping
+    // repeat is not skipped the way `match_indices` would skip it.
+    let next = start + haystack[start..].chars().next().map_or(1, char::len_utf8);
+    if haystack[next..].contains(needle) {
+        return Err(ResolveError::Ambiguous);
+    }
+    Ok(start)
 }
 
 fn build_suggestion(
@@ -236,15 +426,6 @@ fn build_suggestion(
         // that succeeded. Never a model-reported value.
         confidence: resolution.confidence(),
     })
-}
-
-fn prefer_error(a: ResolveError, b: ResolveError) -> ResolveError {
-    // Ambiguity is more useful to surface than a simple miss.
-    if a == ResolveError::Ambiguous || b == ResolveError::Ambiguous {
-        ResolveError::Ambiguous
-    } else {
-        b
-    }
 }
 
 /// Lowercase, map smart quotes/dashes to ASCII, and collapse whitespace while
@@ -394,6 +575,82 @@ mod tests {
         let suggestion = resolve_edit("p1", paragraph, &edit(" this", ""), "e1").expect("resolves");
         assert_eq!(suggestion.replacement, "");
         assert_eq!(suggestion.span.utf16_len(), 5);
+    }
+
+    #[test]
+    fn fuzzy_matches_may_be_shorter_or_longer_than_the_quote() {
+        let cases = [
+            ("Hello world, again.", "wrld,", "world,"),
+            (
+                "We accomodate all guests",
+                "acomodate all",
+                "accomodate all",
+            ),
+            (
+                "Let's discuss the the plan.",
+                "discuss the plan",
+                "discuss the the plan",
+            ),
+            ("Its a nice day.", "It's a nice", "Its a nice"),
+        ];
+        for (paragraph, quote, expected) in cases {
+            let suggestion = resolve_edit("p1", paragraph, &edit(quote, "x"), "e1")
+                .unwrap_or_else(|error| panic!("{quote:?} did not resolve: {error:?}"));
+            assert_eq!(suggestion.resolution, Resolution::Fuzzy, "{quote:?}");
+            assert_eq!(suggestion.original, expected, "{quote:?}");
+        }
+    }
+
+    #[test]
+    fn overlapping_fuzzy_ties_are_not_ambiguous() {
+        let paragraph = "This is definitely fine.";
+        let suggestion = resolve_edit("p1", paragraph, &edit("definitly", "definitely"), "e1")
+            .expect("one occurrence is not ambiguous");
+        assert_eq!(suggestion.original, "definitely");
+    }
+
+    #[test]
+    fn separate_fuzzy_ties_are_ambiguous() {
+        let paragraph = "the cat sat on the mat";
+        assert_eq!(
+            resolve_edit("p1", paragraph, &edit("thw", "a"), "e1"),
+            Err(ResolveError::Ambiguous)
+        );
+    }
+
+    #[test]
+    fn overlapping_exact_repeats_are_ambiguous() {
+        let paragraph = "he said that that that was fine";
+        assert_eq!(
+            resolve_edit("p1", paragraph, &edit("that that", "that"), "e1"),
+            Err(ResolveError::Ambiguous)
+        );
+        assert_eq!(
+            resolve_edit(
+                "p1",
+                "He said THAT THAT THAT.",
+                &edit("that that", "that"),
+                "e1"
+            ),
+            Err(ResolveError::Ambiguous)
+        );
+    }
+
+    #[test]
+    fn raw_edits_accept_loose_labels_and_a_missing_explanation() {
+        let edit: RawEdit = serde_json::from_str(
+            r#"{"original":"a","replacement":"b","category":"Word Choice","severity":"critical"}"#,
+        )
+        .expect("lenient labels parse");
+        assert_eq!(edit.category, Category::WordChoice);
+        assert_eq!(edit.severity, Severity::High);
+        assert!(edit.explanation.is_empty());
+        assert!(
+            serde_json::from_str::<RawEdit>(
+                r#"{"original":"a","replacement":"b","category":"nonsense","severity":"low"}"#
+            )
+            .is_err()
+        );
     }
 
     #[test]

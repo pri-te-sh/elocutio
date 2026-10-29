@@ -149,13 +149,14 @@ pub async fn apply_pending(app: &tauri::AppHandle) -> Result<String, String> {
 
     let replacement = pending.rewritten.clone();
     let replacement_for_paste = replacement.clone();
-    let verified = main_thread::run(app, move |app| {
+    let verified = main_thread::run_async(app, move |app| {
         let state = app.state::<RwLock<PlatformBroker>>();
         let mut broker = state
             .write()
             .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
         broker.replace_selection_via_paste(&replacement_for_paste)
-    })??;
+    })
+    .await??;
 
     clear_pending();
 
@@ -174,13 +175,14 @@ pub async fn apply_pending(app: &tauri::AppHandle) -> Result<String, String> {
 
 /// Read the current selection, enforcing the length cap.
 async fn selected_text(app: &tauri::AppHandle) -> Result<String, String> {
-    let text = main_thread::run(app, |app| {
+    let text = main_thread::run_async(app, |app| {
         let state = app.state::<RwLock<PlatformBroker>>();
         let mut broker = state
             .write()
             .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
         broker.selected_text()
-    })??;
+    })
+    .await??;
     let text = text.ok_or_else(|| "Select text in another app first.".to_string())?;
 
     if text.chars().count() > MAX_SELECTION_CHARS {
@@ -240,13 +242,14 @@ pub async fn rewrite_selection(app: &tauri::AppHandle) -> Result<String, String>
 
     let replacement = result.text;
     let replacement_for_paste = replacement.clone();
-    let verified = main_thread::run(app, move |app| {
+    let verified = main_thread::run_async(app, move |app| {
         let state = app.state::<RwLock<PlatformBroker>>();
         let mut broker = state
             .write()
             .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
         broker.replace_selection_via_paste(&replacement_for_paste)
-    })??;
+    })
+    .await??;
 
     if !verified {
         return Err(

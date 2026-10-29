@@ -53,15 +53,8 @@ pub async fn stream_chat(
     let mut body = adapter.build_request(request);
     body["stream"] = serde_json::Value::Bool(true);
 
-    let client = reqwest::Client::builder()
-        .timeout(super::REQUEST_TIMEOUT)
-        .build()
-        .map_err(|error| {
-            ProviderError::new(
-                ErrorKind::Unknown,
-                format!("Could not create the HTTP client: {error}"),
-            )
-        })?;
+    let client = super::http::streaming_client()
+        .map_err(|error| ProviderError::new(ErrorKind::Unknown, error))?;
 
     let mut request_builder = client.post(&endpoint.url).json(&body);
     if let Some(key) = &endpoint.key {
@@ -73,28 +66,74 @@ pub async fn stream_chat(
             .header("X-Title", super::http::APP_TITLE);
     }
 
-    let mut response = request_builder
-        .send()
+    let result = read_stream(adapter, request_builder).await;
+
+    // A streamed request leaves the Mac like any other, so it is recorded in
+    // the network log too. The entry holds metadata, never the text.
+    let host = crate::network_log::host_of(&endpoint.url);
+    let _ = match &result {
+        Ok(collected) => crate::network_log::record_chat(
+            &host,
+            adapter.display_name(),
+            Some(&request.model.model),
+            collected
+                .usage
+                .as_ref()
+                .map_or((0, 0), |usage| (usage.input_tokens, usage.output_tokens)),
+            collected.usage.as_ref().and_then(|usage| usage.cost_usd()),
+            crate::network_log::Outcome::success(200),
+        ),
+        Err(error) => crate::network_log::record_chat(
+            &host,
+            adapter.display_name(),
+            Some(&request.model.model),
+            (0, 0),
+            None,
+            crate::network_log::Outcome::failure(None, error.message.clone()),
+        ),
+    };
+    result
+}
+
+async fn read_stream(
+    adapter: &dyn Provider,
+    request_builder: reqwest::RequestBuilder,
+) -> Result<StreamedResponse, ProviderError> {
+    let mut response = tokio::time::timeout(super::REQUEST_TIMEOUT, request_builder.send())
         .await
+        .map_err(|_| ProviderError::new(ErrorKind::Timeout, "no response from the provider"))?
         .map_err(|error| adapter.map_transport_error(&error.to_string()))?;
 
     let status = response.status();
     if !status.is_success() {
+        let retry_after = super::http::retry_after_seconds(response.headers());
         let raw = response.text().await.unwrap_or_default();
-        return Err(adapter.map_http_error(status.as_u16(), &raw));
+        return Err(adapter
+            .map_http_error(status.as_u16(), &raw)
+            .with_retry_after(retry_after));
     }
 
     let mut decoder = SseDecoder::new();
+    // The event decoder holds the finish reason back until `[DONE]`, because
+    // OpenRouter and OpenAI send usage in a chunk after the finish reason.
+    let mut events = elocutio_llm::StreamEventDecoder::new();
     let mut collected = StreamedResponse::default();
 
-    while let Some(chunk) = response.chunk().await.map_err(|error| {
-        adapter.map_transport_error(&format!("could not read the stream: {error}"))
-    })? {
+    loop {
+        let next = tokio::time::timeout(super::STREAM_IDLE_TIMEOUT, response.chunk())
+            .await
+            .map_err(|_| ProviderError::new(ErrorKind::Timeout, "the stream stalled"))?;
+        let Some(chunk) = next.map_err(|error| {
+            adapter.map_transport_error(&format!("could not read the stream: {error}"))
+        })?
+        else {
+            break;
+        };
         // Feed raw bytes: a chunk can end in the middle of a multi-byte
         // character, and the decoder holds those bytes back until the
         // character is complete.
         for frame in decoder.push_bytes(&chunk) {
-            for event in elocutio_llm::stream::events_from_frame(&frame) {
+            for event in events.events(&frame) {
                 match event {
                     StreamEvent::Start { model } => {
                         if collected.model.is_empty() {
@@ -115,7 +154,7 @@ pub async fn stream_chat(
 
     // The server closed the connection without a `[DONE]` sentinel.
     if let Some(frame) = decoder.finish() {
-        for event in elocutio_llm::stream::events_from_frame(&frame) {
+        for event in events.events(&frame) {
             match event {
                 StreamEvent::TextDelta { text } => collected.text.push_str(&text),
                 StreamEvent::Usage { usage } => collected.usage = Some(usage),
@@ -126,6 +165,9 @@ pub async fn stream_chat(
                 StreamEvent::Start { .. } => {}
             }
         }
+    }
+    if let Some(StreamEvent::Done { finish_reason }) = events.finish() {
+        collected.finish_reason = Some(finish_reason);
     }
 
     Ok(collected)

@@ -27,6 +27,17 @@ pub const RETRY_BASE_DELAY: Duration = Duration::from_millis(250);
 /// The ceiling on a single provider request.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
 
+/// How long a connection attempt may take.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a stream may go quiet before it is treated as stalled. A stream
+/// has no total ceiling: a long rewrite legitimately takes longer than
+/// [`REQUEST_TIMEOUT`] to finish.
+pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// The longest `Retry-After` the client will honour before giving up.
+pub const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
+
 /// A model the app can offer in a picker.
 ///
 /// This is the app-facing shape of a catalog entry: everything is owned
@@ -131,8 +142,17 @@ pub fn user_message(error: &ProviderError) -> String {
 }
 
 /// True when a failure is worth retrying.
+///
+/// A chat request is a POST that the provider bills. A timeout means the
+/// request may well have reached the model, so retrying it could charge the
+/// user twice; it is reported instead. A `Retry-After` longer than
+/// [`MAX_RETRY_AFTER`] is not waited out either.
 pub fn is_retryable(error: &ProviderError) -> bool {
     error.is_retryable()
+        && error.kind != elocutio_llm::ErrorKind::Timeout
+        && error
+            .retry_after_seconds
+            .is_none_or(|seconds| Duration::from_secs(seconds) <= MAX_RETRY_AFTER)
 }
 
 /// How long to wait before the next attempt.
@@ -141,7 +161,7 @@ pub fn is_retryable(error: &ProviderError) -> bool {
 /// with each attempt.
 pub fn backoff_delay(error: &ProviderError, attempt: u32) -> Duration {
     if let Some(seconds) = error.retry_after_seconds {
-        return Duration::from_secs(seconds.max(1));
+        return Duration::from_secs(seconds.max(1)).min(MAX_RETRY_AFTER);
     }
     RETRY_BASE_DELAY * (1u32 << attempt.min(4))
 }

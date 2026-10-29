@@ -15,7 +15,8 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -136,6 +137,42 @@ pub fn set_enabled(enabled: bool) -> Result<(), String> {
 /// without limit and cannot become a shadow copy of what the user wrote.
 const MAX_EVENTS: usize = 5_000;
 
+/// How many appends may happen between two trims.
+///
+/// Trimming reads and rewrites the whole log, so it is not done on every event; the log can
+/// exceed [`MAX_EVENTS`] by at most this many lines in between.
+const TRIM_EVERY: usize = 64;
+
+/// Appends since the log was last trimmed in this process. Starts at the threshold so the first
+/// event of a session trims whatever an earlier session left behind.
+static APPENDS_SINCE_TRIM: AtomicUsize = AtomicUsize::new(TRIM_EVERY);
+
+/// Record an interaction with an overlay suggestion, deriving origin and category from the rule.
+///
+/// Model suggestions carry an `llm:<category>` rule name. Failures are logged rather than
+/// returned: the event log is a learning signal and must never block an edit.
+pub fn record_suggestion_event(
+    kind: EventKind,
+    rule: &str,
+    original_length: usize,
+    replacement_length: usize,
+) {
+    let (origin, category) = match rule.strip_prefix("llm:") {
+        Some(category) => (Origin::Model, category),
+        None => (Origin::Local, rule),
+    };
+    if let Err(error) = record_event(
+        kind,
+        origin,
+        rule,
+        category,
+        original_length,
+        replacement_length,
+    ) {
+        eprintln!("Could not record the suggestion event: {error}");
+    }
+}
+
 /// Record one interaction.
 ///
 /// Does nothing when recording is off, so callers can call this freely.
@@ -176,8 +213,12 @@ pub fn record_event(
     let line = serde_json::to_string(&event)
         .map_err(|error| format!("Could not serialize the event: {error}"))?;
     writeln!(file, "{line}").map_err(|error| format!("Could not record the event: {error}"))?;
+    drop(file);
 
-    trim(&path)?;
+    if APPENDS_SINCE_TRIM.fetch_add(1, Ordering::Relaxed) + 1 >= TRIM_EVERY {
+        APPENDS_SINCE_TRIM.store(0, Ordering::Relaxed);
+        trim(&path)?;
+    }
     Ok(())
 }
 
@@ -232,29 +273,42 @@ pub fn clear() -> Result<(), String> {
 }
 
 /// Keep the log within [`MAX_EVENTS`] by dropping the oldest entries.
-fn trim(path: &PathBuf) -> Result<(), String> {
+///
+/// The trimmed log is written to a temporary file and renamed over the original, so a crash
+/// mid-trim leaves either the old log or the new one, never a truncated one.
+fn trim(path: &Path) -> Result<(), String> {
     let contents = match std::fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(format!("Could not read the event log: {error}")),
     };
 
+    let Some(kept) = lines_to_keep(&contents, MAX_EVENTS) else {
+        return Ok(());
+    };
+
+    let temporary = path.with_extension("jsonl.tmp");
+    let write = || -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&temporary)?;
+        for line in kept {
+            writeln!(file, "{line}")?;
+        }
+        file.sync_all()?;
+        std::fs::rename(&temporary, path)
+    };
+    write().map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        format!("Could not rewrite the event log: {error}")
+    })
+}
+
+/// The newest `max` non-empty lines, or `None` when the log is already within bounds.
+fn lines_to_keep(contents: &str, max: usize) -> Option<Vec<&str>> {
     let lines: Vec<&str> = contents
         .lines()
         .filter(|line| !line.trim().is_empty())
         .collect();
-    if lines.len() <= MAX_EVENTS {
-        return Ok(());
-    }
-
-    let kept = &lines[lines.len() - MAX_EVENTS..];
-    let mut file = std::fs::File::create(path)
-        .map_err(|error| format!("Could not rewrite the event log: {error}"))?;
-    for line in kept {
-        writeln!(file, "{line}")
-            .map_err(|error| format!("Could not rewrite the event log: {error}"))?;
-    }
-    Ok(())
+    (lines.len() > max).then(|| lines[lines.len() - max..].to_vec())
 }
 
 fn now_seconds() -> u64 {
@@ -267,6 +321,12 @@ fn now_seconds() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trimming_keeps_the_newest_lines() {
+        assert_eq!(lines_to_keep("a\nb\n", 3), None);
+        assert_eq!(lines_to_keep("a\n\nb\nc\nd\n", 2), Some(vec!["c", "d"]));
+    }
 
     #[test]
     fn preference_signals_are_the_learning_ones() {

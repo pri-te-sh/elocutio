@@ -463,6 +463,7 @@ pub fn clear() -> Result<(), String> {
     if let Ok(events) = events_path() {
         let _ = std::fs::remove_file(events);
     }
+    crate::personalization_db::clear_learned_voice_data()?;
     let _ = set_learning_enabled(false);
     Ok(())
 }

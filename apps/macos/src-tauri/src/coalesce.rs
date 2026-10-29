@@ -56,6 +56,12 @@ struct Entry {
     generation: u64,
 }
 
+/// Entries older than this no longer throttle anything and are dropped.
+const ENTRY_RETENTION: Duration = Duration::from_secs(10 * 60);
+
+/// Above this many tracked keys, a write sweeps out entries past [`ENTRY_RETENTION`].
+const PRUNE_THRESHOLD: usize = 256;
+
 /// Tracks the last request for each key.
 #[derive(Default)]
 pub struct Coalescer {
@@ -67,10 +73,31 @@ impl Coalescer {
         Self::default()
     }
 
+    /// Atomically checks [`Self::allows`] and, when allowed, records the request.
+    ///
+    /// Returns the new generation when the caller may send the request, `None` when another
+    /// request for the same key went out too recently. Doing both under one lock closes the
+    /// window in which two callers could both see "allowed" and both send.
+    pub fn try_acquire(&self, key: &RequestKey, min_interval: Duration) -> Option<u64> {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if entries
+            .get(key)
+            .is_some_and(|entry| entry.last_sent.elapsed() < min_interval)
+        {
+            return None;
+        }
+        Some(record_locked(&mut entries, key))
+    }
+
     /// Whether a request may go out now.
     ///
     /// A request is allowed when the key has never been seen, or when enough
     /// time has passed since the last one.
+    // Production code uses `try_acquire`; the split form remains for tests.
+    #[cfg(test)]
     pub fn allows(&self, key: &RequestKey, min_interval: Duration) -> bool {
         let entries = self
             .entries
@@ -83,18 +110,16 @@ impl Coalescer {
     }
 
     /// Record that a request went out for the key.
+    ///
+    /// Prefer [`Self::try_acquire`], which checks and records atomically.
+    // Production code uses `try_acquire`; the split form remains for tests.
+    #[cfg(test)]
     pub fn record(&self, key: &RequestKey) -> u64 {
         let mut entries = self
             .entries
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let entry = entries.entry(key.clone()).or_insert(Entry {
-            last_sent: Instant::now(),
-            generation: 0,
-        });
-        entry.last_sent = Instant::now();
-        entry.generation += 1;
-        entry.generation
+        record_locked(&mut entries, key)
     }
 
     /// The current generation for the key.
@@ -132,6 +157,22 @@ impl Coalescer {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
+
+/// Records a request for `key` in an already-locked map, pruning stale keys so the map stays
+/// bounded however many distinct texts are analyzed.
+fn record_locked(entries: &mut HashMap<RequestKey, Entry>, key: &RequestKey) -> u64 {
+    if entries.len() >= PRUNE_THRESHOLD {
+        entries.retain(|_, entry| entry.last_sent.elapsed() < ENTRY_RETENTION);
+    }
+    let now = Instant::now();
+    let entry = entries.entry(key.clone()).or_insert(Entry {
+        last_sent: now,
+        generation: 0,
+    });
+    entry.last_sent = now;
+    entry.generation += 1;
+    entry.generation
 }
 
 /// A process-wide coalescer for the analysis path.
@@ -198,6 +239,39 @@ mod tests {
         let second = coalescer.record(&key);
         assert!(!coalescer.is_current(&key, first));
         assert!(coalescer.is_current(&key, second));
+    }
+
+    #[test]
+    fn try_acquire_checks_and_records_in_one_step() {
+        let coalescer = Coalescer::new();
+        let key = RequestKey::new("model", "text", "en-US");
+        let first = coalescer.try_acquire(&key, Duration::from_secs(10));
+        assert_eq!(first, Some(1));
+        assert_eq!(coalescer.try_acquire(&key, Duration::from_secs(10)), None);
+        assert!(coalescer.is_current(&key, 1));
+        assert_eq!(coalescer.try_acquire(&key, Duration::ZERO), Some(2));
+    }
+
+    #[test]
+    fn stale_keys_are_pruned_once_the_map_is_large() {
+        let coalescer = Coalescer::new();
+        {
+            let mut entries = coalescer.entries.lock().unwrap();
+            let old = Instant::now()
+                .checked_sub(ENTRY_RETENTION + Duration::from_secs(1))
+                .unwrap();
+            for index in 0..PRUNE_THRESHOLD {
+                entries.insert(
+                    RequestKey::new("model", &index.to_string(), "en-US"),
+                    Entry {
+                        last_sent: old,
+                        generation: 1,
+                    },
+                );
+            }
+        }
+        coalescer.record(&RequestKey::new("model", "fresh", "en-US"));
+        assert_eq!(coalescer.len(), 1);
     }
 
     #[test]

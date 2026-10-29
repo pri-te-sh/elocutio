@@ -170,20 +170,39 @@ pub fn default_model_ref(provider: ProviderId) -> ModelRef {
 
 /// True when the model accepts a `temperature` parameter.
 ///
-/// The Claude 5 family (Haiku 5.5, Sonnet 5) accepts only `temperature: 1`
-/// and returns HTTP 400 for anything else, so the parameter must be left out
-/// of the request entirely. Everything else in the catalog takes an optional
-/// `temperature` in the usual `0..=2` range.
+/// The whole Claude 5 family (Haiku, Sonnet, Opus, Fable) accepts only
+/// `temperature: 1` and returns HTTP 400 for anything else, so the parameter
+/// must be left out of the request entirely. Everything else in the catalog
+/// takes an optional `temperature` in the usual `0..=2` range.
+///
+/// The id is matched by family, not against a fixed list, so provider
+/// prefixes (`anthropic/`, `us.anthropic.`), variant suffixes (`:thinking`),
+/// point releases, and dated snapshots are all covered.
 pub fn supports_temperature(model_id: &str) -> bool {
-    let short = model_id
-        .trim()
-        .rsplit('/')
-        .next()
-        .unwrap_or(model_id.trim());
-    !matches!(
-        short,
-        "claude-haiku-5.5" | "claude-sonnet-5" | "claude-opus-5.5" | "claude-haiku-5"
-    ) && !short.starts_with("claude-5")
+    let id = model_id.trim().to_ascii_lowercase();
+    // Drop a `:variant` suffix, then any `vendor/` prefix.
+    let id = id.split(':').next().unwrap_or_default();
+    let id = id.rsplit('/').next().unwrap_or_default();
+    // Drop a dotted provider prefix such as Bedrock's `us.anthropic.`.
+    let id = id.find("claude-").map_or(id, |start| &id[start..]);
+    !is_claude_five(id)
+}
+
+/// Is `id` (already stripped of prefixes and suffixes) a Claude 5 model?
+///
+/// Matches `claude-<tier>-5` followed by the end of the id or a version or
+/// snapshot separator (`claude-sonnet-5`, `claude-haiku-5.5`,
+/// `claude-opus-5-20260101`), and the `claude-5…` naming.
+fn is_claude_five(id: &str) -> bool {
+    if id.starts_with("claude-5") {
+        return true;
+    }
+    ["haiku", "sonnet", "opus", "fable"].iter().any(|tier| {
+        id.strip_prefix("claude-")
+            .and_then(|rest| rest.strip_prefix(tier))
+            .and_then(|rest| rest.strip_prefix("-5"))
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '-', '@']))
+    })
 }
 
 #[cfg(test)]
@@ -320,5 +339,29 @@ mod tests {
         assert!(supports_temperature("openai/gpt-5.6-sol"));
         assert!(supports_temperature("deepseek/deepseek-v4.1-flash"));
         assert!(!default_model().supports_temperature());
+    }
+
+    #[test]
+    fn the_whole_claude_five_family_rejects_a_temperature() {
+        for id in [
+            "anthropic/claude-fable-5",
+            "anthropic/claude-sonnet-5.5",
+            "anthropic/claude-haiku-5.5:thinking",
+            "claude-opus-5-20260301",
+            "us.anthropic.claude-sonnet-5-v1:0",
+            "  Anthropic/Claude-Opus-5.5  ",
+            "claude-haiku-5",
+        ] {
+            assert!(!supports_temperature(id), "{id} should reject temperature");
+        }
+        for id in [
+            "anthropic/claude-sonnet-4.5",
+            "anthropic/claude-3.5-haiku",
+            "claude-opus-50",
+            "openai/gpt-5.6-sol",
+            "",
+        ] {
+            assert!(supports_temperature(id), "{id} should accept temperature");
+        }
     }
 }

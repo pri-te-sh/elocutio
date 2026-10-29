@@ -407,6 +407,9 @@ fn formal_score(m: &Measurements) -> f64 {
 
 /// Take every measurement from the text.
 fn measure(text: &str) -> Measurements {
+    // macOS smart quotes turn "don't" into "don’t"; fold the typographic
+    // apostrophes so contractions and word lists match either spelling.
+    let text = &normalize_apostrophes(text);
     let lower = text.to_lowercase();
     let words = tokenize(&lower);
     let sentences = split_sentences(text);
@@ -703,6 +706,15 @@ const IMPERATIVE_STARTERS: &[&str] = &[
 /// Tokens that mark a passive construction.
 const PASSIVE_MARKERS: &[&str] = &["was", "were", "is", "are", "been", "being", "be"];
 
+/// Replace typographic apostrophes (U+2019, U+02BC) with ASCII `'`.
+fn normalize_apostrophes(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains(['\u{2019}', '\u{02BC}']) {
+        std::borrow::Cow::Owned(text.replace(['\u{2019}', '\u{02BC}'], "'"))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
 /// Split text into lowercase word-ish tokens. Contractions keep the apostrophe.
 fn tokenize(lower: &str) -> Vec<&str> {
     lower
@@ -799,6 +811,16 @@ mod tests {
         assert_eq!(signal.tone, Tone::Neutral);
         assert_eq!(signal.confidence, 0.0);
         assert!(signal.evidence.is_empty());
+    }
+
+    #[test]
+    fn curly_apostrophes_count_as_contractions() {
+        let straight = "Hey! We're so glad you're here, and we don't mind. It's great.";
+        let curly = straight.replace('\'', "\u{2019}");
+        assert_eq!(detect_tone(&curly), detect_tone(straight));
+        let measured = measure("don\u{2019}t won\u{02BC}t");
+        assert_eq!(measured.word_count, 2);
+        assert_eq!(measured.contractions, 2);
     }
 
     #[test]

@@ -301,8 +301,9 @@ impl Config {
         let dictionary_path = folder_path.join("user_dictionary.txt");
 
         fs::create_dir_all(&folder_path)?;
-        fs::write(main_path, self.serialize_main()?)?;
+        write_atomically(&main_path, self.serialize_main()?.as_bytes())?;
         save_dict(&dictionary_path, &self.mutable_dictionary).await?;
+        crate::openrouter::set_active_cost_cap(self.cost_cap_usd);
         let _ = crate::personalization_db::sync_and_status(self);
 
         Ok(())
@@ -352,6 +353,11 @@ impl Config {
             config.learn_from_edits = true;
         }
         let _ = crate::personalization_db::sync_and_status(&config);
+        crate::openrouter::set_active_cost_cap(config.cost_cap_usd);
+        crate::openrouter::spawn_legacy_key_migration(crate::openrouter::ProviderConfig {
+            kind: config.provider_kind,
+            base_url: config.provider_base_url.clone(),
+        });
 
         Ok(config)
     }
@@ -559,6 +565,15 @@ impl Default for Config {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Writes a file by writing a sibling temporary file and renaming it over the
+/// target, so a crash or power loss mid-write never leaves a truncated
+/// `config.json` that fails to parse on the next launch.
+fn write_atomically(path: &std::path::Path, contents: &[u8]) -> io::Result<()> {
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, contents)?;
+    fs::rename(&tmp, path)
 }
 
 #[cfg(test)]

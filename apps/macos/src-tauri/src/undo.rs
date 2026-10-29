@@ -71,13 +71,14 @@ pub fn take() -> Result<Option<UndoRecord>, String> {
 pub async fn undo_last_edit<R: Runtime>(app: &AppHandle<R>) -> Result<String, String> {
     let record = take()?.ok_or_else(|| "There is no Elocutio edit to undo.".to_string())?;
 
-    let focused = main_thread::run(app, |app| {
+    let focused = main_thread::run_async(app, |app| {
         let state = app.state::<RwLock<PlatformBroker>>();
         let mut broker = state
             .write()
             .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
         broker.focused_text()
-    })??;
+    })
+    .await??;
 
     let Some(focused) = focused else {
         return Err("Focus the edited field again before undoing.".into());
@@ -88,7 +89,7 @@ pub async fn undo_last_edit<R: Runtime>(app: &AppHandle<R>) -> Result<String, St
 
     let before = record.before;
     let after = record.after;
-    let restored = main_thread::run(app, {
+    let restored = main_thread::run_async(app, {
         let before = before.clone();
         move |app| {
             let state = app.state::<RwLock<PlatformBroker>>();
@@ -97,7 +98,8 @@ pub async fn undo_last_edit<R: Runtime>(app: &AppHandle<R>) -> Result<String, St
                 .map_err(|error| format!("Could not lock the platform broker: {error}"))?;
             broker.replace_focused_text(&before)
         }
-    })??;
+    })
+    .await??;
 
     if restored {
         // Undoing an accepted suggestion is the strongest preference signal

@@ -26,7 +26,7 @@ use harper_core::linting::Lint;
 use objc2_app_kit::NSRunningApplication;
 use send_wrapper::SendWrapper;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use std::{
     collections::{BTreeMap, HashMap},
     error::Error as StdError,
@@ -34,23 +34,70 @@ use std::{
     time::Instant,
 };
 
+use crate::llm_cache::CachedAnalysis;
 use crate::os_broker::{AccessibilityPermissionStatus, AppSearchResult, FocusedText, OsBroker};
 use crate::rect::ActionableLint;
 
 use self::accessibility_activation::{
     ACCESSIBILITY_ACTIVATION_RETRY_INTERVAL, AccessibilityActivationState,
-    AccessibilityActivationStatus, AccessibilityActivationVerification,
-    accessibility_activation_verification_retry_interval,
+    AccessibilityActivationStatus, AccessibilityActivationVerification, ActivationChanges,
+    accessibility_activation_verification_retry_interval, activate_accessibility,
     is_unsupported_accessibility_activation_error, release_accessibility_activation,
-    set_enhanced_user_interface_preserving_previous, verify_accessibility_activation,
+    remember_applied_activation, verify_accessibility_activation,
 };
 use self::accessibility_text::{RectCollector, is_supported_text_element};
-use self::core_foundation_utilities::{ax_element_attribute, ax_string_attribute};
+use self::core_foundation_utilities::{
+    application_element, ax_element_attribute, ax_string_attribute,
+    install_global_messaging_timeout, system_wide_element,
+};
 use self::focused_target::FocusedTarget;
 use self::window_stability::{
-    WINDOW_MOVEMENT_SETTLE_DURATION, WindowMovementState, frontmost_window_frame_for_pid,
-    settled_window_state, window_frame_changed,
+    OnScreenWindow, WINDOW_MOVEMENT_SETTLE_DURATION, WindowMovementState,
+    frontmost_window_frame_for_pid, settled_window_state, window_frame_changed,
 };
+
+/// How long to wait for the target app to come to the front before synthesizing keystrokes.
+const FRONTMOST_WAIT: Duration = Duration::from_millis(400);
+
+/// Puts back the accessibility attributes Elocutio switched on in the last targeted app.
+///
+/// Called at quit: the overlay thread's broker does this when it is dropped, but the process can
+/// exit without dropping it.
+pub fn release_accessibility_activation_on_exit() {
+    accessibility_activation::release_applied_activation();
+}
+
+/// Activates `pid` and waits until it is the frontmost app.
+///
+/// Synthesized keystrokes go to whatever app is frontmost, so ⌘A/⌘V must never be sent unless
+/// this returns true.
+pub(super) fn activate_and_wait_until_frontmost(pid: pid_t) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) else {
+        return false;
+    };
+    let is_frontmost = || focused_window_pid::focused_window_pid().ok() == Some(pid);
+    if is_frontmost() {
+        return true;
+    }
+
+    #[allow(deprecated)]
+    let _ = app.activateWithOptions(
+        objc2_app_kit::NSApplicationActivationOptions::ActivateIgnoringOtherApps,
+    );
+    let deadline = Instant::now() + FRONTMOST_WAIT;
+    loop {
+        if is_frontmost() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(15));
+    }
+}
 
 /// Must match `identifier` in `tauri.conf.json`.
 const BUNDLE_ID: &str = "app.elocutio.desktop";
@@ -78,12 +125,19 @@ pub struct MacBroker {
     active_field_text: Option<String>,
     /// Screen-space rectangles of any windows sitting in front of the target window.
     occluding_rects: Vec<crate::rect::Rect>,
+    /// The LLM suggestion cache as last parsed, keyed by the file's modification time and length,
+    /// so the file is only re-read and re-parsed when it changes rather than on every poll.
+    llm_cache_memo: Option<(LlmCacheFileKey, Option<CachedAnalysis>)>,
 }
+
+/// Identifies one version of the LLM cache file on disk.
+type LlmCacheFileKey = (Option<SystemTime>, u64);
 
 impl MacBroker {
     /// Creates a broker with an app policy that may register newly encountered bundle IDs.
     /// The policy is called before reading the app's text and may change as settings are refreshed.
     pub fn new(is_integration_enabled: impl FnMut(&str) -> bool + Send + Sync + 'static) -> Self {
+        install_global_messaging_timeout();
         Self {
             last_focused: None,
             is_integration_enabled: Box::new(is_integration_enabled),
@@ -95,7 +149,60 @@ impl MacBroker {
             active_field_rect: None,
             active_field_text: None,
             occluding_rects: Vec::new(),
+            llm_cache_memo: None,
         }
+    }
+
+    /// Builds the installed-app catalog cache without needing a broker instance (or its lock).
+    pub fn warm_app_catalog() -> Result<(), String> {
+        app_catalog::installed_application_search_results().map(|_| ())
+    }
+
+    /// The user-facing name of the currently remembered target app, from the running process.
+    ///
+    /// This is a cheap in-process lookup, unlike [`OsBroker::integration_display_name`], which
+    /// asks Spotlight and must not run on the overlay's polling thread.
+    pub fn focused_app_display_name(&self) -> Option<String> {
+        let pid = self.focused_pid()?;
+        let name = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?
+            .localizedName()?
+            .to_string();
+        (!name.trim().is_empty()).then_some(name)
+    }
+
+    /// The LLM suggestion cache, re-parsed only when the file has changed since the last poll.
+    fn cached_llm_analysis(&mut self) -> Option<CachedAnalysis> {
+        let path = crate::llm_cache::cache_path().ok()?;
+        let key = match std::fs::metadata(&path) {
+            Ok(metadata) => Some((metadata.modified().ok(), metadata.len())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.llm_cache_memo = None;
+                return None;
+            }
+            Err(_) => None,
+        };
+
+        if let Some(key) = key
+            && let Some((memo_key, memo)) = &self.llm_cache_memo
+            && *memo_key == key
+        {
+            return memo
+                .as_ref()
+                .filter(|cached| {
+                    crate::llm_cache::is_fresh(cached, crate::llm_cache::now_seconds())
+                })
+                .cloned();
+        }
+
+        let cached = match crate::llm_cache::read() {
+            Ok(cached) => cached,
+            Err(error) => {
+                eprintln!("LLM cache read failed: {error}");
+                None
+            }
+        };
+        self.llm_cache_memo = key.map(|key| (key, cached.clone()));
+        cached
     }
 
     /// Windows sitting in front of the active target window on screen.
@@ -147,15 +254,12 @@ impl MacBroker {
             }
         }
 
-        // Fallback: select all in the target app and paste via transient pasteboard
-        if pid > 0
-            && let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
-        {
-            #[allow(deprecated)]
-            let _ = app.activateWithOptions(
-                objc2_app_kit::NSApplicationActivationOptions::ActivateIgnoringOtherApps,
+        // Fallback: select all in the target app and paste via transient pasteboard. ⌘A ⌘V go to
+        // whatever app is frontmost, so they are only sent once the target app is confirmed there.
+        if !activate_and_wait_until_frontmost(pid) {
+            return Err(
+                "Could not bring the target app to the front, so nothing was pasted.".to_string(),
             );
-            std::thread::sleep(Duration::from_millis(35));
         }
 
         let snapshot = crate::pasteboard::write_transient(new_text)?;
@@ -213,8 +317,8 @@ impl MacBroker {
     }
 
     /// Check if the frontmost window for a given process is currently moving.
-    fn window_is_moving(&mut self, pid: pid_t) -> bool {
-        let Some(frame) = frontmost_window_frame_for_pid(pid) else {
+    fn window_is_moving(&mut self, windows: &[OnScreenWindow], pid: pid_t) -> bool {
+        let Some(frame) = frontmost_window_frame_for_pid(windows, pid) else {
             self.window_movement = None;
             return false;
         };
@@ -253,8 +357,8 @@ impl MacBroker {
         bundle_id: &str,
         app: &AXUIElement,
     ) -> bool {
-        // Only Chromium/Electron apps need AXEnhancedUserInterface (or the
-        // Electron-specific AXManualAccessibility) to expose geometry. Native
+        // Only Chromium/Electron apps need AXManualAccessibility (or, for some
+        // Chromium browsers, AXEnhancedUserInterface) to expose geometry. Native
         // AppKit apps already expose text and can be read directly; walking
         // their full AX tree here can block the highlighter (Mail is the worst
         // offender) and starve every other app.
@@ -273,7 +377,7 @@ impl MacBroker {
                 bundle_id: bundle_id.to_string(),
                 status: AccessibilityActivationStatus::Ready,
                 last_attempted_at: Instant::now(),
-                enhanced_user_interface_restore_value: None,
+                changes: ActivationChanges::default(),
             });
             return true;
         }
@@ -285,7 +389,7 @@ impl MacBroker {
 
         if needs_new_activation {
             self.reset_accessibility_activation();
-            return self.request_enhanced_user_interface(pid, bundle_id, app);
+            return self.request_accessibility_activation(pid, bundle_id, app);
         }
 
         let Some(status) = self
@@ -293,7 +397,7 @@ impl MacBroker {
             .as_ref()
             .map(|state| state.status)
         else {
-            return self.request_enhanced_user_interface(pid, bundle_id, app);
+            return self.request_accessibility_activation(pid, bundle_id, app);
         };
 
         let now = Instant::now();
@@ -358,7 +462,7 @@ impl MacBroker {
                     .as_ref()
                     .map(|state| state.last_attempted_at)
                 else {
-                    return self.request_enhanced_user_interface(pid, bundle_id, app);
+                    return self.request_accessibility_activation(pid, bundle_id, app);
                 };
 
                 if now.duration_since(last_attempted_at) < ACCESSIBILITY_ACTIVATION_RETRY_INTERVAL {
@@ -366,56 +470,53 @@ impl MacBroker {
                 }
 
                 self.reset_accessibility_activation();
-                self.request_enhanced_user_interface(pid, bundle_id, app)
+                self.request_accessibility_activation(pid, bundle_id, app)
             }
         }
     }
 
-    /// Requests `AXEnhancedUserInterface`, preserving the previous value if readable.
-    fn request_enhanced_user_interface(
+    /// Switches on the app's accessibility tree, remembering what to restore when leaving it.
+    fn request_accessibility_activation(
         &mut self,
         pid: pid_t,
         bundle_id: &str,
         app: &AXUIElement,
     ) -> bool {
-        let now = Instant::now();
-        let _settle_duration = accessibility_activation::CHROMIUM_ACCESSIBILITY_SETTLE_DURATION;
-
-        match set_enhanced_user_interface_preserving_previous(app, true) {
-            Ok(enhanced_user_interface_restore_value) => {
-                self.accessibility_activation = Some(AccessibilityActivationState {
-                    pid,
-                    bundle_id: bundle_id.to_string(),
-                    status: AccessibilityActivationStatus::Ready,
-                    last_attempted_at: now,
-                    enhanced_user_interface_restore_value,
-                });
-                true
-            }
-            Err(error) if is_unsupported_accessibility_activation_error(error) => {
-                self.accessibility_activation = Some(AccessibilityActivationState {
-                    pid,
-                    bundle_id: bundle_id.to_string(),
-                    status: AccessibilityActivationStatus::Ready,
-                    last_attempted_at: now,
-                    enhanced_user_interface_restore_value: None,
-                });
-                true
-            }
+        let changes = match activate_accessibility(app, bundle_id) {
+            Ok(changes) => changes,
             Err(error) => {
-                eprintln!(
-                    "Unable to request AXEnhancedUserInterface for {bundle_id} pid {pid}: {}",
-                    error_string(error)
-                );
-                self.accessibility_activation = Some(AccessibilityActivationState {
-                    pid,
-                    bundle_id: bundle_id.to_string(),
-                    status: AccessibilityActivationStatus::Ready,
-                    last_attempted_at: now,
-                    enhanced_user_interface_restore_value: None,
-                });
-                true
+                if !is_unsupported_accessibility_activation_error(error) {
+                    eprintln!(
+                        "Unable to switch on accessibility for {bundle_id} pid {pid}: {}",
+                        error_string(error)
+                    );
+                }
+                ActivationChanges::default()
             }
+        };
+        remember_applied_activation(pid, changes);
+        self.accessibility_activation = Some(AccessibilityActivationState {
+            pid,
+            bundle_id: bundle_id.to_string(),
+            status: AccessibilityActivationStatus::Ready,
+            last_attempted_at: Instant::now(),
+            changes,
+        });
+        true
+    }
+
+    /// Clears per-target state when there is no field to read.
+    ///
+    /// Focus moving to one of Elocutio's own windows (Studio, the overlay) is not "leaving" the
+    /// target app, so its accessibility activation is kept; toggling it on every such focus change
+    /// churns the target app's accessibility tree.
+    fn clear_target_state(&mut self, keep_activation: bool) {
+        self.window_movement = None;
+        self.has_active_field = false;
+        self.active_field_rect = None;
+        self.detected_tone = None;
+        if !keep_activation {
+            self.reset_accessibility_activation();
         }
     }
 }
@@ -439,7 +540,7 @@ fn focused_text_element() -> Result<AXUIElement, String> {
     let pid = focused_window_pid::focused_text_pid()
         .or_else(|_| focused_window_pid::focused_window_pid())
         .map_err(|error| error.to_string())?;
-    let app = AXUIElement::application(pid);
+    let app = application_element(pid);
     let element = ax_element_attribute(&app, kAXFocusedUIElementAttribute)
         .map_err(|error| error.to_string())?;
 
@@ -493,20 +594,19 @@ impl OsBroker for MacBroker {
         let focused_pid = match focused_window_pid::focused_text_pid() {
             Ok(pid) => pid,
             Err(_) => {
-                self.window_movement = None;
-                self.has_active_field = false;
-                self.active_field_rect = None;
-                self.detected_tone = None;
-                self.reset_accessibility_activation();
+                // The Studio window having focus is the usual reason; that is our own window,
+                // not a different target app.
+                let own_window_focused = crate::elo_overlay::is_studio_window_focused();
+                self.clear_target_state(own_window_focused);
                 return None;
             }
         };
         let Some(target) = self.resolve_target(focused_pid, |pid| {
-            let app = AXUIElement::application(pid);
+            let app = application_element(pid);
             let raw_focused = ax_element_attribute(&app, kAXFocusedUIElementAttribute)
                 .ok()
                 .or_else(|| {
-                    let sys = AXUIElement::system_wide();
+                    let sys = system_wide_element();
                     ax_element_attribute(&sys, kAXFocusedUIElementAttribute)
                         .ok()
                         .filter(|el| {
@@ -530,11 +630,7 @@ impl OsBroker for MacBroker {
                 .as_ref()
                 .and_then(accessibility_text::enclosing_supported_text_element)
         }) else {
-            self.window_movement = None;
-            self.has_active_field = false;
-            self.active_field_rect = None;
-            self.detected_tone = None;
-            self.reset_accessibility_activation();
+            self.clear_target_state(false);
             return Some(Vec::new());
         };
         let pid = target.pid;
@@ -542,40 +638,31 @@ impl OsBroker for MacBroker {
         let bundle_identifier = match bundle_identifier_for_pid(pid) {
             Ok(Some(bundle_identifier)) => bundle_identifier,
             Ok(None) => {
-                self.window_movement = None;
-                self.has_active_field = false;
-                self.active_field_rect = None;
-                self.detected_tone = None;
-                self.reset_accessibility_activation();
+                self.clear_target_state(false);
                 return None;
             }
             Err(error) => {
-                self.window_movement = None;
-                self.has_active_field = false;
-                self.active_field_rect = None;
-                self.detected_tone = None;
-                self.reset_accessibility_activation();
+                self.clear_target_state(false);
                 eprintln!("Unable to identify focused app bundle: {error}");
                 return None;
             }
         };
 
         if !(self.is_integration_enabled)(&bundle_identifier) {
-            self.window_movement = None;
-            self.has_active_field = false;
-            self.active_field_rect = None;
-            self.detected_tone = None;
-            self.reset_accessibility_activation();
+            self.clear_target_state(false);
             return Some(Vec::new());
         }
+
+        // One window-server snapshot serves every window query in this poll.
+        let windows = window_stability::on_screen_windows();
 
         // Hide highlights while window is moving to avoid "sliding" behavior.
-        if self.window_is_moving(pid) {
+        if self.window_is_moving(&windows, pid) {
             self.has_active_field = false;
             return Some(Vec::new());
         }
 
-        let el = AXUIElement::application(pid);
+        let el = application_element(pid);
         if !self.ensure_accessibility_activation(pid, &bundle_identifier, &el) {
             self.has_active_field = false;
             return None;
@@ -589,13 +676,7 @@ impl OsBroker for MacBroker {
         };
 
         let walker = TreeWalker::new();
-        let cached = match crate::llm_cache::read() {
-            Ok(cached) => cached,
-            Err(error) => {
-                eprintln!("LLM cache read failed: {error}");
-                None
-            }
-        };
+        let cached = self.cached_llm_analysis();
         let collector = RectCollector::new(lint_text, cached, pid);
 
         walker.walk(&focused, &collector);
@@ -603,14 +684,14 @@ impl OsBroker for MacBroker {
         self.has_active_field = collector.found_text_element();
         self.active_field_text = collector.source_text();
         let field_candidate = collector.field_rect();
-        let win_frame = window_stability::window_frame_for_pid(pid, field_candidate);
+        let win_frame = window_stability::window_frame_for_pid(&windows, pid, field_candidate);
         let raw_field = match (field_candidate, win_frame) {
             (Some(fr), Some(wf)) => fr.intersection(wf).or(Some(fr)),
             (Some(fr), None) => Some(fr),
             (None, Some(wf)) => Some(wf),
             (None, None) => None,
         };
-        let occluders = window_stability::occluding_window_rects_above_pid(pid);
+        let occluders = window_stability::occluding_window_rects_above_pid(&windows, pid);
         self.occluding_rects = occluders.clone();
         self.active_field_rect =
             raw_field.and_then(|fr| clip_field_against_occluders(fr, &occluders));
@@ -718,7 +799,7 @@ impl OsBroker for MacBroker {
         if Self::is_elocutio(&bundle_id) {
             return Ok(None);
         }
-        let app = AXUIElement::application(pid);
+        let app = application_element(pid);
         let element = ax_element_attribute(&app, kAXFocusedUIElementAttribute)
             .map_err(|error| error.to_string())?;
 
@@ -755,9 +836,11 @@ impl OsBroker for MacBroker {
             return Err("Select some text in the target app first.".into());
         }
 
-        // Remember the field value before the paste so the read-back can prove
-        // that the replacement landed in the selected span, and nowhere else.
+        // Remember the field value and the selected range before the paste so
+        // the read-back can prove that the replacement landed in the selected
+        // span, and nowhere else.
         let before = ax_string_attribute(&focused, "AXValue").ok();
+        let selected_range = accessibility_text::get_selected_utf16_range(&focused);
 
         let clipboard_snapshot = crate::pasteboard::write_transient(replacement)?;
 
@@ -769,7 +852,7 @@ impl OsBroker for MacBroker {
         let after = ax_string_attribute(&focused, "AXValue").ok();
         let verified = match (before, after) {
             (Some(before), Some(after)) => {
-                verify_paste_result(&before, &selected, replacement, &after)
+                verify_paste_result(&before, &selected, selected_range, replacement, &after)
             }
             // Without a pre-paste value we cannot prove the edit, so treat the
             // paste as unverified rather than guessing.
@@ -820,11 +903,6 @@ impl OsBroker for MacBroker {
 
     fn integration_display_name(&self, bundle_id: &str) -> String {
         app_catalog::integration_display_name(bundle_id)
-    }
-
-    fn installed_application_bundle_ids(&self) -> Result<Vec<String>, String> {
-        let ids = app_catalog::installed_application_bundle_ids()?;
-        Ok(ids.iter().cloned().collect())
     }
 
     fn application_icon_png(&self, bundle_id: &str) -> Result<Vec<u8>, String> {
@@ -896,7 +974,11 @@ impl OsBroker for MacBroker {
     }
 }
 
-#[cached(max_size = 1_000)]
+/// Bundle identifier of a running process.
+///
+/// Cached briefly because it is asked for on every poll. The TTL keeps a reused pid from being
+/// reported as the app that used to own it; errors are never cached.
+#[cached(max_size = 256, ttl = 30)]
 fn bundle_identifier_for_pid(pid: pid_t) -> Result<Option<String>, Box<dyn StdError>> {
     let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) else {
         return Ok(None);
@@ -967,33 +1049,91 @@ fn clip_field_against_occluders(
 /// A paste that duplicated text, landed in the wrong place, or left residue
 /// behind fails this check, which is what a read-back verification should do.
 ///
-/// The selection may appear more than once in the field. Every occurrence is
-/// replaced in the expectation, because a host app that keeps the selection
-/// range may paste over all of them. The expectation is then compared to the
-/// observed value.
-fn verify_paste_result(before: &str, selected: &str, replacement: &str, after: &str) -> bool {
+/// A paste replaces exactly one span, so the expectation replaces exactly one:
+/// the span at the selected range the field reported before the paste
+/// (`selected_range`, in UTF-16 units). Without a usable range the selection
+/// must occur exactly once in the field; an ambiguous selection cannot be
+/// verified.
+fn verify_paste_result(
+    before: &str,
+    selected: &str,
+    selected_range: Option<(isize, isize)>,
+    replacement: &str,
+    after: &str,
+) -> bool {
     if selected.is_empty() {
         return false;
     }
 
-    let occurrences = before.matches(selected).count();
-    if occurrences == 0 {
+    let Some((start, end)) = selection_byte_range(before, selected, selected_range) else {
         return false;
+    };
+
+    let mut expected = String::with_capacity(before.len() - (end - start) + replacement.len());
+    expected.push_str(&before[..start]);
+    expected.push_str(replacement);
+    expected.push_str(&before[end..]);
+    expected == after
+}
+
+/// Byte range of the selection in `before`: the reported UTF-16 range when it
+/// really holds the selected text, otherwise the selection's only occurrence.
+fn selection_byte_range(
+    before: &str,
+    selected: &str,
+    selected_range: Option<(isize, isize)>,
+) -> Option<(usize, usize)> {
+    if let Some((location, length)) = selected_range
+        && let (Ok(location), Ok(length)) = (usize::try_from(location), usize::try_from(length))
+        && let Some(start) = utf16_to_byte_offset(before, location)
+        && let Some(end) = utf16_to_byte_offset(before, location + length)
+        && before.get(start..end) == Some(selected)
+    {
+        return Some((start, end));
     }
 
-    let expected = before.replace(selected, replacement);
-    expected == after
+    let mut occurrences = before.match_indices(selected);
+    let (start, _) = occurrences.next()?;
+    if occurrences.next().is_some() {
+        return None;
+    }
+    Some((start, start + selected.len()))
+}
+
+/// Converts a UTF-16 offset (what Accessibility ranges use) into a byte offset
+/// in `text`. Returns `None` past the end or inside a surrogate pair.
+fn utf16_to_byte_offset(text: &str, utf16_offset: usize) -> Option<usize> {
+    let mut units = 0usize;
+    for (byte, ch) in text.char_indices() {
+        if units == utf16_offset {
+            return Some(byte);
+        }
+        units += ch.len_utf16();
+        if units > utf16_offset {
+            return None;
+        }
+    }
+    (units == utf16_offset).then_some(text.len())
 }
 
 #[cfg(test)]
 mod paste_verification_tests {
-    use super::verify_paste_result;
+    use super::{utf16_to_byte_offset, verify_paste_result};
 
     #[test]
     fn accepts_a_clean_replacement() {
         assert!(verify_paste_result(
             "hello tehre world",
             "tehre",
+            Some((6, 5)),
+            "there",
+            "hello there world"
+        ));
+        // Without a range, a unique selection is still verifiable.
+        assert!(verify_paste_result(
+            "hello tehre world",
+            "tehre",
+            None,
             "there",
             "hello there world"
         ));
@@ -1006,6 +1146,7 @@ mod paste_verification_tests {
         assert!(!verify_paste_result(
             "hello tehre world",
             "tehre",
+            Some((6, 5)),
             "there",
             "hello there tehre world"
         ));
@@ -1016,6 +1157,7 @@ mod paste_verification_tests {
         assert!(!verify_paste_result(
             "hello tehre world",
             "tehre",
+            Some((6, 5)),
             "there",
             "there hello tehre world"
         ));
@@ -1026,6 +1168,7 @@ mod paste_verification_tests {
         assert!(!verify_paste_result(
             "hello tehre world",
             "tehre",
+            Some((6, 5)),
             "there",
             "hello tehre world"
         ));
@@ -1036,6 +1179,7 @@ mod paste_verification_tests {
         assert!(!verify_paste_result(
             "hello world",
             "tehre",
+            None,
             "there",
             "hello there world"
         ));
@@ -1046,20 +1190,66 @@ mod paste_verification_tests {
         assert!(!verify_paste_result(
             "hello world",
             "",
+            Some((0, 0)),
             "there",
             "hello world"
         ));
     }
 
     #[test]
-    fn handles_every_occurrence_of_the_selection() {
-        // Some hosts keep a range that matches more than one place; the paste
-        // then replaces all of them.
+    fn replaces_only_the_selected_occurrence() {
+        // A paste replaces one span. The second "tehre" was selected.
         assert!(verify_paste_result(
             "tehre and tehre",
             "tehre",
+            Some((10, 5)),
+            "there",
+            "tehre and there"
+        ));
+        // Replacing every occurrence is not what a single paste does.
+        assert!(!verify_paste_result(
+            "tehre and tehre",
+            "tehre",
+            Some((10, 5)),
             "there",
             "there and there"
+        ));
+    }
+
+    #[test]
+    fn an_ambiguous_selection_without_a_range_is_unverifiable() {
+        assert!(!verify_paste_result(
+            "tehre and tehre",
+            "tehre",
+            None,
+            "there",
+            "tehre and there"
+        ));
+    }
+
+    #[test]
+    fn a_stale_range_falls_back_to_the_unique_occurrence() {
+        assert!(verify_paste_result(
+            "hello tehre world",
+            "tehre",
+            Some((0, 5)),
+            "there",
+            "hello there world"
+        ));
+    }
+
+    #[test]
+    fn ranges_are_utf16() {
+        // The emoji is two UTF-16 units and four bytes.
+        let before = "😀 tehre";
+        assert_eq!(utf16_to_byte_offset(before, 3), Some(5));
+        assert_eq!(utf16_to_byte_offset(before, 1), None);
+        assert!(verify_paste_result(
+            before,
+            "tehre",
+            Some((3, 5)),
+            "there",
+            "😀 there"
         ));
     }
 
@@ -1068,6 +1258,7 @@ mod paste_verification_tests {
         assert!(verify_paste_result(
             "hello tehre world",
             "tehre",
+            Some((6, 5)),
             "",
             "hello  world"
         ));

@@ -22,10 +22,13 @@ use objc2_foundation::{NSArray, NSData, NSInteger, NSString};
 /// The bytes of one pasteboard type.
 type Bytes = Vec<u8>;
 
-/// One pasteboard type and its raw bytes.
+/// One pasteboard item: each of its types with that type's own bytes.
+///
+/// A rich-text copy carries different bytes per type (RTF, HTML, plain
+/// text), so every type is captured separately; writing one type's bytes
+/// under all of them would paste raw RTF markup into a plain-text field.
 struct SnapshotItem {
-    data: Bytes,
-    pasteboard_type: String,
+    representations: Vec<(String, Bytes)>,
 }
 
 /// A restorable snapshot of the general pasteboard.
@@ -108,12 +111,8 @@ pub fn restore(snapshot: PasteboardSnapshot) {
         .iter()
         .map(|item| {
             let pasteboard_item = NSPasteboardItem::new();
-            let data = NSData::with_bytes(&item.data);
-            for pasteboard_type in item
-                .pasteboard_type
-                .split('\u{1}') // a single item can declare several types
-                .filter(|value| !value.is_empty())
-            {
+            for (pasteboard_type, bytes) in &item.representations {
+                let data = NSData::with_bytes(bytes);
                 let type_string = NSString::from_str(pasteboard_type);
                 pasteboard_item.setData_forType(&data, &type_string);
             }
@@ -142,39 +141,24 @@ fn snapshot_items(pasteboard: &NSPasteboard) -> (Vec<SnapshotItem>, Vec<String>)
             continue;
         }
 
-        // The first readable type carries the bytes; the full type list is
-        // kept so the item is restored with the same shape it had.
-        let mut captured: Option<SnapshotItem> = None;
-        let mut type_names: Vec<String> = Vec::new();
-
+        let mut representations = Vec::new();
         for pasteboard_type in types.iter() {
             let name = pasteboard_type.to_string();
-            type_names.push(name.clone());
-            if captured.is_some() {
-                continue;
-            }
-            if let Some(data) = pasteboard_item.dataForType(&pasteboard_type) {
-                captured = Some(SnapshotItem {
-                    data: data.to_vec(),
-                    pasteboard_type: name,
-                });
-            }
-        }
-
-        match captured {
-            Some(mut item) => {
-                item.pasteboard_type = type_names.join("\u{1}");
-                items.push(item);
-            }
-            None => {
-                // The item declared types but none of them could be read.
-                // Record them so the caller can report a lossy restore.
-                for name in type_names {
+            match pasteboard_item.dataForType(&pasteboard_type) {
+                Some(data) => representations.push((name, data.to_vec())),
+                None => {
+                    // A type whose bytes cannot be read (a file promise, a
+                    // lazily provided type) is reported so the caller can
+                    // surface a lossy restore instead of hiding it.
                     if !unsupported.contains(&name) {
                         unsupported.push(name);
                     }
                 }
             }
+        }
+
+        if !representations.is_empty() {
+            items.push(SnapshotItem { representations });
         }
     }
 

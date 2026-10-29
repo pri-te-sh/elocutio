@@ -121,25 +121,42 @@ Do not announce a platform until its app matrix and store review are complete.
 
 ## Releases
 
-The signed/notarized release pipeline is scheduled for M5. When it lands:
+Releases are built and published by `.github/workflows/release.yml`:
 
 1. Update `CHANGELOG.md`.
-2. Bump the workspace version and the Tauri app version.
-3. Tag `vX.Y.Z` and push the tag.
-4. Build a universal macOS app, sign with Developer ID, notarize, staple.
-5. Publish the DMG, checksums, and Tauri updater artifacts.
-6. Update the Homebrew cask.
-7. Announce in Discussions and on the website.
+2. Bump the version in `apps/macos/src-tauri/tauri.conf.json` (and keep the
+   workspace and `package.json` versions in step).
+3. Tag `vX.Y.Z` on `main` and push the tag. The workflow refuses a tag that
+   does not match the app version.
+4. The workflow builds a universal app, packages `Elocutio-macOS.dmg` plus a
+   SHA-256 file with `scripts/package-macos.sh`, and creates the GitHub
+   Release with install notes. Re-run it for an existing tag from Actions →
+   Release → Run workflow.
+5. The website and README link to
+   `releases/latest/download/Elocutio-macOS.dmg`, so they pick up the new
+   release without an edit. Keep the asset name, and do not mark releases as
+   pre-releases: GitHub's "latest" link skips them.
+6. Announce in Discussions.
 
-Do not publish an unsigned build as a release. Local dev builds are fine for
-testing but will re-prompt for TCC permissions and cannot be verified by users.
+**Signing.** With these repository secrets set, Tauri signs the app with
+Developer ID and notarizes it, and users open it without a warning:
+`APPLE_CERTIFICATE` (base64 of the Developer ID Application `.p12`),
+`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_PASSWORD` (an app-specific password), and `APPLE_TEAM_ID`. Without them
+the app is ad-hoc signed: macOS shows "cannot verify" on first launch, users
+approve it once in System Settings → Privacy & Security → Open Anyway, and the
+Accessibility grant resets with every update.
+
+Pre-alpha releases may ship ad-hoc signed, with those instructions in the
+release notes. v1.0 must be Developer ID signed and notarized, and adds signed
+Tauri updater artifacts and a Homebrew cask.
 
 ## Privacy and security invariants
 
 These must remain true for every release:
 
 - API keys are in the macOS Data Protection Keychain, device-only and non-synchronizable.
-- The highlighter subprocess never receives keys.
+- API keys are read only by the provider layer and never logged.
 - The bridge binds to `127.0.0.1` with a pairing token and Origin allowlist.
 - The app contacts only configured provider hosts and the update endpoint.
 - No telemetry by default.

@@ -308,7 +308,7 @@ async fn set_provider_kind(
         .map_err(|error| error.to_string())?;
     // A legacy key left unmigrated while a local endpoint was selected finds
     // its slot once a remote endpoint is configured.
-    let _ = openrouter::migrate_legacy_key(&provider_from(&config));
+    openrouter::spawn_legacy_key_migration(provider_from(&config));
     provider_settings_from(&config)
 }
 
@@ -334,7 +334,7 @@ async fn set_provider_base_url(
         .save_to_system()
         .await
         .map_err(|error| error.to_string())?;
-    let _ = openrouter::migrate_legacy_key(&provider_from(&config));
+    openrouter::spawn_legacy_key_migration(provider_from(&config));
     Ok(base_url)
 }
 

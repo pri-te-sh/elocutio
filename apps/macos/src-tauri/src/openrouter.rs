@@ -579,6 +579,43 @@ fn base_url_for_key_prefix(key: &str) -> Option<&'static str> {
     }
 }
 
+/// Runs [`migrate_legacy_keys`] on its own thread.
+///
+/// Writing to a Keychain item an older build created makes macOS ask the user
+/// for access. That dialog must never hold up app startup or a settings
+/// command, so the migration runs in the background and simply finishes once
+/// the user answers.
+pub fn spawn_legacy_key_migration(configured: ProviderConfig) {
+    std::thread::spawn(move || {
+        if let Err(error) = migrate_legacy_keys(&configured) {
+            tracing::warn!("Could not migrate the saved API key into the Keychain: {error}");
+        }
+    });
+}
+
+/// Moves the keys older builds saved, for every provider kind, into Keychain
+/// slots and deletes the legacy copies.
+///
+/// Both kinds are migrated, not only the configured one: a legacy copy left
+/// for the other kind would keep sitting on disk in weakly encrypted SQLite or
+/// plaintext `credentials.json`.
+pub fn migrate_legacy_keys(configured: &ProviderConfig) -> Result<(), String> {
+    for kind in [ProviderKind::OpenRouter, ProviderKind::OpenAiCompatible] {
+        let provider = if configured.kind == kind {
+            configured.clone()
+        } else {
+            // OpenRouter has one fixed endpoint; an OpenAI-compatible key with no
+            // configured endpoint is placed by its prefix, or left for later.
+            ProviderConfig {
+                kind,
+                base_url: String::new(),
+            }
+        };
+        migrate_legacy_key(&provider)?;
+    }
+    Ok(())
+}
+
 /// Moves a key an older build saved into a Keychain slot, then deletes every
 /// legacy copy.
 ///
@@ -586,10 +623,14 @@ fn base_url_for_key_prefix(key: &str) -> Option<&'static str> {
 /// plaintext), shared by every OpenAI-compatible preset, so the key's owner is
 /// a guess. A recognizable prefix wins (a Groq key goes to `api.groq.com`
 /// even while Ollama is selected); otherwise the configured endpoint is used,
-/// unless it is a local port, which never needs a provider key. When neither
-/// applies the legacy copy is left alone and migrated on a later call, once a
-/// remote endpoint is configured.
-pub fn migrate_legacy_key(provider: &ProviderConfig) -> Result<(), String> {
+/// unless there is none or it is a local port, which never needs a provider
+/// key. When neither applies the legacy copy is left alone and migrated on a
+/// later call, once a remote endpoint is configured.
+///
+/// The legacy copy is the key the app was actually using, so it replaces any
+/// Keychain item already in the slot (one left by an even older build may be
+/// stale or revoked).
+fn migrate_legacy_key(provider: &ProviderConfig) -> Result<(), String> {
     let Some(legacy) = find_legacy_key(provider.kind) else {
         return Ok(());
     };
@@ -600,15 +641,13 @@ pub fn migrate_legacy_key(provider: &ProviderConfig) -> Result<(), String> {
                 kind: provider.kind,
                 base_url: base_url.to_string(),
             },
-            None if is_loopback_url(&provider.base_url) => return Ok(()),
+            None if provider.base_url.trim().is_empty() || is_loopback_url(&provider.base_url) => {
+                return Ok(());
+            }
             None => provider.clone(),
         },
     };
-    if load_key_optional(&target)?.is_none() {
-        save_key_for(&target, &legacy)?;
-    } else {
-        purge_legacy_keys(provider.kind);
-    }
+    save_key_for(&target, &legacy)?;
     Ok(())
 }
 

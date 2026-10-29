@@ -354,14 +354,10 @@ impl Config {
         }
         let _ = crate::personalization_db::sync_and_status(&config);
         crate::openrouter::set_active_cost_cap(config.cost_cap_usd);
-        if let Err(error) =
-            crate::openrouter::migrate_legacy_key(&crate::openrouter::ProviderConfig {
-                kind: config.provider_kind,
-                base_url: config.provider_base_url.clone(),
-            })
-        {
-            tracing::warn!("Could not migrate the saved API key into the Keychain: {error}");
-        }
+        crate::openrouter::spawn_legacy_key_migration(crate::openrouter::ProviderConfig {
+            kind: config.provider_kind,
+            base_url: config.provider_base_url.clone(),
+        });
 
         Ok(config)
     }

@@ -118,7 +118,7 @@ jobs:
 
       - name: Attach the DMG to this run (dry run)
         if: env.DRY_RUN == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Elocutio-macOS
           path: |

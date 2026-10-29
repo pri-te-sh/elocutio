@@ -163,8 +163,45 @@ to follow [Semantic Versioning](https://semver.org/).
 - Suggestion click no longer freezes after bounding AX tree walks and skipping
   unnecessary native-app activation.
 - Mail no longer spins the highlighter in an endless activation retry.
+- Fuzzy quote matching no longer lands an edit one character off (which
+  corrupted text such as "wrld," → "wworld,"), no longer reports real typos as
+  ambiguous, and runs in O(n·m) instead of O(n·m²).
+- One off-schema suggestion no longer discards every suggestion in a model
+  response; trailing prose after the JSON is tolerated; suggestions in
+  different paragraphs no longer knock each other out as "overlapping".
+- Streamed rewrites keep their token usage, survive invalid UTF-8, and are no
+  longer cut off by a 45-second total timeout (an idle timeout applies instead).
+- Curly apostrophes (`don’t`) count as contractions in tone and voice analysis;
+  the whole Claude 5 family omits `temperature`.
+- Restoring the clipboard after a rewrite keeps each type's own bytes, so rich
+  text no longer pastes as raw RTF.
+- SQLite writes wait out a busy database instead of being silently dropped;
+  the schema is created once per launch; `config.json` is written atomically.
+- The Studio's local check runs off the async runtime and recovers from a
+  linter panic; stale check results and stale lint offsets can no longer
+  splice text into the wrong place; overlay card shortcuts are not replayed.
+- Settings that fail to load are no longer overwritten with defaults on Save.
 
 ### Security
+
+- API keys move from the SQLite `encrypted_credentials` table (whose AES key was
+  derived from public values) into the macOS Keychain, as ADR-013 specifies.
+  Legacy rows and plaintext `credentials.json` entries are migrated once and
+  deleted.
+- OpenAI-compatible keys are scoped to the endpoint host, so switching presets
+  no longer sends one provider's key to another (or to a local port).
+- The Apple Foundation Models bridge refuses browser (`Origin`) and rebound
+  (`Host`) requests, caps request size and read time, runs one helper at a
+  time with a timeout, and compiles its helper on first use, atomically.
+- The cost cap is enforced on every outbound request (live analysis and the
+  overlay rewrite skipped it), using the full prompt size.
+- Live analysis only runs when the user turns it on, not whenever a key exists.
+- Timed-out chat requests are no longer retried (they could bill twice);
+  `Retry-After` is honoured; the analysis fallback only re-sends after a
+  rejected response format.
+- The webview has a strict Content Security Policy; remote base URLs must use
+  https.
+- "Clear voice profile" also deletes the learned edits stored in SQLite.
 
 - Documented the key-handling, voice-sample, and local-bridge threat models.
 - OpenRouter keys are stored in the macOS Keychain and never written to config

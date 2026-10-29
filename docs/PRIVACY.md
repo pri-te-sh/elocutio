@@ -16,7 +16,7 @@ row names a file you can find in
 | --- | --- | --- | --- |
 | Text being checked | Your chosen provider (or nowhere in local-only mode / Apple Foundation Models / Ollama Local) | When you trigger analysis or opt into Analyze as I write | Per-app mode, block list, local-only toggle |
 | Selected text / context | Your chosen provider | When you use Rewrite Selection | Tone preset, voice toggle, local-only mode |
-| API keys | macOS Keychain (`app.elocutio.provider.*`) + AES-256-CBC encrypted `encrypted_credentials` table in `elocutio.sqlite3` | On entry | Delete/replace in Settings |
+| API keys | macOS Keychain (`app.elocutio.provider.*`), one item per provider host | On entry | Delete/replace in Settings |
 | Usage & token ledger (tokens, cost, model, latency) | `usage.jsonl` + `ai_token_usage` table in `elocutio.sqlite3` (**no user text stored**) | After each request | View in Privacy & AI or Analytics; reset anytime |
 | Personal dictionary & rule overrides | `user_dictionary.txt` + `dictionary_words` & `editorial_rules` tables in `elocutio.sqlite3` | When you add words or toggle rules | Search, edit, bulk-import, or delete in Lexicon |
 | Suggestion & edit events (rule, category, snippet) | `suggestion-events.jsonl` + `edit_events` table in `elocutio.sqlite3` | When you act on a suggestion | Clear history in Settings |
@@ -30,7 +30,7 @@ row names a file you can find in
 **Not collected:** analytics, device identifiers, advertising IDs, location,
 contacts, calendar, screen contents, or keystrokes.
 
-**Local SQLite database (`elocutio.sqlite3`):** All personal dictionary entries, rule overrides, learned Voice DNA traits, edit telemetry (`edit_events`), per-request token & USD cost logs (`ai_token_usage`), and AES-256-CBC encrypted API credentials (`encrypted_credentials`) are stored locally in `~/Library/Application Support/elocutio/elocutio.sqlite3`. API keys encrypted in SQLite use a per-installation random salt (`elocutio_keystore.salt`) and 10,000-iteration PBKDF2-HMAC-SHA256 key derivation alongside macOS Keychain storage.
+**Local SQLite database (`elocutio.sqlite3`):** All personal dictionary entries, rule overrides, learned Voice DNA traits, edit telemetry (`edit_events`), and per-request token & USD cost logs (`ai_token_usage`) are stored locally in `~/Library/Application Support/elocutio/elocutio.sqlite3`. API keys are not stored there: older builds kept them in an `encrypted_credentials` table, and those rows are moved into the Keychain and deleted on first launch.
 
 ---
 
@@ -86,7 +86,7 @@ Elocutio never reads password fields, secure input, or terminals. It disables it
 
 ## Keys
 
-- Stored in the macOS Keychain under `app.elocutio.provider.openrouter` (or `app.elocutio.provider.openai_compatible`), account `api_key`.
+- Stored in the macOS Keychain under `app.elocutio.provider.openrouter`, account `api_key`, or `app.elocutio.provider.openai_compatible`, account `api_key@<host>` (for example `api_key@api.groq.com`). OpenAI-compatible keys are scoped to the endpoint host, so switching presets never sends one provider's key to another.
 - Never written to logs, crash reports, diagnostics, or the config file.
 - Passed only to the provider you configured, in the `Authorization` header over HTTPS.
 - The highlighter subprocess and the browser extension never receive keys.

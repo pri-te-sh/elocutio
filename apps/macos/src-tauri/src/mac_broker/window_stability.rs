@@ -45,25 +45,65 @@ fn nearly_equal(left: f64, right: f64) -> bool {
     (left - right).abs() <= WINDOW_FRAME_TOLERANCE
 }
 
-pub fn frontmost_window_frame_for_pid(pid: pid_t) -> Option<Rect> {
-    window_frame_for_pid(pid, None)
+/// One on-screen window, parsed from `CGWindowListCopyWindowInfo`.
+///
+/// The window list is expensive to copy, so a poll takes it once with [`on_screen_windows`] and
+/// hands the same slice to every query below.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OnScreenWindow {
+    pub pid: pid_t,
+    pub layer: i64,
+    pub alpha: f64,
+    pub bounds: Rect,
 }
 
-pub fn window_frame_for_pid(pid: pid_t, matching_rect: Option<Rect>) -> Option<Rect> {
-    let window_infos = core_graphics::window::copy_window_info(
+impl OnScreenWindow {
+    /// A visible, normal-level window big enough to be a real document window.
+    fn is_standard_visible(&self) -> bool {
+        self.layer == 0
+            && self.alpha > 0.05
+            && self.bounds.width >= 80.0
+            && self.bounds.height >= 50.0
+    }
+}
+
+/// Every on-screen window, front to back. Entries missing a field the queries need are skipped.
+pub fn on_screen_windows() -> Vec<OnScreenWindow> {
+    let Some(window_infos) = core_graphics::window::copy_window_info(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID,
-    )?;
+    ) else {
+        return Vec::new();
+    };
     let window_infos =
         unsafe { CFArray::<WindowInfo>::wrap_under_get_rule(window_infos.as_concrete_TypeRef()) };
 
-    let candidates: Vec<Rect> = window_infos
+    window_infos
         .iter()
-        .filter(|window_info| window_pid(window_info) == Some(pid))
-        .filter(|window_info| window_layer(window_info) == Some(0))
-        .filter(|window_info| window_alpha(window_info).is_some_and(|alpha| alpha > 0.05))
-        .filter_map(|window_info| window_bounds(&window_info))
-        .filter(|bounds| bounds.width >= 80.0 && bounds.height >= 50.0)
+        .filter_map(|window_info| {
+            Some(OnScreenWindow {
+                pid: window_pid(&window_info)?,
+                layer: window_layer(&window_info)?,
+                alpha: window_alpha(&window_info)?,
+                bounds: window_bounds(&window_info)?,
+            })
+        })
+        .collect()
+}
+
+pub fn frontmost_window_frame_for_pid(windows: &[OnScreenWindow], pid: pid_t) -> Option<Rect> {
+    window_frame_for_pid(windows, pid, None)
+}
+
+pub fn window_frame_for_pid(
+    windows: &[OnScreenWindow],
+    pid: pid_t,
+    matching_rect: Option<Rect>,
+) -> Option<Rect> {
+    let candidates: Vec<Rect> = windows
+        .iter()
+        .filter(|window| window.pid == pid && window.is_standard_visible())
+        .map(|window| window.bounds)
         .collect();
 
     if let Some(target) = matching_rect
@@ -82,41 +122,20 @@ pub fn window_frame_for_pid(pid: pid_t, matching_rect: Option<Rect>) -> Option<R
 /// Collects screen-space rectangles of any on-screen windows that sit in front of
 /// `target_pid`'s frontmost window in Z-order (excluding the `elo-overlay` window at layer 25
 /// and the macOS menu bar).
-pub fn occluding_window_rects_above_pid(target_pid: pid_t) -> Vec<Rect> {
-    let Some(window_infos) = core_graphics::window::copy_window_info(
-        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
-        kCGNullWindowID,
-    ) else {
-        return Vec::new();
-    };
-    let window_infos =
-        unsafe { CFArray::<WindowInfo>::wrap_under_get_rule(window_infos.as_concrete_TypeRef()) };
-
+pub fn occluding_window_rects_above_pid(
+    windows: &[OnScreenWindow],
+    target_pid: pid_t,
+) -> Vec<Rect> {
     let mut occluders = Vec::new();
-    for window_info in window_infos.iter() {
-        // Only normal application windows (layer == 0) can occlude another normal window.
-        // Higher layers (Dock at layer 20, WindowServer at layer 24, elo-overlay at layer 25)
-        // are system/overlay surfaces and must never be treated as window occluders.
-        if window_layer(&window_info) != Some(0) {
-            continue;
-        }
-        if !window_alpha(&window_info).is_some_and(|alpha| alpha > 0.05) {
-            continue;
-        }
-        let Some(bounds) = window_bounds(&window_info) else {
-            continue;
-        };
-        if bounds.width < 80.0 || bounds.height < 50.0 {
-            continue;
-        }
-        let Some(pid) = window_pid(&window_info) else {
-            continue;
-        };
+    // Only normal application windows (layer == 0) can occlude another normal window.
+    // Higher layers (Dock at layer 20, WindowServer at layer 24, elo-overlay at layer 25)
+    // are system/overlay surfaces and must never be treated as window occluders.
+    for window in windows.iter().filter(|window| window.is_standard_visible()) {
         // Stop once we reach the target application's frontmost standard window
-        if pid == target_pid {
+        if window.pid == target_pid {
             break;
         }
-        occluders.push(bounds);
+        occluders.push(window.bounds);
     }
 
     occluders
@@ -155,4 +174,45 @@ fn window_bounds(window_info: &WindowInfo) -> Option<Rect> {
             CFString::from_static_string("Height").as_concrete_TypeRef(),
         )?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn window(pid: pid_t, layer: i64, x: f64, width: f64) -> OnScreenWindow {
+        OnScreenWindow {
+            pid,
+            layer,
+            alpha: 1.0,
+            bounds: Rect::new(x, 0.0, width, 400.0),
+        }
+    }
+
+    #[test]
+    fn occluders_stop_at_the_target_window() {
+        let windows = [
+            window(1, 25, 0.0, 2000.0), // the overlay itself, never an occluder
+            window(2, 0, 10.0, 300.0),
+            window(3, 0, 20.0, 300.0),
+            window(4, 0, 30.0, 300.0),
+        ];
+        let occluders = occluding_window_rects_above_pid(&windows, 3);
+        assert_eq!(occluders, vec![Rect::new(10.0, 0.0, 300.0, 400.0)]);
+    }
+
+    #[test]
+    fn the_frame_prefers_the_window_holding_the_field() {
+        let windows = [window(7, 0, 0.0, 300.0), window(7, 0, 500.0, 300.0)];
+        let field = Rect::new(600.0, 10.0, 50.0, 20.0);
+        assert_eq!(
+            window_frame_for_pid(&windows, 7, Some(field)),
+            Some(Rect::new(500.0, 0.0, 300.0, 400.0))
+        );
+        assert_eq!(
+            frontmost_window_frame_for_pid(&windows, 7),
+            Some(Rect::new(0.0, 0.0, 300.0, 400.0))
+        );
+        assert_eq!(frontmost_window_frame_for_pid(&windows, 8), None);
+    }
 }

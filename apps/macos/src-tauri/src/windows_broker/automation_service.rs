@@ -1,7 +1,5 @@
 use std::iter::once;
-use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel};
-use std::thread::sleep;
-use std::time::Duration;
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 
 use crate::rect::Rect;
 use crate::windows_broker::get_focused_monitor_scale;
@@ -78,26 +76,25 @@ impl AutomationService {
         let (result_sender, result_receiver) = sync_channel(1);
 
         std::thread::spawn(move || {
-            let automation = UIAutomation::new().unwrap();
-
-            loop {
-                // Stop the thread if the other side of the channel has been closed (or dropped).
-                let job = match job_receiver.try_recv() {
-                    Err(TryRecvError::Disconnected) => break,
-                    Err(TryRecvError::Empty) => None,
-                    Ok(job) => Some(job),
-                };
-
-                if let Some((job, arguments)) = job {
-                    let result = job(&automation, arguments);
-
-                    // Stop the thread if the other side of the channel has been closed (or dropped).
-                    if let Err(TrySendError::Disconnected(_)) = result_sender.try_send(result) {
-                        break;
-                    }
+            // Without UI Automation the worker cannot do anything. Exiting drops its channel
+            // ends, so every later job returns `None` instead of panicking.
+            let automation = match UIAutomation::new() {
+                Ok(automation) => automation,
+                Err(error) => {
+                    eprintln!("Could not start UI Automation: {error}");
+                    return;
                 }
+            };
 
-                sleep(Duration::from_millis(16));
+            // Block until a job arrives instead of waking every 16 ms to look for one. `recv`
+            // fails once the service drops its sender, which stops the thread.
+            while let Ok((job, arguments)) = job_receiver.recv() {
+                let result = job(&automation, arguments);
+
+                // Stop the thread if the other side of the channel has been closed (or dropped).
+                if let Err(TrySendError::Disconnected(_)) = result_sender.try_send(result) {
+                    break;
+                }
             }
         });
 
@@ -116,8 +113,9 @@ impl AutomationService {
     /// Attempts to run a worker job on the worker thread. Returns `None` if the worker thread does not exist.
     fn run_worker_job(&self, job: WorkerJob, arguments: Vec<JobArgument>) -> Option<JobResult> {
         let worker_data = self.worker_data.as_ref()?;
-        worker_data.sender.send((job, arguments)).unwrap();
-        Some(worker_data.receiver.recv().unwrap())
+        // Both ends fail only when the worker thread has exited.
+        worker_data.sender.send((job, arguments)).ok()?;
+        worker_data.receiver.recv().ok()
     }
 
     /// Grab text from the worker.

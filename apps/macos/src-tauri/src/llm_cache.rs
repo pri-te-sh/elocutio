@@ -34,7 +34,7 @@ pub struct CachedAnalysis {
     pub suggestions: Vec<CachedSuggestion>,
 }
 
-fn cache_path() -> Result<PathBuf, String> {
+pub fn cache_path() -> Result<PathBuf, String> {
     Config::folder_path()
         .map(|folder| folder.join("llm-cache.json"))
         .ok_or_else(|| "Could not find the application support directory.".to_string())
@@ -56,7 +56,11 @@ pub fn write(cache: &CachedAnalysis) -> Result<(), String> {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create the cache directory: {error}"))?;
     }
-    let temporary = path.with_extension("json.tmp");
+    // A unique temporary name per write, so two analyses finishing at once
+    // never write into (or rename away) each other's temporary file.
+    static WRITE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temporary = path.with_extension(format!("json.{}.{seq}.tmp", std::process::id()));
     let json = serde_json::to_vec(cache)
         .map_err(|error| format!("Could not serialize suggestions: {error}"))?;
     std::fs::write(&temporary, json)

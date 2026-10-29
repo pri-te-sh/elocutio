@@ -2,20 +2,22 @@
 //!
 //! Replaces the legacy child-process `winit`/`egui`/`wgpu` overlay with a transparent,
 //! non-activating, always-on-top Tauri `WebviewWindow` (`label = "elo-overlay"`) backed by
-//! a dedicated macOS Accessibility polling & cursor hit-testing thread.
+//! two supervised threads: one polls macOS Accessibility, the other hit-tests the cursor so the
+//! overlay's click-through state never waits on a slow target app.
 
 use std::collections::HashMap;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::{
-    Arc, Mutex as StdMutex, OnceLock,
-    atomic::{AtomicBool, Ordering},
-    mpsc::{self, Sender},
+    Arc, Mutex as StdMutex, MutexGuard, OnceLock, PoisonError,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc::{self, Receiver, RecvTimeoutError, Sender},
 };
 use std::thread;
 use std::time::{Duration, Instant};
 
 use harper_core::{
     Document,
-    linting::{LintKind, Suggestion},
+    linting::{Lint, LintKind, Suggestion},
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -95,7 +97,12 @@ pub struct EloOverlaySnapshot {
     pub score: u32,
     pub word_count: usize,
     pub source_text: String,
+    /// A card shortcut to run, present only on the one snapshot event that delivers it.
     pub card_command: Option<String>,
+    /// Incremented for every card command, so the frontend can run each command exactly once
+    /// even when it sees the same snapshot again through its poll.
+    #[serde(rename = "card_command_seq")]
+    pub card_command_seq: u64,
 }
 
 /// Studio navigation request when opening the main window from the `"elo"` overlay or tray.
@@ -154,19 +161,99 @@ impl Default for SharedOverlayState {
     }
 }
 
+/// What the overlay loop thread needs to be (re)started.
+struct LoopContext {
+    app: AppHandle,
+    config: Arc<AsyncMutex<Config>>,
+    suggestion_count: Arc<crate::config::SuggestionCount>,
+}
+
 static OVERLAY_STATE: OnceLock<StdMutex<SharedOverlayState>> = OnceLock::new();
 static OVERLAY_APP: OnceLock<AppHandle> = OnceLock::new();
+static LOOP_CONTEXT: OnceLock<LoopContext> = OnceLock::new();
 static OVERLAY_RUNNING: AtomicBool = AtomicBool::new(false);
 static IGNORING_CURSOR: AtomicBool = AtomicBool::new(true);
 static OVERLAY_INPUT_FOCUSED: AtomicBool = AtomicBool::new(false);
+/// Whether the cursor is over the widget, an underline, or the card; written by the hit-test
+/// thread and read by the polling loop to keep the snapshot stable while the user interacts.
+static CURSOR_OVER_INTERACTIVE: AtomicBool = AtomicBool::new(false);
+/// Milliseconds since [`process_epoch`] at the polling loop's last heartbeat; 0 means no live loop.
+static LOOP_HEARTBEAT_MS: AtomicU64 = AtomicU64::new(0);
+/// The generation of the polling loop that should be running. A loop from an older generation
+/// (one the watchdog gave up on as wedged) exits as soon as it wakes.
+static LOOP_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// How often the polling loop reads the focused field while one is active.
+const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(180);
+/// How often the polling loop looks for a field while paused or while no field is active.
+const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// How often the hit-test thread checks the cursor while there is something to hover.
+const HIT_TEST_INTERVAL: Duration = Duration::from_millis(25);
+/// How often the hit-test thread checks while there is nothing interactive on screen.
+const HIT_TEST_IDLE_INTERVAL: Duration = Duration::from_millis(250);
+/// A loop that has not heartbeat for this long is considered dead or wedged. Generous, because
+/// one poll may legitimately spend a few seconds in slow Accessibility calls.
+const LOOP_STALE_AFTER: Duration = Duration::from_secs(20);
+/// How many panics a supervised thread survives before it gives up and reports itself dead.
+const MAX_THREAD_RESTARTS: u32 = 5;
 
 fn shared_state() -> &'static StdMutex<SharedOverlayState> {
     OVERLAY_STATE.get_or_init(|| StdMutex::new(SharedOverlayState::default()))
 }
 
-/// Whether the in-process `"elo"` overlay service is currently enabled and running.
+/// Locks the shared overlay state, recovering it if a panicking thread poisoned the lock.
+///
+/// The state is plain data that every writer leaves consistent, and a poisoned lock must not
+/// take the whole overlay down with it.
+fn lock_state() -> MutexGuard<'static, SharedOverlayState> {
+    shared_state()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+fn process_epoch() -> Instant {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    *EPOCH.get_or_init(Instant::now)
+}
+
+/// Records that the polling loop is alive right now.
+fn heartbeat() {
+    let elapsed = u64::try_from(process_epoch().elapsed().as_millis()).unwrap_or(u64::MAX);
+    LOOP_HEARTBEAT_MS.store(elapsed.max(1), Ordering::Relaxed);
+}
+
+/// Whether a heartbeat at `heartbeat_ms` is recent enough at `now_ms` for the loop to count as alive.
+fn heartbeat_is_fresh(heartbeat_ms: u64, now_ms: u64) -> bool {
+    heartbeat_ms != 0
+        && u128::from(now_ms.saturating_sub(heartbeat_ms)) < LOOP_STALE_AFTER.as_millis()
+}
+
+/// Whether the in-process `"elo"` overlay service is currently enabled.
 pub fn is_running() -> bool {
     OVERLAY_RUNNING.load(Ordering::Relaxed)
+}
+
+/// Whether the polling loop thread is alive and has heartbeat recently.
+pub fn is_loop_alive() -> bool {
+    let now = u64::try_from(process_epoch().elapsed().as_millis()).unwrap_or(u64::MAX);
+    heartbeat_is_fresh(LOOP_HEARTBEAT_MS.load(Ordering::Relaxed), now)
+}
+
+/// Respawns the polling loop when it is not alive. Requires [`start`] to have run.
+pub fn ensure_loop_alive() -> Result<(), String> {
+    if is_loop_alive() {
+        return Ok(());
+    }
+    spawn_overlay_loop()
+}
+
+/// Stops the polling loop and hands the target app back the accessibility settings Elocutio
+/// changed. Called when the app quits.
+pub fn shutdown() {
+    LOOP_GENERATION.fetch_add(1, Ordering::SeqCst);
+    LOOP_HEARTBEAT_MS.store(0, Ordering::Relaxed);
+    #[cfg(target_os = "macos")]
+    crate::mac_broker::release_accessibility_activation_on_exit();
 }
 
 /// Whether the main `Elocutio — Writing Studio & Settings` window (`label = "settings"`) is currently focused.
@@ -192,7 +279,7 @@ pub fn set_overlay_input_focus(focused: bool) {
             return;
         };
         let app_for_main = app.clone();
-        let target_pid = shared_state().lock().map(|g| g.snapshot.pid).unwrap_or(0);
+        let target_pid = lock_state().snapshot.pid;
         let _ = app.run_on_main_thread(move || {
             let app = app_for_main;
             use objc2::rc::Retained;
@@ -304,53 +391,45 @@ pub fn set_overlay_input_focus(focused: bool) {
 /// Sets whether the `"elo"` overlay service is active.
 pub fn set_running(enabled: bool) {
     OVERLAY_RUNNING.store(enabled, Ordering::Relaxed);
-    if let Ok(mut guard) = shared_state().lock() {
-        guard.snapshot.service_enabled = enabled;
-        if !enabled {
-            guard.snapshot.field_active = false;
-            guard.snapshot.alerts.clear();
-            guard.frontend_card_rect = None;
-        }
-        if let Some(tx) = &guard.command_tx {
-            let _ = tx.send(OverlayCommand::RefreshNow);
-        }
+    let mut guard = lock_state();
+    guard.snapshot.service_enabled = enabled;
+    if !enabled {
+        guard.snapshot.field_active = false;
+        guard.snapshot.alerts.clear();
+        guard.frontend_card_rect = None;
+    }
+    if let Some(tx) = &guard.command_tx {
+        let _ = tx.send(OverlayCommand::RefreshNow);
     }
 }
 
 /// Returns the latest `"elo"` overlay snapshot.
 pub fn current_snapshot() -> EloOverlaySnapshot {
-    shared_state()
-        .lock()
-        .map(|s| s.snapshot.clone())
-        .unwrap_or_default()
+    lock_state().snapshot.clone()
 }
 
 /// Takes any pending studio launch state (requested tab or imported text).
 pub fn take_studio_launch_state() -> StudioLaunchState {
-    let Ok(mut guard) = shared_state().lock() else {
-        return StudioLaunchState::default();
-    };
-    std::mem::take(&mut guard.studio_launch)
+    std::mem::take(&mut lock_state().studio_launch)
 }
 
 /// Sets the studio launch state before opening the main window.
 pub fn set_studio_launch_state(tab: Option<String>, import_focused_text: bool) {
-    if let Ok(mut guard) = shared_state().lock() {
-        let (imported_text, imported_app_name) =
-            if import_focused_text && !guard.snapshot.source_text.trim().is_empty() {
-                (
-                    Some(guard.snapshot.source_text.clone()),
-                    Some(guard.snapshot.app_name.clone()),
-                )
-            } else {
-                (None, None)
-            };
-        guard.studio_launch = StudioLaunchState {
-            requested_tab: tab,
-            imported_text,
-            imported_app_name,
+    let mut guard = lock_state();
+    let (imported_text, imported_app_name) =
+        if import_focused_text && !guard.snapshot.source_text.trim().is_empty() {
+            (
+                Some(guard.snapshot.source_text.clone()),
+                Some(guard.snapshot.app_name.clone()),
+            )
+        } else {
+            (None, None)
         };
-    }
+    guard.studio_launch = StudioLaunchState {
+        requested_tab: tab,
+        imported_text,
+        imported_app_name,
+    };
 }
 
 /// Updates the interactive hit regions reported by the `"elo-overlay"` frontend.
@@ -359,7 +438,8 @@ pub fn update_interactive_regions(
     card_rect: Option<EloRect>,
     is_dragging: bool,
 ) {
-    if let Ok(mut guard) = shared_state().lock() {
+    {
+        let mut guard = lock_state();
         if guard.frontend_card_rect.is_some() != card_rect.is_some() {
             eprintln!("elo overlay card_rect updated: {:?}", card_rect);
         }
@@ -388,26 +468,29 @@ pub fn save_widget_offset(bundle_id: &str, offset_x: f64, offset_y: f64) {
     } else {
         bundle_id.trim().to_string()
     };
-    if let Ok(mut guard) = shared_state().lock() {
-        guard.widget_offsets.insert(key, (offset_x, offset_y));
-        if let Some(field_rect) = guard.snapshot.field_rect {
-            let (mon_w, mon_h) = guard.monitor_size;
-            guard.snapshot.widget_rect = Some(compute_widget_rect(
-                field_rect, offset_x, offset_y, mon_w, mon_h,
-            ));
-        }
+    let mut guard = lock_state();
+    guard.widget_offsets.insert(key, (offset_x, offset_y));
+    if let Some(field_rect) = guard.snapshot.field_rect {
+        let (mon_w, mon_h) = guard.monitor_size;
+        guard.snapshot.widget_rect = Some(compute_widget_rect(
+            field_rect, offset_x, offset_y, mon_w, mon_h,
+        ));
     }
+}
+
+/// Sends a command to the overlay loop thread.
+fn send_command(command: OverlayCommand) -> Result<(), String> {
+    let tx = lock_state()
+        .command_tx
+        .clone()
+        .ok_or_else(|| "Overlay worker is not running.".to_string())?;
+    tx.send(command)
+        .map_err(|_| "The overlay worker stopped before it received the command.".to_string())
 }
 
 /// Sends an ApplyAlert command to the overlay worker thread.
 pub fn request_apply_alert(alert_id: String, suggestion_index: usize) -> Result<bool, String> {
-    let tx = shared_state()
-        .lock()
-        .map_err(|e| e.to_string())?
-        .command_tx
-        .clone()
-        .ok_or_else(|| "Overlay worker is not running.".to_string())?;
-    tx.send(OverlayCommand::ApplyAlert {
+    send_command(OverlayCommand::ApplyAlert {
         alert_id,
         suggestion_index,
     })
@@ -417,40 +500,25 @@ pub fn request_apply_alert(alert_id: String, suggestion_index: usize) -> Result<
 
 /// Sends a DismissAlert command to the overlay worker thread.
 pub fn request_dismiss_alert(alert_id: String) -> Result<bool, String> {
-    let tx = shared_state()
-        .lock()
-        .map_err(|e| e.to_string())?
-        .command_tx
-        .clone()
-        .ok_or_else(|| "Overlay worker is not running.".to_string())?;
-    tx.send(OverlayCommand::DismissAlert { alert_id })
+    send_command(OverlayCommand::DismissAlert { alert_id })
         .map_err(|e| format!("Failed to send dismiss command: {e}"))?;
     Ok(true)
 }
 
 /// Sends a ReplaceFieldText command to the overlay worker thread to replace the entire field text.
 pub fn request_replace_field_text(new_text: String) -> Result<bool, String> {
-    let tx = shared_state()
-        .lock()
-        .map_err(|e| e.to_string())?
-        .command_tx
-        .clone()
-        .ok_or_else(|| "Overlay worker is not running.".to_string())?;
-    tx.send(OverlayCommand::ReplaceFieldText { new_text })
+    send_command(OverlayCommand::ReplaceFieldText { new_text })
         .map_err(|e| format!("Failed to send replace command: {e}"))?;
     Ok(true)
 }
 
 /// Triggers an immediate re-poll on the overlay worker thread.
 pub fn request_refresh() {
-    if let Ok(guard) = shared_state().lock()
-        && let Some(tx) = &guard.command_tx
-    {
-        let _ = tx.send(OverlayCommand::RefreshNow);
-    }
+    let _ = send_command(OverlayCommand::RefreshNow);
 }
 
-/// Creates the transparent always-on-top `"elo-overlay"` window and starts the background polling thread.
+/// Creates the transparent always-on-top `"elo-overlay"` window and starts the background
+/// polling and hit-testing threads.
 pub fn start(
     app: AppHandle,
     config: Arc<AsyncMutex<Config>>,
@@ -462,23 +530,119 @@ pub fn start(
         .map(|cfg| cfg.highlighter_service_enabled)
         .unwrap_or(true);
     OVERLAY_RUNNING.store(enabled, Ordering::Relaxed);
+    lock_state().snapshot.service_enabled = enabled;
 
     if let Err(err) = ensure_overlay_window(&app) {
         tracing::error!("Could not create elo-overlay window: {err}");
     }
 
-    let (command_tx, command_rx) = mpsc::channel::<OverlayCommand>();
-    if let Ok(mut guard) = shared_state().lock() {
-        guard.snapshot.service_enabled = enabled;
-        guard.command_tx = Some(command_tx);
+    let _ = LOOP_CONTEXT.set(LoopContext {
+        app: app.clone(),
+        config,
+        suggestion_count,
+    });
+
+    // Hit-testing gets its own thread so the overlay's click-through state never waits on the
+    // polling loop, which can stall in Accessibility calls to a slow target app.
+    let hit_test_app = app.clone();
+    let give_up_app = app.clone();
+    if let Err(error) = spawn_supervised(
+        "elocutio-elo-overlay-hittest",
+        move || run_hit_test_loop(&hit_test_app),
+        // Without hit-testing nothing would switch the overlay back to click-through.
+        move || set_window_ignore_cursor(&give_up_app, true),
+    ) {
+        tracing::error!("Could not start the elo-overlay hit-test thread: {error}");
     }
 
+    if let Err(error) = spawn_overlay_loop() {
+        tracing::error!("Could not start the elo-overlay loop: {error}");
+    }
+}
+
+/// Spawns a thread that runs `body` again after a panic, with backoff, up to
+/// [`MAX_THREAD_RESTARTS`] times; then it runs `on_give_up` and exits. `body` returning
+/// normally ends the thread.
+fn spawn_supervised(
+    name: &str,
+    body: impl Fn() + Send + 'static,
+    on_give_up: impl FnOnce() + Send + 'static,
+) -> std::io::Result<thread::JoinHandle<()>> {
+    let thread_name = name.to_string();
     thread::Builder::new()
-        .name("elocutio-elo-overlay-loop".to_string())
+        .name(name.to_string())
         .spawn(move || {
-            run_overlay_loop(app, config, suggestion_count, command_rx);
+            let mut restarts = 0u32;
+            loop {
+                match panic::catch_unwind(AssertUnwindSafe(&body)) {
+                    Ok(()) => return,
+                    Err(payload) => {
+                        restarts += 1;
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .map(|s| (*s).to_string())
+                            .or_else(|| payload.downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "unknown panic".to_string());
+                        if restarts > MAX_THREAD_RESTARTS {
+                            tracing::error!(
+                                "{thread_name} panicked {restarts} times; giving up: {message}"
+                            );
+                            on_give_up();
+                            return;
+                        }
+                        tracing::error!(
+                            "{thread_name} panicked; restarting (attempt {restarts}): {message}"
+                        );
+                        thread::sleep(restart_backoff(restarts));
+                    }
+                }
+            }
         })
-        .expect("failed to spawn elo-overlay loop thread");
+}
+
+/// Delay before the `restarts`-th restart: 250 ms doubling up to 8 s.
+fn restart_backoff(restarts: u32) -> Duration {
+    Duration::from_millis(250u64.saturating_mul(1 << restarts.saturating_sub(1).min(5)))
+}
+
+/// Starts a new generation of the polling loop, superseding any older loop thread.
+fn spawn_overlay_loop() -> Result<(), String> {
+    let context = LOOP_CONTEXT
+        .get()
+        .ok_or_else(|| "The overlay has not been started yet.".to_string())?;
+    let generation = LOOP_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+
+    // Replacing the sender disconnects an older loop's receiver, which also makes it exit.
+    let (command_tx, command_rx) = mpsc::channel::<OverlayCommand>();
+    lock_state().command_tx = Some(command_tx);
+    heartbeat();
+
+    let app = context.app.clone();
+    let config = context.config.clone();
+    let suggestion_count = context.suggestion_count.clone();
+    let command_rx = StdMutex::new(command_rx);
+    spawn_supervised(
+        "elocutio-elo-overlay-loop",
+        move || {
+            if LOOP_GENERATION.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            heartbeat();
+            let command_rx = command_rx.lock().unwrap_or_else(PoisonError::into_inner);
+            run_overlay_loop(&app, &config, &suggestion_count, &command_rx, generation);
+        },
+        // Report the loop dead at once so the watchdog can start a fresh one.
+        move || {
+            if LOOP_GENERATION.load(Ordering::SeqCst) == generation {
+                LOOP_HEARTBEAT_MS.store(0, Ordering::Relaxed);
+            }
+        },
+    )
+    .map_err(|error| {
+        LOOP_HEARTBEAT_MS.store(0, Ordering::Relaxed);
+        format!("could not spawn the overlay loop thread: {error}")
+    })?;
+    Ok(())
 }
 
 /// Builds and configures the transparent, non-activating, always-on-top `"elo-overlay"` window.
@@ -488,7 +652,8 @@ pub fn ensure_overlay_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
 
     let (mon_x, mon_y, mon_w, mon_h, main_h) = active_display_quartz_bounds(app, None, None);
-    if let Ok(mut guard) = shared_state().lock() {
+    {
+        let mut guard = lock_state();
         guard.monitor_origin = (mon_x, mon_y);
         guard.monitor_size = (mon_w, mon_h);
         guard.main_display_height = main_h;
@@ -845,7 +1010,8 @@ fn sync_overlay_window_to_display(
     force_order_front: bool,
 ) {
     let mut needs_update = force_order_front;
-    if let Ok(mut guard) = shared_state().lock() {
+    {
+        let mut guard = lock_state();
         let changed = (guard.monitor_origin.0 - mon_x).abs() > 0.5
             || (guard.monitor_origin.1 - mon_y).abs() > 0.5
             || (guard.monitor_size.0 - mon_w).abs() > 0.5
@@ -907,11 +1073,10 @@ fn sync_overlay_window_to_display(
     main_h: f64,
     _force_order_front: bool,
 ) {
-    if let Ok(mut guard) = shared_state().lock() {
-        guard.monitor_origin = (mon_x, mon_y);
-        guard.monitor_size = (mon_w, mon_h);
-        guard.main_display_height = main_h;
-    }
+    let mut guard = lock_state();
+    guard.monitor_origin = (mon_x, mon_y);
+    guard.monitor_size = (mon_w, mon_h);
+    guard.main_display_height = main_h;
 }
 
 fn set_window_ignore_cursor(app: &AppHandle, ignore: bool) {
@@ -932,35 +1097,57 @@ fn compute_widget_rect(
 ) -> EloRect {
     let w = 104.0;
     let h = 38.0;
-    let min_x = (field_rect.x + 6.0).clamp(8.0, (mon_w - w - 8.0).max(8.0));
+    let screen_max_x = (mon_w - w - 8.0).max(8.0);
+    let screen_max_y = (mon_h - h - 8.0).max(32.0);
+    let min_x = clamp_between(field_rect.x + 6.0, 8.0, screen_max_x);
     let max_x = (field_rect.x + field_rect.width - w - 8.0)
         .max(min_x)
-        .min((mon_w - w - 8.0).max(8.0));
+        .min(screen_max_x);
     let base_x = max_x;
 
     let (min_y, max_y, base_y) = if field_rect.height < 56.0 {
-        let by = (field_rect.y + field_rect.height + 4.0).clamp(32.0, (mon_h - h - 8.0).max(32.0));
+        let by = clamp_between(field_rect.y + field_rect.height + 4.0, 32.0, screen_max_y);
         (
             (field_rect.y - h - 4.0).max(32.0),
-            (field_rect.y + field_rect.height + 12.0).min((mon_h - h - 8.0).max(32.0)),
+            (field_rect.y + field_rect.height + 12.0).min(screen_max_y),
             by,
         )
     } else {
-        let top_bound = (field_rect.y + 6.0).clamp(32.0, (mon_h - h - 8.0).max(32.0));
+        let top_bound = clamp_between(field_rect.y + 6.0, 32.0, screen_max_y);
         let bottom_bound = (field_rect.y + field_rect.height - h - 8.0)
             .max(top_bound)
-            .min((mon_h - h - 8.0).max(32.0));
+            .min(screen_max_y);
         (top_bound, bottom_bound, bottom_bound)
     };
 
-    let x = (base_x + offset_x).clamp(min_x, max_x);
-    let y = (base_y + offset_y).clamp(min_y, max_y);
+    // A short field partly off the top or bottom of the screen leaves `min_y > max_y`, where
+    // `f64::clamp` would panic (while holding the overlay state lock). The field-relative range
+    // is applied first, then the screen range, which is never inverted, keeps "elo" on screen.
+    let x = clamp_between(
+        clamp_between(base_x + offset_x, min_x, max_x),
+        8.0,
+        screen_max_x,
+    );
+    let y = clamp_between(
+        clamp_between(base_y + offset_y, min_y, max_y),
+        32.0,
+        screen_max_y,
+    );
     EloRect {
         x,
         y,
         width: w,
         height: h,
     }
+}
+
+/// Clamps `value` to `[low, high]` without ever panicking.
+///
+/// Unlike `f64::clamp`, an inverted range (`low > high`) or a NaN bound is not a programming
+/// error here: bounds come from live screen and field geometry. An inverted range resolves to
+/// `high`; a NaN bound is ignored.
+fn clamp_between(value: f64, low: f64, high: f64) -> f64 {
+    value.max(low).min(high)
 }
 
 fn categorize_lint_kind(
@@ -1099,184 +1286,291 @@ fn calculate_writing_score(word_count: usize, alerts: &[EloAlert]) -> u32 {
     combined.clamp(18, 99)
 }
 
-fn run_overlay_loop(
-    app: AppHandle,
-    config: Arc<AsyncMutex<Config>>,
-    suggestion_count: Arc<crate::config::SuggestionCount>,
-    command_rx: mpsc::Receiver<OverlayCommand>,
-) {
-    let config_for_policy = config.clone();
-    let mut broker = crate::platform_broker(move |bundle_id| {
-        let Ok(mut cfg) = config_for_policy.try_lock() else {
-            return true;
-        };
-        cfg.resolve_integration(bundle_id)
-    });
+/// The text a suggestion puts in place of the flagged span.
+fn suggestion_replacement(original: &str, suggestion: &Suggestion) -> String {
+    match suggestion {
+        Suggestion::ReplaceWith(r) => r.iter().collect::<String>(),
+        Suggestion::InsertAfter(s) => format!("{original}{}", s.iter().collect::<String>()),
+        Suggestion::Remove => String::new(),
+    }
+}
 
-    let mut active_lints: Vec<(String, ActionableLint, Vec<Suggestion>)> = Vec::new();
-    let mut last_poll = Instant::now() - Duration::from_secs(1);
-    let mut last_emitted_hash: u64 = 0;
+/// The name the frontend uses for a card command.
+fn card_command_name(command: crate::config::CardCommand) -> &'static str {
+    use crate::config::CardCommand;
+    match command {
+        CardCommand::Focus => "focus",
+        CardCommand::NextSuggestion => "next",
+        CardCommand::PreviousSuggestion => "prev",
+        CardCommand::NextReplacement => "next_repl",
+        CardCommand::PreviousReplacement => "prev_repl",
+        CardCommand::Accept => "accept",
+        CardCommand::Dismiss => "dismiss",
+        CardCommand::Close => "close",
+    }
+}
+
+/// Delivers a card command to the frontend at once.
+///
+/// The command rides on a single snapshot event carrying a fresh `card_command_seq`. The stored
+/// snapshot never holds the command, so the frontend's poll of [`current_snapshot`] cannot replay
+/// a keypress.
+fn emit_card_command(app: &AppHandle, command: crate::config::CardCommand) {
+    let snapshot = {
+        let mut guard = lock_state();
+        guard.snapshot.card_command_seq = guard.snapshot.card_command_seq.wrapping_add(1);
+        let mut snapshot = guard.snapshot.clone();
+        snapshot.card_command = Some(card_command_name(command).to_string());
+        snapshot
+    };
+    let _ = app.emit("elo-overlay-snapshot", &snapshot);
+}
+
+/// An order-independent fingerprint of the user dictionary's words.
+///
+/// The cached linter is rebuilt when this changes, which catches a word being replaced as well
+/// as one being added or removed (a word count alone misses the former).
+fn dictionary_fingerprint(dictionary: &harper_core::spell::MutableDictionary) -> u64 {
+    use harper_core::spell::Dictionary;
+    use std::hash::{Hash, Hasher};
+
+    let mut count = 0u64;
+    let mut sum = 0u64;
+    for word in dictionary.words_iter() {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        word.hash(&mut hasher);
+        sum = sum.wrapping_add(hasher.finish());
+        count += 1;
+    }
+    sum ^ count.rotate_left(32)
+}
+
+/// The broker's app policy: whether Elocutio may read the given app.
+///
+/// The config is often locked by an async task when the broker asks. Guessing "allowed" then
+/// would read apps the user blocked, so a busy config falls back to the last decision made for
+/// that app, and to "not allowed" for an app not seen before.
+fn integration_policy(
+    config: Arc<AsyncMutex<Config>>,
+) -> impl FnMut(&str) -> bool + Send + Sync + 'static {
+    let mut last_known: HashMap<String, bool> = HashMap::new();
+    move |bundle_id| match config.try_lock() {
+        Ok(mut cfg) => {
+            let enabled = cfg.resolve_integration(bundle_id);
+            last_known.insert(bundle_id.to_string(), enabled);
+            enabled
+        }
+        Err(_) => last_known.get(bundle_id).copied().unwrap_or(false),
+    }
+}
+
+/// Adds a dismissed lint to the ignore list and saves the config.
+///
+/// The config is used right away when it is free. When an async task holds it, the update is
+/// queued on the async runtime instead of being dropped, and the overlay is refreshed once it
+/// lands so the dismissed underline does not linger.
+fn ignore_lint_in_config(config: &Arc<AsyncMutex<Config>>, lint: Lint, source_text: String) {
+    fn ignore(cfg: &mut Config, lint: &Lint, source_text: &str) {
+        let dict = Config::dictionary_from_user_dictionary(cfg.mutable_dictionary.clone());
+        let doc = Document::new_markdown_default(source_text, &dict);
+        cfg.ignored_lints.ignore_lint(lint, &doc);
+    }
+
+    let applied_now = match config.try_lock() {
+        Ok(mut cfg) => {
+            ignore(&mut cfg, &lint, &source_text);
+            true
+        }
+        Err(_) => false,
+    };
+    let config = config.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut cfg = config.lock().await;
+        if !applied_now {
+            ignore(&mut cfg, &lint, &source_text);
+        }
+        let _ = cfg.save_to_system().await;
+        drop(cfg);
+        if !applied_now {
+            request_refresh();
+        }
+    });
+}
+
+/// Drops an alert from the stored snapshot once it has been acted on.
+fn remove_alert_from_snapshot(alert_id: &str) {
+    let mut guard = lock_state();
+    guard.snapshot.alerts.retain(|a| a.id != alert_id);
+    if guard.snapshot.alerts.is_empty() {
+        guard.frontend_card_rect = None;
+    }
+}
+
+type ActiveLints = Vec<(String, ActionableLint, Vec<Suggestion>)>;
+
+/// Runs one command from the frontend. Returns whether the field should be re-read right away.
+fn handle_command(
+    command: OverlayCommand,
+    broker: &mut crate::PlatformBroker,
+    active_lints: &mut ActiveLints,
+    config: &Arc<AsyncMutex<Config>>,
+) -> bool {
+    match command {
+        OverlayCommand::ApplyAlert {
+            alert_id,
+            suggestion_index,
+        } => {
+            let Some(pos) = active_lints.iter().position(|(id, _, _)| *id == alert_id) else {
+                return false;
+            };
+            let (_, mut actionable, suggestions) = active_lints.remove(pos);
+            if let Some(suggestion) = suggestions
+                .get(suggestion_index)
+                .cloned()
+                .or_else(|| suggestions.first().cloned())
+            {
+                // The macOS broker records the accepted edit itself, once, after the edit has
+                // actually landed in the field.
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let chars: Vec<char> = actionable.source_text.chars().collect();
+                    let original = actionable.lint.get_str(&chars);
+                    let replacement = suggestion_replacement(&original, &suggestion);
+                    let category = actionable.lint.lint_kind.to_string();
+                    let _ = crate::voice::record_accepted(&original, &replacement, &category);
+                }
+                actionable.apply_suggestion(suggestion);
+                let _ = crate::voice::refresh_feedback();
+            }
+            if let Ok(cfg) = config.try_lock() {
+                let _ = crate::personalization_db::sync_and_status(&cfg);
+            }
+            remove_alert_from_snapshot(&alert_id);
+            true
+        }
+        OverlayCommand::DismissAlert { alert_id } => {
+            let Some(pos) = active_lints.iter().position(|(id, _, _)| *id == alert_id) else {
+                return false;
+            };
+            let (_, actionable, suggestions) = active_lints.remove(pos);
+            let chars: Vec<char> = actionable.source_text.chars().collect();
+            let original = actionable.lint.get_str(&chars);
+            let category = actionable.lint.lint_kind.to_string();
+            let first_repl = suggestions
+                .first()
+                .map(|s| suggestion_replacement(&original, s))
+                .unwrap_or_default();
+            let _ = crate::voice::record_dismissed(&original, &first_repl, &category);
+            let _ = crate::voice::refresh_feedback();
+            crate::events::record_suggestion_event(
+                crate::events::EventKind::Dismissed,
+                &actionable.rule_name,
+                actionable.lint.span.len(),
+                0,
+            );
+            ignore_lint_in_config(config, actionable.lint, actionable.source_text);
+            remove_alert_from_snapshot(&alert_id);
+            true
+        }
+        OverlayCommand::ReplaceFieldText { new_text } => {
+            #[cfg(target_os = "macos")]
+            {
+                if let Err(error) = broker.replace_target_text(&new_text) {
+                    eprintln!("Could not replace the field text: {error}");
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = &broker;
+            }
+            let mut guard = lock_state();
+            guard.snapshot.source_text = new_text;
+            guard.snapshot.alerts.clear();
+            true
+        }
+        OverlayCommand::RefreshNow => true,
+    }
+}
+
+/// The global cursor position in screen points.
+fn global_cursor_position() -> Option<egui::Pos2> {
+    #[cfg(target_os = "macos")]
+    {
+        use core_graphics::event::CGEvent;
+        use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+        let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
+        let location = CGEvent::new(source).ok()?.location();
+        Some(egui::pos2(location.x as f32, location.y as f32))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::windows_broker::cursor_position_now()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Whether the cursor is over something the overlay must receive clicks for, plus the cursor in
+/// overlay-local coordinates when it matters.
+fn hit_test(state: &SharedOverlayState, cursor: Option<egui::Pos2>) -> (bool, Option<(f64, f64)>) {
+    if !state.snapshot.service_enabled || !state.snapshot.field_active {
+        return (false, None);
+    }
+    let logical = cursor.map(|cursor| {
+        (
+            f64::from(cursor.x) - state.monitor_origin.0,
+            f64::from(cursor.y) - state.monitor_origin.1,
+        )
+    });
+    if state.is_dragging {
+        return (true, logical);
+    }
+    let Some((lx, ly)) = logical else {
+        return (false, None);
+    };
+
+    let over_widget = state
+        .frontend_widget_rect
+        .or(state.snapshot.widget_rect)
+        .is_some_and(|wr| wr.contains(lx, ly, 10.0));
+    let over_card = state
+        .frontend_card_rect
+        .is_some_and(|cr| cr.contains(lx, ly, 14.0));
+    let over_alert = state
+        .snapshot
+        .alerts
+        .iter()
+        .any(|a| a.rect.contains(lx, ly, 6.0));
+    (over_widget || over_card || over_alert, logical)
+}
+
+/// Keeps the overlay click-through everywhere except over the `"elo"` widget, underlined words,
+/// or the open suggestion card, and turns clicks there into frontend events.
+///
+/// This runs on its own thread, independent of the polling loop: a target app that stalls
+/// Accessibility calls must never leave the overlay stuck clickable over that app.
+fn run_hit_test_loop(app: &AppHandle) {
     let mut prev_mouse_down = false;
     let mut press_origin: Option<(f64, f64)> = None;
-    let mut cached_linter_state: Option<(
-        harper_core::Dialect,
-        usize,
-        usize,
-        harper_core::linting::LintGroup,
-        Arc<harper_core::spell::MergedDictionary>,
-    )> = None;
-    let mut display_name_cache: HashMap<String, String> = HashMap::new();
 
     loop {
-        thread::sleep(Duration::from_millis(25));
+        let idle = !OVERLAY_RUNNING.load(Ordering::Relaxed) || {
+            let guard = lock_state();
+            !guard.snapshot.field_active && !guard.is_dragging
+        };
+        thread::sleep(if idle {
+            HIT_TEST_IDLE_INTERVAL
+        } else {
+            HIT_TEST_INTERVAL
+        });
 
-        let mut force_refresh = false;
-
-        // Process any queued commands (ApplyAlert, DismissAlert, RefreshNow)
-        while let Ok(cmd) = command_rx.try_recv() {
-            match cmd {
-                OverlayCommand::ApplyAlert {
-                    alert_id,
-                    suggestion_index,
-                } => {
-                    if let Some(pos) = active_lints.iter().position(|(id, _, _)| *id == alert_id) {
-                        let (_, mut actionable, suggestions) = active_lints.remove(pos);
-                        let chars: Vec<char> = actionable.source_text.chars().collect();
-                        let original = actionable.lint.get_str(&chars);
-                        let category = actionable.lint.lint_kind.to_string();
-                        if let Some(suggestion) = suggestions
-                            .get(suggestion_index)
-                            .cloned()
-                            .or_else(|| suggestions.first().cloned())
-                        {
-                            let replacement = match &suggestion {
-                                Suggestion::ReplaceWith(r) => r.iter().collect::<String>(),
-                                Suggestion::InsertAfter(s) => {
-                                    format!("{original}{}", s.iter().collect::<String>())
-                                }
-                                Suggestion::Remove => String::new(),
-                            };
-                            let _ =
-                                crate::voice::record_accepted(&original, &replacement, &category);
-                            let _ = crate::voice::refresh_feedback();
-                            actionable.apply_suggestion(suggestion);
-                        }
-                        if let Ok(cfg) = config.try_lock() {
-                            let _ = crate::personalization_db::sync_and_status(&cfg);
-                        }
-                        if let Ok(mut guard) = shared_state().lock() {
-                            guard.snapshot.alerts.retain(|a| a.id != alert_id);
-                            if guard.snapshot.alerts.is_empty() {
-                                guard.frontend_card_rect = None;
-                            }
-                        }
-                        force_refresh = true;
-                    }
-                }
-                OverlayCommand::DismissAlert { alert_id } => {
-                    if let Some(pos) = active_lints.iter().position(|(id, _, _)| *id == alert_id) {
-                        let (_, actionable, suggestions) = active_lints.remove(pos);
-                        let chars: Vec<char> = actionable.source_text.chars().collect();
-                        let original = actionable.lint.get_str(&chars);
-                        let category = actionable.lint.lint_kind.to_string();
-                        let first_repl = suggestions
-                            .first()
-                            .map(|s| match s {
-                                Suggestion::ReplaceWith(r) => r.iter().collect::<String>(),
-                                Suggestion::InsertAfter(suf) => {
-                                    format!("{original}{}", suf.iter().collect::<String>())
-                                }
-                                Suggestion::Remove => String::new(),
-                            })
-                            .unwrap_or_default();
-                        let _ = crate::voice::record_dismissed(&original, &first_repl, &category);
-                        let _ = crate::voice::refresh_feedback();
-                        if let Ok(mut cfg) = config.try_lock() {
-                            let dict = Config::dictionary_from_user_dictionary(
-                                cfg.mutable_dictionary.clone(),
-                            );
-                            let doc =
-                                Document::new_markdown_default(&actionable.source_text, &dict);
-                            cfg.ignored_lints.ignore_lint(&actionable.lint, &doc);
-                            let config_arc = config.clone();
-                            tauri::async_runtime::spawn(async move {
-                                let cfg = config_arc.lock().await;
-                                let _ = cfg.save_to_system().await;
-                            });
-                        }
-                        if let Ok(mut guard) = shared_state().lock() {
-                            guard.snapshot.alerts.retain(|a| a.id != alert_id);
-                            if guard.snapshot.alerts.is_empty() {
-                                guard.frontend_card_rect = None;
-                            }
-                        }
-                        force_refresh = true;
-                    }
-                }
-                OverlayCommand::ReplaceFieldText { new_text } => {
-                    #[cfg(target_os = "macos")]
-                    {
-                        let _ = broker.replace_target_text(&new_text);
-                    }
-                    #[cfg(not(target_os = "macos"))]
-                    {
-                        let _ = new_text;
-                    }
-                    if let Ok(mut guard) = shared_state().lock() {
-                        guard.snapshot.source_text = new_text;
-                        guard.snapshot.alerts.clear();
-                    }
-                    force_refresh = true;
-                }
-                OverlayCommand::RefreshNow => {
-                    force_refresh = true;
-                }
-            }
-        }
-
-        // 1. Fast 25ms cursor hit-test so the overlay window is click-through everywhere
-        // except over the `"elo"` widget, underlined words, or the open suggestion card.
-        let cursor_pos = broker.cursor_position();
-        let mut cursor_over_interactive = false;
-        let mut logical_cursor: Option<(f64, f64)> = None;
-        if let Ok(guard) = shared_state().lock() {
-            if !guard.snapshot.service_enabled || !guard.snapshot.field_active {
-                cursor_over_interactive = false;
-            } else if guard.is_dragging {
-                cursor_over_interactive = true;
-                if let Some(cursor) = cursor_pos {
-                    logical_cursor = Some((
-                        f64::from(cursor.x) - guard.monitor_origin.0,
-                        f64::from(cursor.y) - guard.monitor_origin.1,
-                    ));
-                }
-            } else if let Some(cursor) = cursor_pos {
-                let lx = f64::from(cursor.x) - guard.monitor_origin.0;
-                let ly = f64::from(cursor.y) - guard.monitor_origin.1;
-                logical_cursor = Some((lx, ly));
-
-                let widget_rect = guard.frontend_widget_rect.or(guard.snapshot.widget_rect);
-                if let Some(wr) = widget_rect
-                    && wr.contains(lx, ly, 10.0)
-                {
-                    cursor_over_interactive = true;
-                }
-                if !cursor_over_interactive
-                    && let Some(cr) = guard.frontend_card_rect
-                    && cr.contains(lx, ly, 14.0)
-                {
-                    cursor_over_interactive = true;
-                }
-                if !cursor_over_interactive {
-                    cursor_over_interactive = guard
-                        .snapshot
-                        .alerts
-                        .iter()
-                        .any(|a| a.rect.contains(lx, ly, 6.0));
-                }
-            }
-        }
-        set_window_ignore_cursor(&app, !cursor_over_interactive);
+        let cursor_pos = global_cursor_position();
+        let (cursor_over_interactive, logical_cursor) = hit_test(&lock_state(), cursor_pos);
+        CURSOR_OVER_INTERACTIVE.store(cursor_over_interactive, Ordering::Relaxed);
+        set_window_ignore_cursor(app, !cursor_over_interactive);
 
         let mouse_down = is_left_mouse_button_down();
         if cursor_over_interactive && let Some((lx, ly)) = logical_cursor {
@@ -1291,19 +1585,13 @@ fn run_overlay_loop(
             }
         } else {
             if mouse_down && !prev_mouse_down {
-                let mut had_card = false;
-                if let Ok(mut guard) = shared_state().lock()
-                    && guard.frontend_card_rect.is_some()
-                {
-                    guard.frontend_card_rect = None;
-                    had_card = true;
-                }
+                let had_card = lock_state().frontend_card_rect.take().is_some();
                 if OVERLAY_INPUT_FOCUSED.load(Ordering::Relaxed) {
                     set_overlay_input_focus(false);
                 }
                 if had_card {
                     let _ = app.emit("elo-overlay-outside-click", ());
-                    force_refresh = true;
+                    request_refresh();
                 }
             }
             if !mouse_down {
@@ -1311,26 +1599,90 @@ fn run_overlay_loop(
             }
         }
         prev_mouse_down = mouse_down;
+    }
+}
 
-        // 2. Poll macOS Accessibility every 180ms (or immediately on command)
-        if !force_refresh && last_poll.elapsed() < Duration::from_millis(180) {
+/// The polling loop: reads the focused field over Accessibility, lints it, and publishes the
+/// snapshot the `"elo-overlay"` frontend renders. Returns when a newer loop generation replaces
+/// it or its command channel closes.
+fn run_overlay_loop(
+    app: &AppHandle,
+    config: &Arc<AsyncMutex<Config>>,
+    suggestion_count: &Arc<crate::config::SuggestionCount>,
+    command_rx: &Receiver<OverlayCommand>,
+    generation: u64,
+) {
+    let mut broker = crate::platform_broker(integration_policy(config.clone()));
+
+    let mut active_lints: ActiveLints = Vec::new();
+    let mut next_poll = Instant::now();
+    let mut last_emitted_hash: u64 = 0;
+    let mut cached_linter_state: Option<(
+        harper_core::Dialect,
+        u64,
+        usize,
+        harper_core::linting::LintGroup,
+        Arc<harper_core::spell::MergedDictionary>,
+    )> = None;
+    let mut display_name_cache: HashMap<String, String> = HashMap::new();
+
+    loop {
+        if LOOP_GENERATION.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        heartbeat();
+
+        // Sleep until the next poll is due, waking at once for a command.
+        let mut force_refresh = false;
+        match command_rx.recv_timeout(next_poll.saturating_duration_since(Instant::now())) {
+            Ok(command) => {
+                force_refresh |= handle_command(command, &mut broker, &mut active_lints, config);
+                while let Ok(command) = command_rx.try_recv() {
+                    force_refresh |=
+                        handle_command(command, &mut broker, &mut active_lints, config);
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+        heartbeat();
+
+        if !force_refresh && Instant::now() < next_poll {
             continue;
         }
-        last_poll = Instant::now();
+        let idle = !OVERLAY_RUNNING.load(Ordering::Relaxed) || !lock_state().snapshot.field_active;
+        next_poll = Instant::now()
+            + if idle {
+                IDLE_POLL_INTERVAL
+            } else {
+                ACTIVE_POLL_INTERVAL
+            };
+
+        // Card shortcuts are delivered before the freeze below, so they work while the card is
+        // open, which is exactly when they are used.
+        if let Some(command) = config
+            .try_lock()
+            .ok()
+            .and_then(|mut cfg| cfg.card_command.take())
+        {
+            emit_card_command(app, command);
+        }
 
         // While the user is dragging `"elo"`, hovering/clicking `"elo"`, or reviewing an open
         // suggestion/rewrite card (and hasn't focused the Studio window), keep the snapshot stable
         // so clicking on the overlay never loses the target text field or closes the card.
-        if !force_refresh
-            && !is_studio_window_focused()
-            && let Ok(guard) = shared_state().lock()
-            && guard.snapshot.field_active
-            && (guard.is_dragging
-                || cursor_over_interactive
-                || guard.frontend_card_rect.is_some()
-                || OVERLAY_INPUT_FOCUSED.load(Ordering::Relaxed))
-        {
-            continue;
+        if !force_refresh && !is_studio_window_focused() {
+            let interacting = {
+                let guard = lock_state();
+                guard.snapshot.field_active
+                    && (guard.is_dragging
+                        || CURSOR_OVER_INTERACTIVE.load(Ordering::Relaxed)
+                        || guard.frontend_card_rect.is_some()
+                        || OVERLAY_INPUT_FOCUSED.load(Ordering::Relaxed))
+            };
+            if interacting {
+                continue;
+            }
         }
 
         let service_enabled = OVERLAY_RUNNING.load(Ordering::Relaxed);
@@ -1340,7 +1692,8 @@ fn run_overlay_loop(
         if !service_enabled || !ax_trusted {
             active_lints.clear();
             suggestion_count.set(0);
-            if let Ok(mut guard) = shared_state().lock() {
+            {
+                let mut guard = lock_state();
                 guard.snapshot.service_enabled = service_enabled;
                 guard.snapshot.ax_trusted = ax_trusted;
                 guard.snapshot.field_active = false;
@@ -1348,31 +1701,29 @@ fn run_overlay_loop(
                 guard.snapshot.widget_rect = None;
                 guard.snapshot.field_rect = None;
             }
-            set_window_ignore_cursor(&app, true);
+            set_window_ignore_cursor(app, true);
             continue;
         }
 
         // Snapshot config for linting (reusing the compiled LintGroup unless dictionary/dialect changed)
-        let (ignored_lints, card_cmd) = {
-            use harper_core::spell::Dictionary;
-            let Ok(mut cfg) = config.try_lock() else {
+        let ignored_lints = {
+            let Ok(cfg) = config.try_lock() else {
                 continue;
             };
-            let cmd = cfg.card_command.take();
-            let dict_len = cfg.mutable_dictionary.word_count();
+            let dictionary_key = dictionary_fingerprint(&cfg.mutable_dictionary);
             let dialect = cfg.dialect;
             let rule_epoch = crate::commands::LINTER_RULE_EPOCH.load(Ordering::Relaxed);
             let needs_rebuild = cached_linter_state
                 .as_ref()
-                .is_none_or(|(d, len, ep, _, _)| {
-                    *d != dialect || *len != dict_len || *ep != rule_epoch
+                .is_none_or(|(d, key, ep, _, _)| {
+                    *d != dialect || *key != dictionary_key || *ep != rule_epoch
                 });
             if needs_rebuild {
                 let dict = Config::dictionary_from_user_dictionary(cfg.mutable_dictionary.clone());
                 let linter = cfg.create_linter();
-                cached_linter_state = Some((dialect, dict_len, rule_epoch, linter, dict));
+                cached_linter_state = Some((dialect, dictionary_key, rule_epoch, linter, dict));
             }
-            (cfg.ignored_lints.clone(), cmd)
+            cfg.ignored_lints.clone()
         };
 
         let Some((_, _, _, ref mut linter, ref dictionary)) = cached_linter_state else {
@@ -1388,6 +1739,7 @@ fn run_overlay_loop(
         };
 
         let boxes = broker.get_boxes(&mut lint_callback);
+        heartbeat();
         let has_active_field = broker.has_active_field();
         let raw_field_rect = broker.active_field_rect();
         let tone = broker.detected_tone();
@@ -1401,20 +1753,25 @@ fn run_overlay_loop(
         } else if let Some(cached_name) = display_name_cache.get(&bundle_id) {
             cached_name.clone()
         } else {
+            // On macOS the running process names itself; the broker's general lookup asks
+            // Spotlight, which is far too slow for this thread.
+            #[cfg(target_os = "macos")]
+            let name = broker
+                .focused_app_display_name()
+                .unwrap_or_else(|| bundle_id.clone());
+            #[cfg(not(target_os = "macos"))]
             let name = broker.integration_display_name(&bundle_id);
             display_name_cache.insert(bundle_id.clone(), name.clone());
             name
         };
 
+        let cursor_pos = broker.cursor_position();
         let (mon_x, mon_y, mon_w, mon_h, main_h) =
-            active_display_quartz_bounds(&app, raw_field_rect, cursor_pos);
-        let app_changed = shared_state()
-            .lock()
-            .map(|g| g.snapshot.app_bundle_id != bundle_id && has_active_field)
-            .unwrap_or(false);
-        sync_overlay_window_to_display(&app, mon_x, mon_y, mon_w, mon_h, main_h, app_changed);
+            active_display_quartz_bounds(app, raw_field_rect, cursor_pos);
+        let app_changed = lock_state().snapshot.app_bundle_id != bundle_id && has_active_field;
+        sync_overlay_window_to_display(app, mon_x, mon_y, mon_w, mon_h, main_h, app_changed);
 
-        let mut new_active_lints: Vec<(String, ActionableLint, Vec<Suggestion>)> = Vec::new();
+        let mut new_active_lints: ActiveLints = Vec::new();
         let mut alerts: Vec<EloAlert> = Vec::new();
         let mut source_text = String::new();
 
@@ -1452,9 +1809,8 @@ fn run_overlay_loop(
                                 replacement: repl,
                             }
                         }
-                        Suggestion::InsertAfter(suffix_chars) => {
-                            let suffix: String = suffix_chars.iter().collect();
-                            let combined = format!("{original}{suffix}");
+                        Suggestion::InsertAfter(_) => {
+                            let combined = suggestion_replacement(&original, s);
                             EloSuggestion {
                                 kind: "insert_after".to_string(),
                                 label: combined.clone(),
@@ -1533,23 +1889,14 @@ fn run_overlay_loop(
             .collect();
         #[cfg(not(target_os = "macos"))]
         let occluders: Vec<EloRect> = Vec::new();
-        let card_command_str = card_cmd.map(|c| match c {
-            crate::config::CardCommand::Focus => "focus".to_string(),
-            crate::config::CardCommand::NextSuggestion => "next".to_string(),
-            crate::config::CardCommand::PreviousSuggestion => "prev".to_string(),
-            crate::config::CardCommand::NextReplacement => "next_repl".to_string(),
-            crate::config::CardCommand::PreviousReplacement => "prev_repl".to_string(),
-            crate::config::CardCommand::Accept => "accept".to_string(),
-            crate::config::CardCommand::Dismiss => "dismiss".to_string(),
-            crate::config::CardCommand::Close => "close".to_string(),
-        });
 
         #[cfg(target_os = "macos")]
         let target_pid = broker.focused_pid().unwrap_or(0);
         #[cfg(not(target_os = "macos"))]
         let target_pid = 0;
 
-        let snapshot = if let Ok(mut guard) = shared_state().lock() {
+        let snapshot = {
+            let mut guard = lock_state();
             let offset_key = if bundle_id.is_empty() {
                 "default"
             } else {
@@ -1604,12 +1951,11 @@ fn run_overlay_loop(
                 score,
                 word_count,
                 source_text,
-                card_command: card_command_str,
+                card_command: None,
+                card_command_seq: guard.snapshot.card_command_seq,
             };
             guard.snapshot = snap.clone();
             snap
-        } else {
-            continue;
         };
 
         // Emit update event when snapshot changes
@@ -1640,11 +1986,10 @@ fn run_overlay_loop(
                 (wr.x as i32).hash(&mut hasher);
                 (wr.y as i32).hash(&mut hasher);
             }
-            snapshot.card_command.hash(&mut hasher);
             hasher.finish()
         };
 
-        if state_hash != last_emitted_hash || snapshot.card_command.is_some() {
+        if state_hash != last_emitted_hash {
             last_emitted_hash = state_hash;
             let _ = app.emit("elo-overlay-snapshot", &snapshot);
         }
@@ -1682,4 +2027,203 @@ pub fn reset_and_request_accessibility(
 
     request_refresh();
     status
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MON_W: f64 = 1728.0;
+    const MON_H: f64 = 1117.0;
+
+    fn rect(x: f64, y: f64, width: f64, height: f64) -> EloRect {
+        EloRect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn assert_on_screen(widget: EloRect) {
+        assert!(
+            (8.0..=MON_W - widget.width - 8.0).contains(&widget.x),
+            "{widget:?}"
+        );
+        assert!(
+            (32.0..=MON_H - widget.height - 8.0).contains(&widget.y),
+            "{widget:?}"
+        );
+    }
+
+    #[test]
+    fn the_widget_sits_inside_the_bottom_right_of_a_tall_field() {
+        let widget = compute_widget_rect(rect(100.0, 100.0, 600.0, 300.0), 0.0, 0.0, MON_W, MON_H);
+        assert_eq!(widget.x, 100.0 + 600.0 - widget.width - 8.0);
+        assert_eq!(widget.y, 100.0 + 300.0 - widget.height - 8.0);
+    }
+
+    #[test]
+    fn short_fields_at_the_screen_edges_do_not_panic() {
+        // Each of these made a `clamp` range inverted, which used to panic while the overlay
+        // state lock was held and poison it for good.
+        for field in [
+            rect(100.0, -50.0, 400.0, 10.0),
+            rect(100.0, 1200.0, 400.0, 20.0),
+            rect(100.0, 0.0, 400.0, 20.0),
+            rect(-500.0, 1100.0, 50.0, 17.0),
+            rect(5000.0, 500.0, 50.0, 17.0),
+        ] {
+            for (dx, dy) in [(0.0, 0.0), (-9999.0, -9999.0), (9999.0, 9999.0)] {
+                assert_on_screen(compute_widget_rect(field, dx, dy, MON_W, MON_H));
+            }
+        }
+    }
+
+    #[test]
+    fn nan_geometry_does_not_panic() {
+        let widget =
+            compute_widget_rect(rect(f64::NAN, f64::NAN, 10.0, 10.0), 0.0, 0.0, MON_W, MON_H);
+        assert!(widget.x.is_finite() && widget.y.is_finite());
+    }
+
+    #[test]
+    fn clamp_between_tolerates_inverted_ranges() {
+        assert_eq!(clamp_between(5.0, 0.0, 10.0), 5.0);
+        assert_eq!(clamp_between(-5.0, 0.0, 10.0), 0.0);
+        assert_eq!(clamp_between(50.0, 0.0, 10.0), 10.0);
+        assert_eq!(clamp_between(5.0, 10.0, 0.0), 0.0);
+    }
+
+    fn active_state() -> SharedOverlayState {
+        let mut state = SharedOverlayState::default();
+        state.snapshot.field_active = true;
+        state.snapshot.widget_rect = Some(rect(500.0, 500.0, 104.0, 38.0));
+        state.monitor_origin = (100.0, 0.0);
+        state
+    }
+
+    #[test]
+    fn hit_testing_finds_the_widget_in_overlay_coordinates() {
+        let state = active_state();
+        let over_widget = egui::pos2(650.0, 520.0);
+        assert_eq!(
+            hit_test(&state, Some(over_widget)),
+            (true, Some((550.0, 520.0)))
+        );
+        assert!(!hit_test(&state, Some(egui::pos2(10.0, 10.0))).0);
+        assert!(!hit_test(&state, None).0);
+    }
+
+    #[test]
+    fn hit_testing_is_click_through_when_there_is_nothing_to_click() {
+        let mut state = active_state();
+        state.snapshot.service_enabled = false;
+        assert!(!hit_test(&state, Some(egui::pos2(650.0, 520.0))).0);
+
+        let mut state = active_state();
+        state.snapshot.field_active = false;
+        assert!(!hit_test(&state, Some(egui::pos2(650.0, 520.0))).0);
+    }
+
+    #[test]
+    fn dragging_keeps_the_overlay_clickable_everywhere() {
+        let mut state = active_state();
+        state.is_dragging = true;
+        assert!(hit_test(&state, Some(egui::pos2(10.0, 10.0))).0);
+    }
+
+    #[test]
+    fn a_heartbeat_goes_stale() {
+        let stale_ms = u64::try_from(LOOP_STALE_AFTER.as_millis()).unwrap();
+        assert!(!heartbeat_is_fresh(0, 10));
+        assert!(heartbeat_is_fresh(1_000, 1_000));
+        assert!(heartbeat_is_fresh(1_000, 1_000 + stale_ms - 1));
+        assert!(!heartbeat_is_fresh(1_000, 1_000 + stale_ms));
+    }
+
+    #[test]
+    fn restart_backoff_doubles_and_caps() {
+        assert_eq!(restart_backoff(1), Duration::from_millis(250));
+        assert_eq!(restart_backoff(2), Duration::from_millis(500));
+        assert_eq!(restart_backoff(6), Duration::from_secs(8));
+        assert_eq!(restart_backoff(60), Duration::from_secs(8));
+    }
+
+    #[test]
+    fn a_supervised_thread_restarts_after_a_panic_then_gives_up() {
+        use std::sync::atomic::AtomicU32;
+        let runs = Arc::new(AtomicU32::new(0));
+        let gave_up = Arc::new(AtomicBool::new(false));
+        let body_runs = runs.clone();
+        let flag = gave_up.clone();
+        let handle = spawn_supervised(
+            "supervised-test",
+            move || {
+                // Panic once, then finish normally.
+                if body_runs.fetch_add(1, Ordering::SeqCst) == 0 {
+                    panic!("first run fails");
+                }
+            },
+            move || flag.store(true, Ordering::SeqCst),
+        )
+        .unwrap();
+        handle.join().unwrap();
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
+        assert!(!gave_up.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn the_dictionary_fingerprint_sees_replaced_words() {
+        use harper_core::DictWordMetadata;
+        use harper_core::spell::MutableDictionary;
+
+        let dictionary = |words: &[&str]| {
+            let mut dictionary = MutableDictionary::new();
+            for word in words {
+                dictionary.append_word_str(word, DictWordMetadata::default());
+            }
+            dictionary_fingerprint(&dictionary)
+        };
+        assert_eq!(
+            dictionary(&["alpha", "beta"]),
+            dictionary(&["beta", "alpha"])
+        );
+        // Same word count, different words: a count-based key missed this.
+        assert_ne!(
+            dictionary(&["alpha", "beta"]),
+            dictionary(&["alpha", "gamma"])
+        );
+        assert_ne!(dictionary(&["alpha"]), dictionary(&["alpha", "beta"]));
+    }
+
+    #[test]
+    fn a_busy_config_never_reads_an_unknown_or_blocked_app() {
+        let config = Arc::new(AsyncMutex::new(Config::new()));
+        config.try_lock().unwrap().block_app("com.example.Blocked");
+        let mut policy = integration_policy(config.clone());
+        assert!(policy("com.example.Editor"));
+        assert!(!policy("com.example.Blocked"));
+
+        let _busy = config.try_lock().unwrap();
+        assert!(
+            policy("com.example.Editor"),
+            "falls back to the last decision"
+        );
+        assert!(!policy("com.example.Blocked"));
+        assert!(!policy("com.example.Unseen"), "never guesses allowed");
+    }
+
+    #[test]
+    fn card_commands_are_delivered_once_and_never_stored() {
+        let mut state = SharedOverlayState::default();
+        state.snapshot.card_command_seq = 7;
+        let snapshot = serde_json::to_value(&state.snapshot).unwrap();
+        assert_eq!(snapshot["card_command_seq"], 7);
+        assert!(snapshot["card_command"].is_null());
+        assert_eq!(
+            card_command_name(crate::config::CardCommand::Accept),
+            "accept"
+        );
+    }
 }

@@ -11,6 +11,7 @@ use core_foundation::string::CFString;
 use std::{
     cell::Cell,
     ptr,
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
@@ -27,7 +28,6 @@ pub const ACCESSIBILITY_ACTIVATION_SLOW_VERIFICATION_RETRY_INTERVAL: Duration =
 /// Stop burning AX calls on an app that exposes text but never usable bounds.
 pub const ACCESSIBILITY_ACTIVATION_MAX_VERIFICATION_ATTEMPTS: u8 = 40;
 pub const ACCESSIBILITY_ACTIVATION_FAST_VERIFICATION_ATTEMPTS: u8 = 20;
-pub const CHROMIUM_ACCESSIBILITY_SETTLE_DURATION: Duration = Duration::from_secs(3);
 
 /// Tracks an app accessibility activation attempt and any AX value Elocutio should restore later.
 #[derive(Debug, Clone)]
@@ -36,7 +36,34 @@ pub struct AccessibilityActivationState {
     pub bundle_id: String,
     pub status: AccessibilityActivationStatus,
     pub last_attempted_at: Instant,
+    /// What Elocutio changed on the app, so it can be put back when the user leaves it.
+    pub changes: ActivationChanges,
+}
+
+/// The accessibility attributes Elocutio switched on for an app, with the values to restore.
+///
+/// `None` means the attribute was not touched.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ActivationChanges {
+    pub manual_accessibility_restore_value: Option<bool>,
     pub enhanced_user_interface_restore_value: Option<bool>,
+}
+
+impl ActivationChanges {
+    fn is_empty(&self) -> bool {
+        self.manual_accessibility_restore_value.is_none()
+            && self.enhanced_user_interface_restore_value.is_none()
+    }
+}
+
+/// The activation currently applied to some app, kept process-wide so it can be undone at quit
+/// even though the broker that applied it lives on the overlay thread.
+static APPLIED_ACTIVATION: Mutex<Option<(pid_t, ActivationChanges)>> = Mutex::new(None);
+
+fn applied_activation() -> std::sync::MutexGuard<'static, Option<(pid_t, ActivationChanges)>> {
+    APPLIED_ACTIVATION
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// State of the focused app's accessibility activation attempt.
@@ -67,19 +94,64 @@ pub fn accessibility_activation_verification_retry_interval(verification_attempt
     }
 }
 
-/// Restores `AXEnhancedUserInterface` when a previous value was captured.
+/// Puts back whatever accessibility attributes Elocutio switched on for the state's app.
 pub fn release_accessibility_activation(state: &AccessibilityActivationState) {
-    if state.enhanced_user_interface_restore_value.is_none() {
+    {
+        let mut applied = applied_activation();
+        if applied.is_some_and(|(pid, _)| pid == state.pid) {
+            *applied = None;
+        }
+    }
+    restore_changes(state.pid, state.changes);
+}
+
+/// Restores the activation applied to whichever app was last targeted. Called at quit, when the
+/// overlay thread's broker will not get the chance to clean up after itself.
+pub fn release_applied_activation() {
+    let applied = applied_activation().take();
+    if let Some((pid, changes)) = applied {
+        restore_changes(pid, changes);
+    }
+}
+
+fn restore_changes(pid: pid_t, changes: ActivationChanges) {
+    if changes.is_empty() {
         return;
     }
 
-    let app = AXUIElement::application(state.pid);
-
+    let app = super::core_foundation_utilities::application_element(pid);
     restore_boolean_attribute(
         &app,
         "AXEnhancedUserInterface",
-        state.enhanced_user_interface_restore_value,
+        changes.enhanced_user_interface_restore_value,
     );
+    restore_boolean_attribute(
+        &app,
+        "AXManualAccessibility",
+        changes.manual_accessibility_restore_value,
+    );
+}
+
+/// Chromium browsers that only build their accessibility tree for `AXEnhancedUserInterface`.
+///
+/// Electron apps (and current Chromium) honour `AXManualAccessibility`, which switches on the
+/// accessibility tree and nothing else. `AXEnhancedUserInterface` also makes AppKit drop window
+/// animations and confuses window managers, so it is reserved for the browsers that need it.
+const ENHANCED_USER_INTERFACE_BUNDLE_PREFIXES: &[&str] = &[
+    "com.google.Chrome",
+    "org.chromium.Chromium",
+    "com.microsoft.edgemac",
+    "com.brave.Browser",
+    "com.vivaldi.Vivaldi",
+    "com.operasoftware.Opera",
+    "company.thebrowser.",
+];
+
+/// Whether the app needs `AXEnhancedUserInterface` on top of `AXManualAccessibility`.
+pub fn needs_enhanced_user_interface(bundle_id: &str) -> bool {
+    ENHANCED_USER_INTERFACE_BUNDLE_PREFIXES
+        .iter()
+        .any(|prefix| bundle_id.starts_with(prefix))
 }
 
 /// Returns whether an AX error means the target does not support this attribute.
@@ -89,21 +161,41 @@ pub fn is_unsupported_accessibility_activation_error(error: i32) -> bool {
         || error == kAXErrorNotImplemented
 }
 
-/// Sets `AXEnhancedUserInterface` while returning its old value when readable.
-pub fn set_enhanced_user_interface_preserving_previous(
+/// Switches on the app's accessibility tree and returns what was changed, for restoring later.
+///
+/// `AXManualAccessibility` is always tried first. `AXEnhancedUserInterface` is only set for the
+/// Chromium browsers that need it (see [`needs_enhanced_user_interface`]). An unknown previous
+/// value is restored as `false`, the default for both attributes, since Elocutio set it to `true`.
+pub fn activate_accessibility(
     app: &AXUIElement,
-    enabled: bool,
-) -> Result<Option<bool>, i32> {
-    let manual_result = set_boolean_attribute(app, "AXManualAccessibility", enabled);
-    match set_boolean_attribute_preserving_previous(app, "AXEnhancedUserInterface", enabled) {
-        Ok(previous) => Ok(previous),
-        Err(error) => match manual_result {
-            Ok(()) => {
-                eprintln!("Activated accessibility via AXManualAccessibility fallback");
-                Ok(None)
+    bundle_id: &str,
+) -> Result<ActivationChanges, i32> {
+    let mut changes = ActivationChanges::default();
+
+    let manual = set_boolean_attribute_preserving_previous(app, "AXManualAccessibility", true);
+    if let Ok(previous) = manual {
+        changes.manual_accessibility_restore_value = Some(previous.unwrap_or(false));
+    }
+
+    if needs_enhanced_user_interface(bundle_id) {
+        match set_boolean_attribute_preserving_previous(app, "AXEnhancedUserInterface", true) {
+            Ok(previous) => {
+                changes.enhanced_user_interface_restore_value = Some(previous.unwrap_or(false));
             }
-            Err(_) => Err(error),
-        },
+            Err(error) if changes.is_empty() => return Err(error),
+            Err(_) => {}
+        }
+    } else {
+        manual?;
+    }
+
+    Ok(changes)
+}
+
+/// Records the activation applied to `pid` so quitting can undo it.
+pub fn remember_applied_activation(pid: pid_t, changes: ActivationChanges) {
+    if !changes.is_empty() {
+        *applied_activation() = Some((pid, changes));
     }
 }
 
@@ -276,10 +368,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chromium_activation_uses_chromium_settle_duration() {
-        assert_eq!(
-            CHROMIUM_ACCESSIBILITY_SETTLE_DURATION,
-            Duration::from_secs(3)
+    fn only_chromium_browsers_get_enhanced_user_interface() {
+        assert!(needs_enhanced_user_interface("com.google.Chrome"));
+        assert!(needs_enhanced_user_interface("com.google.Chrome.canary"));
+        assert!(needs_enhanced_user_interface("company.thebrowser.Browser"));
+        // Electron apps use AXManualAccessibility only.
+        assert!(!needs_enhanced_user_interface("com.tinyspeck.slackmacgap"));
+        assert!(!needs_enhanced_user_interface("com.microsoft.VSCode"));
+        assert!(!needs_enhanced_user_interface("com.apple.TextEdit"));
+    }
+
+    #[test]
+    fn empty_changes_are_not_remembered() {
+        assert!(ActivationChanges::default().is_empty());
+        assert!(
+            !ActivationChanges {
+                manual_accessibility_restore_value: Some(false),
+                enhanced_user_interface_restore_value: None,
+            }
+            .is_empty()
         );
     }
 

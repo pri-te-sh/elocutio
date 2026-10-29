@@ -1,12 +1,14 @@
-//! Local SQLite personalization & encrypted credentials database (`elocutio.sqlite3`).
+//! Local SQLite personalization database (`elocutio.sqlite3`).
 //!
-//! Stores and synchronizes all personalization, encrypted API keys, and token usage locally:
+//! Stores and synchronizes all personalization and token usage locally:
 //! - `personal_dictionary`: User-added vocabulary and protected terms
 //! - `editorial_rules`: Rule overrides (disabled/customized rules)
 //! - `learned_edit_events`: Accepted, dismissed, and edited-after-accept suggestion signals
 //! - `voice_dna_traits`: Extracted stylistic traits and manual overrides
 //! - `user_preferences`: Dialect, tone, custom editorial instructions, budget, and cost cap
-//! - `encrypted_credentials`: AES-256 encrypted API keys (via macOS CommonCrypto)
+//! - `encrypted_credentials`: legacy API key rows from older builds. Keys now live in the
+//!   macOS Keychain (see `openrouter.rs`); these rows are only read once, to migrate them,
+//!   and then deleted.
 //! - `ai_token_usage`: Token and spend ledger per AI request
 
 use crate::config::Config;
@@ -14,7 +16,6 @@ use base64::{Engine as _, engine::general_purpose};
 use harper_core::spell::Dictionary;
 use serde::{Deserialize, Serialize};
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
-use std::io::Read;
 use std::path::PathBuf;
 use std::ptr;
 
@@ -110,6 +111,7 @@ unsafe extern "C" {
         errmsg: *mut *mut c_char,
     ) -> c_int;
     fn sqlite3_free(ptr: *mut c_void);
+    fn sqlite3_busy_timeout(db: *mut c_void, ms: c_int) -> c_int;
 }
 
 // macOS CommonCrypto (`libSystem.B.dylib`) AES-256-CBC + PBKDF2-HMAC-SHA256
@@ -143,13 +145,15 @@ unsafe extern "C" {
 
 const K_CC_PBKDF2: u32 = 2;
 const K_CC_PRF_HMAC_ALG_SHA256: u32 = 3;
-const K_CC_ENCRYPT: u32 = 0;
 const K_CC_DECRYPT: u32 = 1;
 const K_CC_ALGORITHM_AES128: u32 = 0; // AES block cipher (supports 128/192/256-bit keys)
 const K_CC_OPTION_PKCS7_PADDING: u32 = 1;
 const AES_256_KEY_LEN: usize = 32;
 const AES_BLOCK_IV_LEN: usize = 16;
 
+/// The key older builds encrypted `encrypted_credentials` rows with. It is
+/// derived from public values, so it is only used to read those rows once
+/// while migrating them into the Keychain.
 fn derive_vault_key_256() -> Result<[u8; AES_256_KEY_LEN], String> {
     let user = std::env::var("USER").unwrap_or_else(|_| "macos-user".to_string());
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/default".to_string());
@@ -173,54 +177,6 @@ fn derive_vault_key_256() -> Result<[u8; AES_256_KEY_LEN], String> {
         return Err(format!("PBKDF2 key derivation failed ({status})"));
     }
     Ok(derived)
-}
-
-fn random_iv_16() -> [u8; AES_BLOCK_IV_LEN] {
-    let mut iv = [0u8; AES_BLOCK_IV_LEN];
-    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-        let _ = f.read_exact(&mut iv);
-        if iv.iter().any(|&b| b != 0) {
-            return iv;
-        }
-    }
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0x9e3779b97f4a7c15);
-    iv.copy_from_slice(&nanos.to_le_bytes());
-    iv
-}
-
-fn encrypt_aes256_cbc(plaintext: &str) -> Result<(String, String), String> {
-    let key = derive_vault_key_256()?;
-    let iv = random_iv_16();
-    let input = plaintext.as_bytes();
-    let mut out = vec![0u8; input.len() + AES_BLOCK_IV_LEN * 2];
-    let mut moved: usize = 0;
-
-    let status = unsafe {
-        CCCrypt(
-            K_CC_ENCRYPT,
-            K_CC_ALGORITHM_AES128,
-            K_CC_OPTION_PKCS7_PADDING,
-            key.as_ptr() as *const c_void,
-            key.len(),
-            iv.as_ptr() as *const c_void,
-            input.as_ptr() as *const c_void,
-            input.len(),
-            out.as_mut_ptr() as *mut c_void,
-            out.len(),
-            &mut moved,
-        )
-    };
-    if status != 0 {
-        return Err(format!("AES-256 encryption failed ({status})"));
-    }
-    out.truncate(moved);
-    Ok((
-        general_purpose::STANDARD.encode(&out),
-        general_purpose::STANDARD.encode(iv),
-    ))
 }
 
 fn decrypt_aes256_cbc(ciphertext_b64: &str, iv_b64: &str) -> Result<String, String> {
@@ -282,6 +238,8 @@ impl SqliteConn {
         let path_str = path.to_string_lossy();
         let c_path =
             CString::new(path_str.as_bytes()).map_err(|e| format!("Invalid database path: {e}"))?;
+        // A database file deleted while the app runs needs its schema again.
+        let existed = path.exists();
         let mut db: *mut c_void = ptr::null_mut();
         let rc = unsafe { sqlite3_open(c_path.as_ptr(), &mut db) };
         if rc != 0 || db.is_null() {
@@ -293,9 +251,28 @@ impl SqliteConn {
             return Err(format!("sqlite3_open failed with code {rc}"));
         }
         let conn = Self(db);
-        conn.exec_batch(
-            "PRAGMA journal_mode=WAL;
-             PRAGMA synchronous=NORMAL;
+        // Several commands and the overlay open the database at once. Without
+        // a busy timeout a write that overlaps another fails immediately with
+        // SQLITE_BUSY, and most callers here swallow that error.
+        unsafe {
+            sqlite3_busy_timeout(conn.0, 5_000);
+        }
+        conn.exec_batch("PRAGMA synchronous=NORMAL;")?;
+
+        // The schema only needs creating once per process, not on every call.
+        static INITIALIZED: std::sync::OnceLock<
+            std::sync::Mutex<std::collections::HashSet<PathBuf>>,
+        > = std::sync::OnceLock::new();
+        let mut initialized = INITIALIZED
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !existed {
+            initialized.remove(path);
+        }
+        if !initialized.contains(path) {
+            conn.exec_batch(
+                "PRAGMA journal_mode=WAL;
              CREATE TABLE IF NOT EXISTS schema_meta (
                  version INTEGER PRIMARY KEY,
                  updated_at INTEGER NOT NULL
@@ -349,7 +326,9 @@ impl SqliteConn {
                  cost_usd REAL,
                  UNIQUE(timestamp, model, input_tokens, output_tokens)
              );",
-        )?;
+            )?;
+            initialized.insert(path.to_path_buf());
+        }
         Ok(conn)
     }
 
@@ -441,8 +420,20 @@ impl Drop for SqliteConn {
     }
 }
 
+/// Escapes text for a single-quoted SQL literal. NUL characters are dropped:
+/// one in a learned edit would otherwise make every later batch fail to
+/// convert to a C string.
 fn sql_escape(input: &str) -> String {
-    input.replace('\'', "''")
+    input.replace('\0', "").replace('\'', "''")
+}
+
+/// A finite SQL number literal; `NaN` and infinities are not valid SQL.
+fn sql_real(value: f64) -> String {
+    if value.is_finite() {
+        format!("{value}")
+    } else {
+        "0".to_string()
+    }
 }
 
 fn now_unix() -> u64 {
@@ -454,41 +445,16 @@ fn now_unix() -> u64 {
 
 pub fn db_path() -> Result<PathBuf, String> {
     #[cfg(test)]
-    {
-        return Ok(std::env::temp_dir().join("elocutio-test").join(DB_FILENAME));
-    }
+    let folder = Some(std::env::temp_dir().join("elocutio-test"));
     #[cfg(not(test))]
-    {
-        Config::folder_path()
-            .map(|folder| folder.join(DB_FILENAME))
-            .ok_or_else(|| "Application support folder unavailable.".to_string())
-    }
+    let folder = Config::folder_path();
+
+    folder
+        .map(|folder| folder.join(DB_FILENAME))
+        .ok_or_else(|| "Application support folder unavailable.".to_string())
 }
 
-/// Encrypts `raw_key` with AES-256-CBC and stores it in `encrypted_credentials` in `elocutio.sqlite3`.
-pub fn save_encrypted_api_key(provider_id: &str, raw_key: &str) -> Result<String, String> {
-    let trimmed = raw_key.trim();
-    if trimmed.is_empty() {
-        return Err("Enter an API key first.".to_string());
-    }
-    let (ciphertext_b64, iv_b64) = encrypt_aes256_cbc(trimmed)?;
-    let hint = mask_key_hint(trimmed);
-    let now = now_unix();
-    let path = db_path()?;
-    let conn = SqliteConn::open(&path)?;
-    let sql = format!(
-        "INSERT OR REPLACE INTO encrypted_credentials (provider_id, ciphertext_b64, iv_b64, key_hint, updated_at) VALUES ('{}', '{}', '{}', '{}', {});",
-        sql_escape(provider_id),
-        sql_escape(&ciphertext_b64),
-        sql_escape(&iv_b64),
-        sql_escape(&hint),
-        now
-    );
-    conn.exec_batch(&sql)?;
-    Ok(hint)
-}
-
-/// Loads and decrypts an API key from `encrypted_credentials` in `elocutio.sqlite3`.
+/// Loads and decrypts a legacy API key row from `encrypted_credentials`, for migration.
 pub fn load_decrypted_api_key(provider_id: &str) -> Result<Option<String>, String> {
     let path = db_path()?;
     let conn = SqliteConn::open(&path)?;
@@ -511,21 +477,16 @@ pub fn load_decrypted_api_key(provider_id: &str) -> Result<Option<String>, Strin
     }
 }
 
-/// Returns the masked key hint (e.g. `sk-or-…9f2a`) if an encrypted key is stored for `provider_id`.
-pub fn get_encrypted_key_hint(provider_id: &str) -> Option<String> {
-    let path = db_path().ok()?;
-    let conn = SqliteConn::open(&path).ok()?;
-    let sql = format!(
-        "SELECT key_hint FROM encrypted_credentials WHERE provider_id = '{}' LIMIT 1;",
-        sql_escape(provider_id)
-    );
-    conn.query_single_column(&sql)
-        .ok()
-        .and_then(|mut v| v.pop())
-        .filter(|s| !s.is_empty())
+/// Deletes every learned edit and voice trait, for "Clear voice profile".
+///
+/// The edit rows hold the user's original and replacement text, so clearing
+/// the profile must remove them too, not only the `.jsonl` files.
+pub fn clear_learned_voice_data() -> Result<(), String> {
+    let conn = SqliteConn::open(&db_path()?)?;
+    conn.exec_batch("DELETE FROM learned_edit_events; DELETE FROM voice_dna_traits;")
 }
 
-/// Deletes an encrypted API key for `provider_id` from `elocutio.sqlite3`.
+/// Deletes a legacy API key row from `encrypted_credentials`.
 pub fn clear_encrypted_api_key(provider_id: &str) -> Result<(), String> {
     let path = db_path()?;
     let conn = SqliteConn::open(&path)?;
@@ -550,9 +511,7 @@ pub fn record_token_usage_in_db(
     let Ok(conn) = SqliteConn::open(&path) else {
         return;
     };
-    let cost_sql = cost_usd
-        .map(|c| format!("{c}"))
-        .unwrap_or_else(|| "NULL".to_string());
+    let cost_sql = cost_usd.map(sql_real).unwrap_or_else(|| "NULL".to_string());
     let sql = format!(
         "INSERT OR IGNORE INTO ai_token_usage (timestamp, model, input_tokens, output_tokens, cost_usd) VALUES ({}, '{}', {}, {}, {});",
         timestamp,
@@ -715,7 +674,7 @@ pub fn sync_and_status(config: &Config) -> Result<PersonalizationDbStatus, Strin
             sql_escape(&t.key),
             sql_escape(&val_str),
             sql_escape(&summary_str),
-            t.confidence,
+            sql_real(t.confidence),
             if t.is_override { 1 } else { 0 },
             now
         ));
@@ -769,7 +728,7 @@ pub fn sync_and_status(config: &Config) -> Result<PersonalizationDbStatus, Strin
                 if let Ok(entry) = serde_json::from_str::<crate::usage::UsageEntry>(line) {
                     let cost_sql = entry
                         .cost_usd
-                        .map(|c| format!("{c}"))
+                        .map(sql_real)
                         .unwrap_or_else(|| "NULL".to_string());
                     batch.push_str(&format!(
                         "INSERT OR IGNORE INTO ai_token_usage (timestamp, model, input_tokens, output_tokens, cost_usd) VALUES ({}, '{}', {}, {}, {});\n",
@@ -787,22 +746,6 @@ pub fn sync_and_status(config: &Config) -> Result<PersonalizationDbStatus, Strin
     batch.push_str("COMMIT;\n");
     conn.exec_batch(&batch)?;
     drop(conn);
-
-    // 7. Automatically migrate any legacy plaintext keys in credentials.json into encrypted_credentials
-    if let Some(folder) = Config::folder_path() {
-        let cred_file = folder.join("credentials.json");
-        if let Ok(contents) = std::fs::read_to_string(&cred_file)
-            && let Ok(map) =
-                serde_json::from_str::<std::collections::BTreeMap<String, String>>(&contents)
-        {
-            for (k, v) in &map {
-                let trimmed = v.trim();
-                if !trimmed.is_empty() && get_encrypted_key_hint(k).is_none() {
-                    let _ = save_encrypted_api_key(k, trimmed);
-                }
-            }
-        }
-    }
 
     let db_size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
@@ -1005,11 +948,9 @@ pub fn get_writing_analytics(config: &Config) -> Result<WritingAnalyticsSnapshot
     };
 
     let total_decisions = total_accepted_edits + total_dismissed_edits;
-    let acceptance_rate_pct = if total_decisions > 0 {
-        ((total_accepted_edits * 100) / total_decisions) as u32
-    } else {
-        88
-    };
+    let acceptance_rate_pct = (total_accepted_edits * 100)
+        .checked_div(total_decisions)
+        .map_or(88, |pct| pct as u32);
 
     let total_seconds_saved = (total_accepted_edits as u32 * 14) + (total_ai_requests as u32 * 26);
     let estimated_minutes_saved = if total_seconds_saved > 0 {
@@ -1068,11 +1009,9 @@ pub fn get_writing_analytics(config: &Config) -> Result<WritingAnalyticsSnapshot
         .into_iter()
         .map(|(name, acc, dis, base_mastery, insight)| {
             let total = acc + dis;
-            let mastery_pct = if total > 0 {
-                ((base_mastery + ((acc * 100 / total) as u32)) / 2).clamp(62, 99)
-            } else {
-                base_mastery
-            };
+            let mastery_pct = (acc * 100).checked_div(total).map_or(base_mastery, |pct| {
+                ((base_mastery + pct as u32) / 2).clamp(62, 99)
+            });
             CategoryBreakdownItem {
                 category: name.to_string(),
                 accepted: acc,

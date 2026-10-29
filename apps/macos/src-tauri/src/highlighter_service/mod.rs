@@ -1,63 +1,34 @@
-mod highlighter_process;
-mod highlighter_worker;
+//! Start/stop facade over the in-process `"elo"` overlay.
+//!
+//! The overlay used to run as a child highlighter process; it now runs as a supervised thread in
+//! this process (see [`crate::elo_overlay`]). This service keeps the tray, the settings commands,
+//! and the restart watchdog talking to one small API.
 
-use crate::config::Config;
-use highlighter_worker::HighlighterWorker;
-use std::{
-    io,
-    sync::{Arc, Mutex as StdMutex},
-};
-use tokio::sync::Mutex;
+use std::{io, sync::Arc};
 
-/// Wraps around a [`HighlighterWorker`] and turns it into a service that is easier to manage.
-/// We can start and stop it and simply provide a shared `Config` object that we can update whenever.
-/// The service will sync the changes to the underlying highlighter process.
+/// Turns the overlay on and off and reports whether it is genuinely alive.
 pub struct HighlighterService {
-    config: Arc<Mutex<Config>>,
-    app: tauri::AppHandle,
-    worker: StdMutex<Option<HighlighterWorker>>,
     /// The shared suggestion count, so the menu bar can show it.
     suggestion_count: Arc<crate::config::SuggestionCount>,
 }
 
 impl HighlighterService {
-    /// Create a new highlighter process service, without starting it.
-    /// The provided config pointer will be automatically synced to the new process when changes are
-    /// made.
-    pub fn new(
-        config: Arc<Mutex<Config>>,
-        app: tauri::AppHandle,
-        suggestion_count: Arc<crate::config::SuggestionCount>,
-    ) -> Self {
-        Self {
-            config,
-            app,
-            worker: StdMutex::new(None),
-            suggestion_count,
-        }
+    /// Creates the service without starting anything.
+    pub fn new(suggestion_count: Arc<crate::config::SuggestionCount>) -> Self {
+        Self { suggestion_count }
     }
 
-    /// Starts the highlighter worker if it is not already running.
+    /// Enables the overlay and respawns its loop thread if that thread is no longer alive.
     pub fn start(&self) -> io::Result<bool> {
         crate::elo_overlay::set_running(true);
-        let _ = (&self.config, &self.app);
-        let _ = HighlighterWorker::spawn;
-        Ok(true)
+        crate::elo_overlay::ensure_loop_alive()
+            .map_err(|error| io::Error::other(format!("could not start the overlay: {error}")))?;
+        Ok(self.is_running())
     }
 
-    /// Stops the highlighter worker if one is running.
+    /// Disables the overlay. The loop thread keeps running idle so it can be re-enabled instantly.
     pub fn stop(&self) -> bool {
         crate::elo_overlay::set_running(false);
-        let worker = self
-            .worker
-            .lock()
-            .expect("highlighter service lock poisoned")
-            .take();
-
-        if let Some(mut worker) = worker {
-            worker.stop();
-        }
-
         false
     }
 
@@ -66,7 +37,7 @@ impl HighlighterService {
         self.suggestion_count.get()
     }
 
-    /// Starts or stops the worker based on the current state.
+    /// Starts or stops the overlay based on the current state.
     ///
     /// The tray menu uses this as its single action for the highlighter service. Returns whether the
     /// service is running after the toggle completes.
@@ -78,42 +49,11 @@ impl HighlighterService {
         }
     }
 
-    /// Reports whether a live worker is currently owned by the service.
+    /// Whether the overlay is enabled *and* its loop thread has reported a recent heartbeat.
+    ///
+    /// A loop that panicked past its restart budget or is wedged stops heartbeating, so the
+    /// watchdog sees it as stopped and can restart it.
     pub fn is_running(&self) -> bool {
-        self.reap_finished_worker();
-        crate::elo_overlay::is_running()
-    }
-
-    /// Joins and removes a worker whose thread has already exited.
-    fn reap_finished_worker(&self) {
-        let worker = {
-            let mut worker = self
-                .worker
-                .lock()
-                .expect("highlighter service lock poisoned");
-            if worker.as_ref().is_some_and(HighlighterWorker::is_finished) {
-                worker.take()
-            } else {
-                None
-            }
-        };
-
-        if let Some(mut worker) = worker {
-            worker.stop();
-        }
-    }
-}
-
-impl Drop for HighlighterService {
-    /// Stops the worker when the Tauri-managed service is dropped.
-    fn drop(&mut self) {
-        let worker = self
-            .worker
-            .get_mut()
-            .expect("highlighter service lock poisoned");
-
-        if let Some(mut worker) = worker.take() {
-            worker.stop();
-        }
+        crate::elo_overlay::is_running() && crate::elo_overlay::is_loop_alive()
     }
 }

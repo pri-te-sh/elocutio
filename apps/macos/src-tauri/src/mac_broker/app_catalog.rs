@@ -1,16 +1,9 @@
 use cached::cached;
-use std::{collections::BTreeSet, path::Path, process::Command, sync::Arc};
+use std::{collections::BTreeMap, path::Path, process::Command, sync::Arc};
 
 use crate::os_broker::AppSearchResult;
 
 const APPLICATION_BUNDLE_CONTENT_TYPE: &str = "com.apple.application-bundle";
-
-pub fn app_search_result_from_bundle_id(bundle_id: &str) -> AppSearchResult {
-    AppSearchResult {
-        name: integration_display_name(bundle_id),
-        bundle_id: bundle_id.to_string(),
-    }
-}
 
 pub fn integration_display_name(bundle_id: &str) -> String {
     application_path_for_bundle_id(bundle_id)
@@ -30,21 +23,13 @@ fn display_name_from_app_path(path: &str) -> Option<String> {
 }
 
 /// Unfiltered.
+///
+/// The display name comes from the `.app` path Spotlight already returned, so building the list
+/// costs one `mdls` per app rather than an extra `mdfind` per app as well.
+///
+/// `#[cached]` only caches `Ok` results, so a failed Spotlight query is retried next time.
 #[cached]
 pub fn installed_application_search_results() -> Result<Arc<Vec<AppSearchResult>>, String> {
-    let ids = installed_application_bundle_ids()?;
-
-    let mut results = Vec::with_capacity(ids.len());
-
-    for id in ids.iter() {
-        results.push(app_search_result_from_bundle_id(id));
-    }
-
-    Ok(Arc::new(results))
-}
-
-#[cached]
-pub fn installed_application_bundle_ids() -> Result<Arc<Vec<String>>, String> {
     let output = Command::new("mdfind")
         .arg(format!(
             "kMDItemContentType == \"{APPLICATION_BUNDLE_CONTENT_TYPE}\""
@@ -56,12 +41,24 @@ pub fn installed_application_bundle_ids() -> Result<Arc<Vec<String>>, String> {
         return Err("Failed to list installed applications with Spotlight.".to_string());
     }
 
-    let bundle_ids = String::from_utf8_lossy(&output.stdout)
+    let mut by_bundle_id: BTreeMap<String, String> = BTreeMap::new();
+    for path in String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter_map(|line| bundle_id_from_app_path(line.trim()))
-        .collect::<Vec<_>>();
+        .map(str::trim)
+    {
+        let Some(bundle_id) = bundle_id_from_app_path(path) else {
+            continue;
+        };
+        let name = display_name_from_app_path(path).unwrap_or_else(|| bundle_id.clone());
+        by_bundle_id.entry(bundle_id).or_insert(name);
+    }
 
-    Ok(Arc::new(deduplicate_and_sort_bundle_ids(bundle_ids)))
+    Ok(Arc::new(
+        by_bundle_id
+            .into_iter()
+            .map(|(bundle_id, name)| AppSearchResult { name, bundle_id })
+            .collect(),
+    ))
 }
 
 /// Resolves a bundle identifier to an installed `.app` path using Spotlight metadata.
@@ -121,32 +118,17 @@ fn escape_spotlight_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn deduplicate_and_sort_bundle_ids(bundle_ids: Vec<String>) -> Vec<String> {
-    bundle_ids
-        .into_iter()
-        .map(|bundle_id| bundle_id.trim().to_string())
-        .filter(|bundle_id| !bundle_id.is_empty() && bundle_id != "(null)")
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn deduplicates_and_sorts_bundle_ids() {
+    fn display_names_come_from_the_app_path() {
         assert_eq!(
-            deduplicate_and_sort_bundle_ids(vec![
-                "com.example.Beta".to_string(),
-                " com.example.Alpha ".to_string(),
-                "com.example.Beta".to_string(),
-                "".to_string(),
-                "(null)".to_string(),
-            ]),
-            vec!["com.example.Alpha", "com.example.Beta"]
+            display_name_from_app_path("/Applications/Visual Studio Code.app"),
+            Some("Visual Studio Code".to_string())
         );
+        assert_eq!(display_name_from_app_path("/Applications/.app"), None);
     }
 
     #[test]

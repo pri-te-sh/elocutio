@@ -1,4 +1,3 @@
-use accessibility::ui_element::AXUIElement;
 use accessibility_sys::{
     AXUIElementGetPid, error_string, kAXErrorSuccess, kAXFocusedApplicationAttribute, pid_t,
 };
@@ -49,7 +48,7 @@ pub fn is_elocutio_pid(pid: pid_t) -> bool {
 /// Pretty self-explanatory. Grabs the PID of the currently focused window.
 /// Can be expensive. Do not perform in a hot loop.
 pub fn focused_window_pid() -> Result<pid_t, Box<dyn StdError>> {
-    let system = AXUIElement::system_wide();
+    let system = super::core_foundation_utilities::system_wide_element();
     let app = match ax_element_attribute(&system, kAXFocusedApplicationAttribute) {
         Ok(app) => app,
         Err(error) => {

@@ -1,8 +1,10 @@
 //! Opt-in "analyze as I write" watcher.
 //!
-//! It only runs when `auto_analyze` is enabled, waits for a typing pause, and
-//! analyzes each distinct focused-field text at most once. The explicit widget
-//! AI action and shortcuts remain available when this is off.
+//! It only runs when `auto_analyze` is enabled and `local_only` is off, waits
+//! for a typing pause, and analyzes each distinct focused-field text at most
+//! once. Having a provider key is not consent to send every pause in typing to
+//! the cloud; the explicit widget AI action and shortcuts remain available when
+//! this is off.
 //!
 //! Live mode has to be careful with money and with the user's typing. The
 //! guards here implement the plan's rules (PLAN.md §4.5):
@@ -132,16 +134,46 @@ pub fn is_worth_analyzing(text: &str) -> bool {
     (MIN_LIVE_CHARS..=MAX_LIVE_CHARS).contains(&length)
 }
 
+/// Whether live analysis may send text to a provider without being asked.
+///
+/// Only an explicit opt-in counts, and local-only mode always wins.
+pub fn live_analysis_allowed(auto_analyze: bool, local_only: bool) -> bool {
+    auto_analyze && !local_only
+}
+
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_seen_hash = 0u64;
         let mut stable_since = std::time::Instant::now();
         let mut last_analyzed_hash = 0u64;
         let mut state = LiveState::default();
-        let generation = AnalysisGeneration::default();
+        let generation = Arc::new(AnalysisGeneration::default());
+        // The analysis request running in the background, if any.
+        let mut in_flight: Option<tauri::async_runtime::JoinHandle<()>> = None;
 
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
+
+            if in_flight
+                .as_ref()
+                .is_some_and(|task| task.inner().is_finished())
+            {
+                in_flight = None;
+            }
+
+            let enabled = {
+                let config = app.state::<Arc<Mutex<Config>>>();
+                let config = config.lock().await;
+                live_analysis_allowed(config.auto_analyze, config.local_only)
+            };
+            if !enabled {
+                // Turning live mode off (or local-only on) also stops a request already running.
+                if let Some(task) = in_flight.take() {
+                    task.abort();
+                }
+                last_seen_hash = 0;
+                continue;
+            }
 
             let snap = crate::elo_overlay::current_snapshot();
             if !snap.field_active || snap.pid <= 0 || snap.source_text.trim().is_empty() {
@@ -157,8 +189,11 @@ pub fn start(app: AppHandle) {
             if hash != last_seen_hash {
                 last_seen_hash = hash;
                 stable_since = std::time::Instant::now();
-                // A new keystroke invalidates any in-flight analysis.
+                // A new keystroke invalidates and cancels any in-flight analysis.
                 generation.begin();
+                if let Some(task) = in_flight.take() {
+                    task.abort();
+                }
                 continue;
             }
 
@@ -173,23 +208,13 @@ pub fn start(app: AppHandle) {
                 continue;
             }
 
-            // Throttle: a burst of edits must not become a burst of requests.
-            if !state.allows_request(&snap.app_bundle_id, Instant::now()) {
+            // One request at a time; a newer text cancels the older request above.
+            if in_flight.is_some() {
                 continue;
             }
 
-            let enabled = {
-                let config = app.state::<Arc<Mutex<Config>>>();
-                let config = config.lock().await;
-                !config.local_only
-                    && (config.auto_analyze
-                        || crate::openrouter::key_status_for(config.provider_kind)
-                            .map(|s| s.present)
-                            .unwrap_or(false)
-                        || config.provider_kind
-                            == crate::openrouter::ProviderKind::OpenAiCompatible)
-            };
-            if !enabled {
+            // Throttle: a burst of edits must not become a burst of requests.
+            if !state.allows_request(&snap.app_bundle_id, Instant::now()) {
                 continue;
             }
 
@@ -197,15 +222,25 @@ pub fn start(app: AppHandle) {
             state.record_request(&snap.app_bundle_id, Instant::now());
 
             let this_generation = generation.begin();
-            match llm_analysis::analyze_focused_field_with(&app, None).await {
-                Err(error) => eprintln!("Automatic analysis skipped: {error}"),
-                Ok(_) if !generation.is_current(this_generation) => {
-                    // The text moved on while the request was in flight, so the
-                    // result describes text the user is no longer looking at.
-                    eprintln!("Discarded a stale automatic analysis");
+            let task_app = app.clone();
+            let task_generation = generation.clone();
+            // The request runs as its own task so the loop keeps watching the field, and a newer
+            // keystroke can abort it instead of waiting for a response nobody wants.
+            let task = tauri::async_runtime::spawn(async move {
+                // The whole field is sent: the diff-only mode of `analyze_focused_field_with`
+                // replaces the suggestion cache with the changed paragraphs' suggestions alone,
+                // which would drop the suggestions for every unchanged paragraph.
+                match llm_analysis::analyze_focused_field_with(&task_app, None).await {
+                    Err(error) => eprintln!("Automatic analysis skipped: {error}"),
+                    Ok(_) if !task_generation.is_current(this_generation) => {
+                        // The text moved on while the request was in flight, so the
+                        // result describes text the user is no longer looking at.
+                        eprintln!("Discarded a stale automatic analysis");
+                    }
+                    Ok(_) => {}
                 }
-                Ok(_) => {}
-            }
+            });
+            in_flight = Some(task);
         }
     });
 }
@@ -269,6 +304,14 @@ mod tests {
         let now = Instant::now();
         state.record_request("com.example.Editor", now);
         assert!(state.allows_request("com.example.Other", now));
+    }
+
+    #[test]
+    fn live_analysis_needs_explicit_opt_in() {
+        assert!(live_analysis_allowed(true, false));
+        assert!(!live_analysis_allowed(false, false));
+        assert!(!live_analysis_allowed(true, true));
+        assert!(!live_analysis_allowed(false, true));
     }
 
     #[test]

@@ -29,6 +29,21 @@ use wintheon::file::{IconSize, Priority};
 use wintheon::gather::Gatherer;
 mod automation_service;
 
+/// The cursor position in logical pixels, or `None` when Windows will not report it (for
+/// example on the secure desktop).
+pub fn cursor_position_now() -> Option<Pos2> {
+    let mut point = POINT::default();
+
+    unsafe { GetCursorPos(&mut point) }.ok()?;
+
+    let monitor_scale = get_focused_monitor_scale();
+
+    Some(Pos2::new(
+        point.x as f32 / monitor_scale as f32,
+        point.y as f32 / monitor_scale as f32,
+    ))
+}
+
 pub struct WindowsBroker {
     service: Arc<Mutex<AutomationService>>,
     is_integration_enabled: Box<dyn FnMut(&str) -> bool + Send + Sync>,
@@ -42,6 +57,12 @@ impl WindowsBroker {
             service: Arc::new(Mutex::new(AutomationService::create_and_start())),
             is_integration_enabled: Box::new(is_integration_enabled),
         }
+    }
+
+    /// Builds the installed-app catalog cache without needing a broker instance (or its lock).
+    pub fn warm_app_catalog() -> Result<(), String> {
+        let _ = installed_applications_list();
+        Ok(())
     }
 
     pub fn should_lint_focused_window(&mut self) -> Option<bool> {
@@ -122,11 +143,12 @@ impl OsBroker for WindowsBroker {
                             lint.clone(),
                             text.clone(),
                             move |suggestion| {
-                                service.lock().unwrap().apply_suggestion(
-                                    suggestion_text,
-                                    suggestion_span,
-                                    suggestion,
-                                );
+                                // A poisoned lock only means an earlier job panicked; the
+                                // service itself is still usable.
+                                service
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .apply_suggestion(suggestion_text, suggestion_span, suggestion);
                             },
                         )
                     })
@@ -136,20 +158,7 @@ impl OsBroker for WindowsBroker {
     }
 
     fn cursor_position(&self) -> Option<Pos2> {
-        let mut point = POINT::default();
-
-        unsafe {
-            GetCursorPos(&mut point).unwrap();
-        }
-
-        let monitor_scale = get_focused_monitor_scale();
-
-        let pos = Pos2::new(
-            point.x as f32 / monitor_scale as f32,
-            point.y as f32 / monitor_scale as f32,
-        );
-
-        Some(pos)
+        cursor_position_now()
     }
 
     fn accessibility_permission_status(&self) -> AccessibilityPermissionStatus {
@@ -166,14 +175,6 @@ impl OsBroker for WindowsBroker {
         }
 
         bundle_id.to_string()
-    }
-
-    fn installed_application_bundle_ids(&self) -> Result<Vec<String>, String> {
-        let list = installed_applications_list();
-        Ok(list
-            .iter()
-            .map(|i| i.path.to_string_lossy().into_owned())
-            .collect())
     }
 
     fn application_icon_png(&self, bundle_id: &str) -> Result<Vec<u8>, String> {

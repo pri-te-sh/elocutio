@@ -317,10 +317,101 @@ pub struct RewriteResult {
     pub cost_usd: Option<f64>,
 }
 
-#[allow(dead_code)]
-fn entry_for(kind: ProviderKind) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(kind.keychain_service(), KEYCHAIN_ACCOUNT)
-        .map_err(|error| error.to_string())
+/// The Keychain account a provider configuration's key is saved under.
+///
+/// OpenRouter has one key. Every OpenAI-compatible preset (OpenAI, Groq,
+/// Ollama, the Apple bridge, a custom URL) shares one provider kind, so the
+/// key is scoped to the endpoint's host: a key saved for `api.openai.com` is
+/// never attached to a request for `api.groq.com` or a local port.
+fn key_account(provider: &ProviderConfig) -> String {
+    match provider.kind {
+        ProviderKind::OpenRouter => KEYCHAIN_ACCOUNT.to_string(),
+        ProviderKind::OpenAiCompatible => {
+            let host = crate::network_log::host_of(provider.base_url.trim()).to_ascii_lowercase();
+            format!("{KEYCHAIN_ACCOUNT}@{host}")
+        }
+    }
+}
+
+/// Keys read from the Keychain this session, so a status check does not hit
+/// the Keychain (and possibly an access prompt) on every overlay poll.
+fn key_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, Option<String>>> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+fn cache_id(service: &str, account: &str) -> String {
+    format!("{service}\u{1f}{account}")
+}
+
+/// The secret store: the login Keychain in the app, an in-memory map in tests.
+mod secret_store {
+    #[cfg(not(test))]
+    pub fn get(service: &str, account: &str) -> Result<Option<String>, String> {
+        let entry = keyring::Entry::new(service, account).map_err(|error| error.to_string())?;
+        match entry.get_password() {
+            Ok(secret) => Ok(Some(secret)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    #[cfg(not(test))]
+    pub fn set(service: &str, account: &str, secret: &str) -> Result<(), String> {
+        keyring::Entry::new(service, account)
+            .and_then(|entry| entry.set_password(secret))
+            .map_err(|error| error.to_string())
+    }
+
+    #[cfg(not(test))]
+    pub fn delete(service: &str, account: &str) -> Result<(), String> {
+        let entry = keyring::Entry::new(service, account).map_err(|error| error.to_string())?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    fn store() -> &'static std::sync::Mutex<std::collections::HashMap<(String, String), String>> {
+        static STORE: std::sync::OnceLock<
+            std::sync::Mutex<std::collections::HashMap<(String, String), String>>,
+        > = std::sync::OnceLock::new();
+        STORE.get_or_init(Default::default)
+    }
+
+    #[cfg(test)]
+    pub fn get(service: &str, account: &str) -> Result<Option<String>, String> {
+        let store = store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Ok(store
+            .get(&(service.to_string(), account.to_string()))
+            .cloned())
+    }
+
+    #[cfg(test)]
+    pub fn set(service: &str, account: &str, secret: &str) -> Result<(), String> {
+        let mut store = store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        store.insert(
+            (service.to_string(), account.to_string()),
+            secret.to_string(),
+        );
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn delete(service: &str, account: &str) -> Result<(), String> {
+        let mut store = store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        store.remove(&(service.to_string(), account.to_string()));
+        Ok(())
+    }
 }
 
 fn credentials_path() -> Result<std::path::PathBuf, String> {
@@ -346,6 +437,13 @@ fn read_credentials_map() -> Result<std::collections::BTreeMap<String, String>, 
 
 fn write_credentials_map(map: &std::collections::BTreeMap<String, String>) -> Result<(), String> {
     let path = credentials_path()?;
+    if map.is_empty() {
+        return match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        };
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -359,63 +457,159 @@ fn write_credentials_map(map: &std::collections::BTreeMap<String, String>) -> Re
     Ok(())
 }
 
-pub fn key_status_for(kind: ProviderKind) -> Result<KeyStatus, String> {
-    let present = load_key_optional(kind)?.is_some();
+/// The ids older builds stored a provider kind's single shared key under.
+fn legacy_key_ids(kind: ProviderKind) -> [String; 2] {
+    [
+        format!("{}:{KEYCHAIN_ACCOUNT}", kind.keychain_service()),
+        kind.keychain_service().to_string(),
+    ]
+}
+
+/// Removes every legacy copy of a provider kind's key: the SQLite
+/// `encrypted_credentials` rows and the plaintext `credentials.json` entries.
+fn purge_legacy_keys(kind: ProviderKind) {
+    for id in legacy_key_ids(kind) {
+        let _ = crate::personalization_db::clear_encrypted_api_key(&id);
+    }
+    if let Ok(mut map) = read_credentials_map() {
+        let before = map.len();
+        for id in legacy_key_ids(kind) {
+            map.remove(&id);
+        }
+        if map.len() != before {
+            let _ = write_credentials_map(&map);
+        }
+    }
+}
+
+/// Finds a key saved by an older build, which kept one key per provider kind
+/// in SQLite (or, before that, in plaintext).
+fn find_legacy_key(kind: ProviderKind) -> Option<String> {
+    for id in legacy_key_ids(kind) {
+        if let Ok(Some(key)) = crate::personalization_db::load_decrypted_api_key(&id) {
+            return Some(key);
+        }
+    }
+    let map = read_credentials_map().ok()?;
+    legacy_key_ids(kind)
+        .iter()
+        .filter_map(|id| map.get(id))
+        .map(|value| value.trim().to_string())
+        .find(|value| !value.is_empty())
+}
+
+pub fn key_status_for(provider: &ProviderConfig) -> Result<KeyStatus, String> {
+    let present = load_key_optional(provider)?.is_some();
     Ok(KeyStatus { present })
 }
 
-pub fn save_key_for(kind: ProviderKind, key: &str) -> Result<KeyStatus, String> {
+/// The masked key (for example `sk-or-…9f2a`) shown in Settings.
+pub fn key_hint_for(provider: &ProviderConfig) -> Option<String> {
+    load_key_optional(provider)
+        .ok()
+        .flatten()
+        .map(|key| crate::personalization_db::mask_key_hint(&key))
+}
+
+pub fn save_key_for(provider: &ProviderConfig, key: &str) -> Result<KeyStatus, String> {
     let key = key.trim();
     if key.is_empty() {
         return Err("Enter an API key first.".into());
     }
-    let service_key = format!("{}:{KEYCHAIN_ACCOUNT}", kind.keychain_service());
-    crate::personalization_db::save_encrypted_api_key(&service_key, key)
-        .map_err(|error| format!("Could not encrypt and save key in SQLite DB: {error}"))?;
+    let service = provider.kind.keychain_service();
+    let account = key_account(provider);
+    secret_store::set(service, &account, key)
+        .map_err(|error| format!("Could not save the key in the Keychain: {error}"))?;
+    key_cache()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(cache_id(service, &account), Some(key.to_string()));
 
-    // Remove any legacy plaintext copy from credentials.json
-    if let Ok(mut map) = read_credentials_map()
-        && map.remove(&service_key).is_some()
-    {
-        let _ = write_credentials_map(&map);
-    }
+    // A saved key replaces whatever an older build left behind.
+    purge_legacy_keys(provider.kind);
     Ok(KeyStatus { present: true })
 }
 
-pub fn clear_key_for(kind: ProviderKind) -> Result<KeyStatus, String> {
-    let service_key = format!("{}:{KEYCHAIN_ACCOUNT}", kind.keychain_service());
-    let _ = crate::personalization_db::clear_encrypted_api_key(&service_key);
-    if let Ok(mut map) = read_credentials_map() {
-        map.remove(&service_key);
-        let _ = write_credentials_map(&map);
-    }
+pub fn clear_key_for(provider: &ProviderConfig) -> Result<KeyStatus, String> {
+    let service = provider.kind.keychain_service();
+    let account = key_account(provider);
+    secret_store::delete(service, &account)
+        .map_err(|error| format!("Could not remove the key from the Keychain: {error}"))?;
+    key_cache()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(cache_id(service, &account), None);
+    purge_legacy_keys(provider.kind);
     Ok(KeyStatus { present: false })
 }
 
-pub fn load_key_optional(kind: ProviderKind) -> Result<Option<String>, String> {
-    let service_key = format!("{}:{KEYCHAIN_ACCOUNT}", kind.keychain_service());
-    if let Ok(Some(decrypted)) = crate::personalization_db::load_decrypted_api_key(&service_key) {
-        return Ok(Some(decrypted));
-    }
-    if let Ok(Some(decrypted)) =
-        crate::personalization_db::load_decrypted_api_key(kind.keychain_service())
+/// The key for a provider configuration, if one is saved.
+pub fn load_key_optional(provider: &ProviderConfig) -> Result<Option<String>, String> {
+    let service = provider.kind.keychain_service();
+    let account = key_account(provider);
+    let id = cache_id(service, &account);
+    if let Some(cached) = key_cache()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&id)
     {
-        return Ok(Some(decrypted));
+        return Ok(cached.clone());
     }
 
-    // Legacy migration: if credentials.json still has a plaintext key, encrypt it into SQLite
-    let map = read_credentials_map()
-        .map_err(|error| format!("Could not read the saved credentials: {error}"))?;
-    if let Some(legacy_plain) = map
-        .get(&service_key)
-        .or_else(|| map.get(kind.keychain_service()))
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-    {
-        let _ = crate::personalization_db::save_encrypted_api_key(&service_key, &legacy_plain);
-        return Ok(Some(legacy_plain));
+    let key = secret_store::get(service, &account)
+        .map_err(|error| format!("Could not read the key from the Keychain: {error}"))?
+        .filter(|value| !value.trim().is_empty());
+    key_cache()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(id, key.clone());
+    Ok(key)
+}
+
+/// The endpoint a legacy OpenAI-compatible key belongs to, when its prefix
+/// says so: Groq keys start `gsk_`, OpenAI keys `sk-` (OpenRouter's `sk-or-`
+/// keys live under their own provider kind).
+fn base_url_for_key_prefix(key: &str) -> Option<&'static str> {
+    if key.starts_with("gsk_") {
+        Some("https://api.groq.com/openai/v1")
+    } else if key.starts_with("sk-") && !key.starts_with("sk-or-") {
+        Some(DEFAULT_OPENAI_BASE_URL)
+    } else {
+        None
     }
-    Ok(None)
+}
+
+/// Moves a key an older build saved into a Keychain slot, then deletes every
+/// legacy copy.
+///
+/// Older builds kept one key per provider kind (in SQLite, and before that in
+/// plaintext), shared by every OpenAI-compatible preset, so the key's owner is
+/// a guess. A recognizable prefix wins (a Groq key goes to `api.groq.com`
+/// even while Ollama is selected); otherwise the configured endpoint is used,
+/// unless it is a local port, which never needs a provider key. When neither
+/// applies the legacy copy is left alone and migrated on a later call, once a
+/// remote endpoint is configured.
+pub fn migrate_legacy_key(provider: &ProviderConfig) -> Result<(), String> {
+    let Some(legacy) = find_legacy_key(provider.kind) else {
+        return Ok(());
+    };
+    let target = match provider.kind {
+        ProviderKind::OpenRouter => provider.clone(),
+        ProviderKind::OpenAiCompatible => match base_url_for_key_prefix(&legacy) {
+            Some(base_url) => ProviderConfig {
+                kind: provider.kind,
+                base_url: base_url.to_string(),
+            },
+            None if is_loopback_url(&provider.base_url) => return Ok(()),
+            None => provider.clone(),
+        },
+    };
+    if load_key_optional(&target)?.is_none() {
+        save_key_for(&target, &legacy)?;
+    } else {
+        purge_legacy_keys(provider.kind);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -564,7 +758,13 @@ pub async fn fetch_preset_model_slugs(preset_id: &str, base_url: &str) -> Vec<Pr
             ProviderKind::OpenAiCompatible
         };
         let mut req = client.get(&models_url);
-        if let Ok(Some(key)) = load_key_optional(kind) {
+        // The key is looked up by this preset's own host, so a key saved for
+        // one provider is never sent to another provider's endpoint.
+        let provider = ProviderConfig {
+            kind,
+            base_url: base_url.to_string(),
+        };
+        if let Ok(Some(key)) = load_key_optional(&provider) {
             req = req.bearer_auth(key);
         }
         if let Ok(resp) = req.send().await
@@ -617,7 +817,7 @@ pub async fn fetch_preset_model_slugs(preset_id: &str, base_url: &str) -> Vec<Pr
 
 /// The endpoint and key for a provider configuration.
 async fn endpoint_for(provider: &ProviderConfig) -> Result<Endpoint, String> {
-    let key = load_key_optional(provider.kind)?;
+    let key = load_key_optional(provider)?;
     if provider.kind == ProviderKind::OpenRouter && key.is_none() {
         return Err("No OpenRouter key is saved. Add one first.".into());
     }
@@ -673,6 +873,7 @@ pub async fn rewrite_with_stream(
         ResponseFormat::Text,
     );
 
+    enforce_cost_cap(provider, &request)?;
     let adapter = llm::adapter_for(provider.kind).map_err(|error| llm::user_message(&error))?;
     let endpoint = endpoint_for(provider).await?;
     let streamed = llm::streaming::stream_chat(adapter.as_ref(), &endpoint, &request)
@@ -708,7 +909,7 @@ pub async fn rewrite_with_stream(
 }
 
 pub async fn test_key_for(provider: &ProviderConfig) -> Result<OpenRouterStatus, String> {
-    let key = load_key_optional(provider.kind)?;
+    let key = load_key_optional(provider)?;
     if provider.kind == ProviderKind::OpenRouter && key.is_none() {
         return Err("No OpenRouter key is saved. Add one first.".into());
     }
@@ -898,16 +1099,102 @@ fn model_name(response: &elocutio_llm::ChatResponse, request: &ChatRequest) -> S
     }
 }
 
+/// The cost cap from the saved settings.
+///
+/// It is enforced where every request leaves the app, so no path (live
+/// analysis, the overlay's rewrite, a future command) can skip it.
+fn active_cost_cap() -> &'static std::sync::Mutex<Option<f64>> {
+    static CAP: std::sync::OnceLock<std::sync::Mutex<Option<f64>>> = std::sync::OnceLock::new();
+    CAP.get_or_init(Default::default)
+}
+
+/// Records the cost cap from the configuration; called whenever it loads or saves.
+pub fn set_active_cost_cap(cap: Option<f64>) {
+    *active_cost_cap()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = cap;
+}
+
+/// True when a URL points at this Mac (`localhost`, `127.0.0.1`, `[::1]`).
+pub fn is_loopback_url(url: &str) -> bool {
+    let authority = crate::network_log::host_of(url).to_ascii_lowercase();
+    let host = match authority.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or_default(),
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
+/// Refuses a request whose estimated cost is over the cap.
+///
+/// The estimate covers the whole prompt (system prompt, voice guidance and
+/// user text), not just the user's text. A loopback endpoint (Ollama, the
+/// Apple bridge) costs nothing, so it is never refused.
+fn enforce_cost_cap(provider: &ProviderConfig, request: &ChatRequest) -> Result<(), String> {
+    if is_loopback_url(&provider.chat_endpoint()) {
+        return Ok(());
+    }
+    let cap = *active_cost_cap()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let input_chars = request
+        .system
+        .as_ref()
+        .map_or(0, |system| system.chars().count())
+        + request
+            .messages
+            .iter()
+            .map(|message| message.content.chars().count())
+            .sum::<usize>();
+    check_cost_cap(
+        &request.model.model,
+        input_chars,
+        request.max_output_tokens.unwrap_or(REWRITE_MAX_TOKENS),
+        cap,
+    )
+}
+
+/// Why a request did not produce a response.
+enum RequestFailure {
+    /// Refused before it was sent: no key, or over the cost cap.
+    Local(String),
+    /// The provider (or the network) failed, normalized to the taxonomy.
+    Provider(ProviderError),
+}
+
+impl RequestFailure {
+    fn into_message(self) -> String {
+        match self {
+            RequestFailure::Local(message) => message,
+            RequestFailure::Provider(error) => llm::user_message(&error),
+        }
+    }
+}
+
 /// Send a canonical request through the provider's adapter.
 async fn send_request(
     provider: &ProviderConfig,
     request: &ChatRequest,
 ) -> Result<elocutio_llm::ChatResponse, String> {
-    let adapter = llm::adapter_for(provider.kind).map_err(|error| llm::user_message(&error))?;
-    let endpoint = endpoint_for(provider).await?;
+    send_request_raw(provider, request)
+        .await
+        .map_err(RequestFailure::into_message)
+}
+
+/// [`send_request`], keeping the normalized error so a caller can decide
+/// what to do about its kind.
+async fn send_request_raw(
+    provider: &ProviderConfig,
+    request: &ChatRequest,
+) -> Result<elocutio_llm::ChatResponse, RequestFailure> {
+    enforce_cost_cap(provider, request).map_err(RequestFailure::Local)?;
+    let adapter = llm::adapter_for(provider.kind).map_err(RequestFailure::Provider)?;
+    let endpoint = endpoint_for(provider)
+        .await
+        .map_err(RequestFailure::Local)?;
     llm::http::send_chat(adapter.as_ref(), &endpoint, request)
         .await
-        .map_err(|error| llm::user_message(&error))
+        .map_err(RequestFailure::Provider)
 }
 
 /// Structured analysis with a custom instruction and a voice style card.
@@ -956,9 +1243,26 @@ pub async fn analyze_with_context(
         },
     );
 
-    let response = match send_request(provider, &request).await {
-        Ok(resp) if !resp.text.trim().is_empty() => resp,
-        _ => {
+    // Fall back only when the structured request came back empty or was
+    // rejected as a request the endpoint does not support. A rate limit, a bad
+    // key, or an outage would fail the same way again, so retrying it as text
+    // would only double the attempts (and, for a timeout, the bill).
+    let response = match send_request_raw(provider, &request).await {
+        Ok(resp) if !resp.text.trim().is_empty() => Some(resp),
+        Ok(_) => None,
+        Err(RequestFailure::Provider(error))
+            if matches!(
+                error.kind,
+                ErrorKind::InvalidRequest | ErrorKind::Unsupported
+            ) =>
+        {
+            None
+        }
+        Err(failure) => return Err(failure.into_message()),
+    };
+    let response = match response {
+        Some(resp) => resp,
+        None => {
             let fallback_request = llm::build_chat_request(
                 provider.kind,
                 &model,
@@ -1065,6 +1369,44 @@ fn openrouter_error(status: reqwest::StatusCode, body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn keys_are_scoped_to_the_endpoint_host() {
+        let groq = ProviderConfig {
+            kind: ProviderKind::OpenAiCompatible,
+            base_url: "https://api.groq.com/openai/v1".to_string(),
+        };
+        let ollama = ProviderConfig {
+            kind: ProviderKind::OpenAiCompatible,
+            base_url: "http://localhost:11434/v1".to_string(),
+        };
+        assert_eq!(key_account(&groq), "api_key@api.groq.com");
+        assert_eq!(key_account(&ollama), "api_key@localhost:11434");
+        assert_ne!(key_account(&groq), key_account(&ollama));
+    }
+
+    #[test]
+    fn a_legacy_key_follows_its_prefix_not_the_selected_preset() {
+        assert_eq!(
+            base_url_for_key_prefix("gsk_abc"),
+            Some("https://api.groq.com/openai/v1")
+        );
+        assert_eq!(
+            base_url_for_key_prefix("sk-proj-abc"),
+            Some(DEFAULT_OPENAI_BASE_URL)
+        );
+        assert_eq!(base_url_for_key_prefix("sk-or-v1-abc"), None);
+        assert_eq!(base_url_for_key_prefix("ollama-key"), None);
+    }
+
+    #[test]
+    fn loopback_urls_are_recognized() {
+        assert!(is_loopback_url("http://localhost:11434/v1"));
+        assert!(is_loopback_url("http://127.0.0.1:11535/v1"));
+        assert!(is_loopback_url("http://[::1]:8080/v1"));
+        assert!(!is_loopback_url("https://api.openai.com/v1"));
+        assert!(!is_loopback_url("http://localhost.evil.example/v1"));
+    }
+
     use super::*;
     use elocutio_llm::{Message, ModelRef};
 

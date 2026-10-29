@@ -86,6 +86,7 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         set_dictionary,
         ignore_lint,
         add_to_dictionary,
+        remove_from_dictionary,
         get_integrations,
         get_auto_enable_new_apps,
         set_auto_enable_new_apps,
@@ -268,26 +269,30 @@ struct ProviderSettings {
     key_hint: Option<String>,
 }
 
-fn key_hint_for_kind(kind: ProviderKind) -> Option<String> {
-    let service_key = format!("{}:api_key", kind.keychain_service());
-    crate::personalization_db::get_encrypted_key_hint(&service_key)
-        .or_else(|| crate::personalization_db::get_encrypted_key_hint(kind.keychain_service()))
+/// The provider configuration the saved settings point at.
+fn provider_from(config: &Config) -> ProviderConfig {
+    ProviderConfig {
+        kind: config.provider_kind,
+        base_url: config.provider_base_url.clone(),
+    }
+}
+
+fn provider_settings_from(config: &Config) -> Result<ProviderSettings, String> {
+    let provider = provider_from(config);
+    Ok(ProviderSettings {
+        kind: config.provider_kind,
+        base_url: config.provider_base_url.clone(),
+        model: config.provider_model.clone(),
+        key_present: openrouter::key_status_for(&provider)?.present,
+        key_hint: openrouter::key_hint_for(&provider),
+    })
 }
 
 #[tauri::command]
 async fn get_provider_settings(
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<ProviderSettings, String> {
-    let config = config.lock().await;
-    let key_present = openrouter::key_status_for(config.provider_kind)?.present;
-    let key_hint = key_hint_for_kind(config.provider_kind);
-    Ok(ProviderSettings {
-        kind: config.provider_kind,
-        base_url: config.provider_base_url.clone(),
-        model: config.provider_model.clone(),
-        key_present,
-        key_hint,
-    })
+    provider_settings_from(&*config.lock().await)
 }
 
 #[tauri::command]
@@ -301,15 +306,10 @@ async fn set_provider_kind(
         .save_to_system()
         .await
         .map_err(|error| error.to_string())?;
-    let key_present = openrouter::key_status_for(config.provider_kind)?.present;
-    let key_hint = key_hint_for_kind(config.provider_kind);
-    Ok(ProviderSettings {
-        kind: config.provider_kind,
-        base_url: config.provider_base_url.clone(),
-        model: config.provider_model.clone(),
-        key_present,
-        key_hint,
-    })
+    // A legacy key left unmigrated while a local endpoint was selected finds
+    // its slot once a remote endpoint is configured.
+    let _ = openrouter::migrate_legacy_key(&provider_from(&config));
+    provider_settings_from(&config)
 }
 
 #[tauri::command]
@@ -321,12 +321,20 @@ async fn set_provider_base_url(
     if base_url.is_empty() || !base_url.starts_with("http") {
         return Err("Enter an http(s) base URL, for example https://api.openai.com/v1.".into());
     }
+    // The API key travels in a header, so plain http is only allowed to this
+    // Mac (Ollama, the Apple bridge); anywhere else it would go in cleartext.
+    if base_url.starts_with("http://") && !openrouter::is_loopback_url(&base_url) {
+        return Err(
+            "Use an https:// base URL. Plain http:// is only allowed for localhost.".into(),
+        );
+    }
     let mut config = config.lock().await;
     config.provider_base_url = base_url.clone();
     config
         .save_to_system()
         .await
         .map_err(|error| error.to_string())?;
+    let _ = openrouter::migrate_legacy_key(&provider_from(&config));
     Ok(base_url)
 }
 
@@ -334,7 +342,8 @@ async fn set_provider_base_url(
 async fn get_openrouter_key_status(
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<KeyStatus, String> {
-    openrouter::key_status_for(config.lock().await.provider_kind)
+    let provider = provider_from(&*config.lock().await);
+    openrouter::key_status_for(&provider)
 }
 
 #[tauri::command]
@@ -342,23 +351,23 @@ async fn set_openrouter_key(
     key: String,
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<KeyStatus, String> {
-    openrouter::save_key_for(config.lock().await.provider_kind, &key)
+    let provider = provider_from(&*config.lock().await);
+    openrouter::save_key_for(&provider, &key)
 }
 
 #[tauri::command]
 async fn clear_openrouter_key(config: State<'_, Arc<Mutex<Config>>>) -> Result<KeyStatus, String> {
-    openrouter::clear_key_for(config.lock().await.provider_kind)
+    let provider = provider_from(&*config.lock().await);
+    openrouter::clear_key_for(&provider)
 }
 
 #[tauri::command]
 async fn test_openrouter_key(
     config: State<'_, Arc<Mutex<Config>>>,
 ) -> Result<OpenRouterStatus, String> {
-    let config = config.lock().await;
-    let provider = ProviderConfig {
-        kind: config.provider_kind,
-        base_url: config.provider_base_url.clone(),
-    };
+    // The lock is released before the network call, so a slow key check does
+    // not stall every other command that reads the configuration.
+    let provider = provider_from(&*config.lock().await);
     openrouter::test_key_for(&provider).await
 }
 
@@ -568,7 +577,7 @@ async fn set_custom_instruction(
 /// The automatic checks read the repository and the running configuration. The
 /// checks that need a human are reported as needing one rather than quietly
 /// passing, so the gate never claims more than it can show.
-#[tauri::command]
+#[tauri::command(async)]
 fn run_m1_gate() -> crate::gate::GateReport {
     crate::gate::run_m1_gate()
 }
@@ -612,13 +621,13 @@ async fn apply_pending_rewrite(app: State<'_, tauri::AppHandle>) -> Result<Strin
 }
 
 /// The prepared rewrite, if there is one.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_pending_rewrite() -> Result<Option<crate::rewrite::PendingRewrite>, String> {
     crate::rewrite::load_pending()
 }
 
 /// Discard the prepared rewrite.
-#[tauri::command]
+#[tauri::command(async)]
 fn discard_pending_rewrite() -> Result<(), String> {
     let path = crate::config::Config::folder_path()
         .map(|folder| folder.join("pending-rewrite.json"))
@@ -661,7 +670,7 @@ async fn preview_request(
         )
     };
 
-    let has_key = crate::openrouter::key_status_for(provider.kind)
+    let has_key = crate::openrouter::key_status_for(&provider)
         .map(|status| status.present)
         .unwrap_or(false);
 
@@ -678,7 +687,7 @@ async fn preview_request(
 /// The recorded matrix checks, so the window can show what was already done.
 ///
 /// Without this, a cell checked in an earlier session reads as unverified.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_app_matrix_record() -> Result<crate::matrix::MatrixRecord, String> {
     crate::matrix::load_record()
 }
@@ -717,7 +726,7 @@ fn get_app_matrix_summary() -> crate::matrix::MatrixSummary {
 }
 
 /// Record the result of one matrix check.
-#[tauri::command]
+#[tauri::command(async)]
 fn record_app_matrix_check(
     bundle_id: String,
     condition: String,
@@ -741,20 +750,20 @@ fn record_app_matrix_check(
 ///
 /// The log holds metadata only — the host, the model, the token counts, the
 /// cost — and never the text that was sent.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_network_log() -> Result<Vec<crate::network_log::NetworkEntry>, String> {
     crate::network_log::read()
 }
 
 /// A summary of the network log.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_network_log_summary() -> Result<crate::network_log::NetworkSummary, String> {
     let entries = crate::network_log::read()?;
     Ok(crate::network_log::NetworkSummary::summarize(&entries))
 }
 
 /// Delete the network log.
-#[tauri::command]
+#[tauri::command(async)]
 fn clear_network_log() -> Result<crate::network_log::NetworkSummary, String> {
     crate::network_log::clear()?;
     Ok(crate::network_log::NetworkSummary::default())
@@ -969,7 +978,7 @@ async fn set_cost_cap(
     Ok(config.cost_cap_usd)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_usage_summary(limit: Option<usize>) -> Result<UsageSummary, String> {
     usage::summary(limit.unwrap_or(10).min(100))
 }
@@ -1201,6 +1210,39 @@ async fn set_dictionary(
     Ok(())
 }
 
+/// Removes one word from the personal dictionary.
+///
+/// The removal happens under the configuration lock, so a word added from the
+/// overlay window at the same moment is never lost, as it could be with a
+/// read-modify-write through `set_dictionary` from the frontend.
+#[tauri::command]
+async fn remove_from_dictionary(
+    word: String,
+    config: State<'_, Arc<Mutex<Config>>>,
+) -> Result<(), String> {
+    let target = word.trim();
+    let mut config = config.lock().await;
+    let mut dictionary = MutableDictionary::new();
+    dictionary.extend_words(
+        config
+            .mutable_dictionary
+            .words_iter()
+            .map(|word| word.iter().collect::<String>())
+            .filter(|word| word.trim() != target)
+            .map(|word| {
+                (
+                    word.chars().collect::<Vec<_>>(),
+                    DictWordMetadata::default(),
+                )
+            }),
+    );
+    config.mutable_dictionary = dictionary;
+    config
+        .save_to_system()
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn ignore_lint(
     ignored_lints: String,
@@ -1398,12 +1440,12 @@ fn request_accessibility_permission(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_voice_profile() -> Result<Option<elocutio_voice::VoiceProfile>, String> {
     crate::voice::refresh_feedback()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn learn_voice_samples(
     text: String,
     name: Option<String>,
@@ -1411,7 +1453,7 @@ fn learn_voice_samples(
     crate::voice::learn(&text, name)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_voice_enabled(enabled: bool) -> Result<Option<elocutio_voice::VoiceProfile>, String> {
     let Some(mut profile) = crate::voice::load()? else {
         return Err("Teach Elocutio your voice first.".into());
@@ -1436,7 +1478,7 @@ async fn clear_voice_profile(config: State<'_, Arc<Mutex<Config>>>) -> Result<()
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_voice_guidance() -> Result<Option<String>, String> {
     Ok(crate::voice::guidance())
 }
@@ -1445,13 +1487,13 @@ fn get_voice_guidance() -> Result<Option<String>, String> {
 ///
 /// The rating feeds back into the profile's confidence, so the app learns
 /// whether the voice it applied was right.
-#[tauri::command]
+#[tauri::command(async)]
 fn rate_voice_rewrite(rating: String) -> Result<Option<elocutio_voice::VoiceProfile>, String> {
     crate::voice::rate_rewrite_by_name(&rating)
 }
 
 /// Set a trait the user chose by hand. Overrides always win over learned values.
-#[tauri::command]
+#[tauri::command(async)]
 fn set_voice_trait_override(
     key: String,
     value: crate::voice::TraitValueJson,
@@ -1460,25 +1502,25 @@ fn set_voice_trait_override(
 }
 
 /// Remove a user override so the learned value shows again.
-#[tauri::command]
+#[tauri::command(async)]
 fn clear_voice_trait_override(key: String) -> Result<Option<elocutio_voice::VoiceProfile>, String> {
     crate::voice::clear_trait_override(&key)
 }
 
 /// The learned traits, with their confidence and whether the user set them.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_voice_traits() -> Vec<crate::voice::TraitView> {
     crate::voice::traits_for_ui()
 }
 
 /// The traits the user set by hand.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_voice_trait_overrides() -> Vec<(String, elocutio_voice::TraitValue)> {
     crate::voice::trait_overrides()
 }
 
 /// How many voice events are stored locally.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_voice_event_count() -> usize {
     crate::voice::voice_event_count()
 }
@@ -1487,7 +1529,7 @@ fn get_voice_event_count() -> usize {
 ///
 /// This is the diagnostic behind the guard: it says which sample n-grams a
 /// candidate shares, without revealing the sample text.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_copy_guard_report(
     candidate: String,
 ) -> Result<Option<crate::voice::CopyGuardReport>, String> {
@@ -1495,13 +1537,13 @@ fn get_copy_guard_report(
 }
 
 /// A summary of the stored voice profile for the Settings UI.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_voice_profile_summary() -> Option<crate::voice::VoiceProfileSummary> {
     crate::voice::profile_summary()
 }
 
 /// The traits of the profile, with their confidence and override state.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_voice_trait_list() -> Vec<crate::voice::TraitOverride> {
     crate::voice::trait_overrides_for_ui()
 }
@@ -1509,13 +1551,13 @@ fn get_voice_trait_list() -> Vec<crate::voice::TraitOverride> {
 /// Record a rating without folding it into the profile yet.
 ///
 /// Used when the user rates something other than the last rewrite.
-#[tauri::command]
+#[tauri::command(async)]
 fn record_voice_rating(rating: String, context: Option<String>) -> Result<(), String> {
     crate::voice::record_rating_by_name(&rating, context)
 }
 
 /// The fingerprints of the writer's own edits, for the copy guard.
-#[tauri::command]
+#[tauri::command(async)]
 fn get_feedback_fingerprint_count() -> usize {
     crate::voice::feedback_fingerprint_set().len()
 }
@@ -1524,7 +1566,7 @@ fn get_feedback_fingerprint_count() -> usize {
 ///
 /// The UI sends a number, a boolean, or a string; the trait type follows the
 /// value, so the user does not have to pick a type as well as a value.
-#[tauri::command]
+#[tauri::command(async)]
 fn set_voice_trait_value(
     key: String,
     value: serde_json::Value,
@@ -1550,23 +1592,23 @@ fn set_voice_trait_value(
     crate::voice::set_trait_override(&key, trait_value)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_suggestion_events_enabled() -> bool {
     crate::events::is_enabled()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_suggestion_events_enabled(enabled: bool) -> Result<bool, String> {
     crate::events::set_enabled(enabled)?;
     Ok(crate::events::is_enabled())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_suggestion_event_summary() -> Result<crate::events::EventSummary, String> {
     crate::events::summarize()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn clear_suggestion_events() -> Result<crate::events::EventSummary, String> {
     crate::events::clear()?;
     crate::events::summarize()
@@ -1595,7 +1637,7 @@ async fn set_learn_from_edits(
     Ok(enabled)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_voice_feedback_count() -> usize {
     crate::voice::feedback_count()
 }
@@ -1694,7 +1736,7 @@ struct MergeResponse {
 ///
 /// The detector is local and deterministic, so this works in local-only mode
 /// and produces the same answer for the same text every time.
-#[tauri::command]
+#[tauri::command(async)]
 fn detect_text_tone(text: String) -> Result<ToneResponse, String> {
     let signal: ToneSignal = elocutio_analysis::detect_tone(&text);
     Ok(ToneResponse {
@@ -1707,7 +1749,7 @@ fn detect_text_tone(text: String) -> Result<ToneResponse, String> {
 }
 
 /// Merge local lints with model suggestions and explain the result.
-#[tauri::command]
+#[tauri::command(async)]
 fn merge_suggestions(
     local: Vec<Suggestion>,
     llm: Vec<Suggestion>,
@@ -1717,7 +1759,10 @@ fn merge_suggestions(
         &llm,
         elocutio_analysis::DEFAULT_SUGGESTION_LIMIT,
     );
-    let document_end = result.suggestions.iter().map(|s| s.span.utf16_end).max();
+    // The caller sends suggestions, not the document, so its length is
+    // unknown. The furthest suggestion end is not the document end, and
+    // treating it as one wrongly marks the last suggestion as an edge span.
+    let document_end = None;
 
     let ranking = result
         .suggestions
@@ -1760,7 +1805,7 @@ fn merge_suggestions(
 ///
 /// The harness is pure, so this is the same code the tests use. The seed set
 /// ships with the app so the metrics can be reproduced on demand.
-#[tauri::command]
+#[tauri::command(async)]
 fn evaluate_golden_set(
     golden_json: String,
     predictions_json: String,
@@ -1777,7 +1822,7 @@ fn evaluate_golden_set(
 /// This measures the component that decides where an edit lands, which is the
 /// part of the pipeline that has to be right for an accepted suggestion to be
 /// safe.
-#[tauri::command]
+#[tauri::command(async)]
 fn run_resolver_quality_check() -> Result<crate::quality::ResolverQuality, String> {
     crate::quality::run_resolver_check()
 }
@@ -1872,34 +1917,57 @@ async fn check_text_local(
     let ignored_lints = {
         use harper_core::spell::Dictionary;
         let cfg = config.lock().await;
-        let dict_len = cfg.mutable_dictionary.word_count();
+        // The linter is rebuilt when the dictionary's contents change, not
+        // just its size: adding one word and removing another keeps the
+        // count but must still refresh the linter. The per-word hashes are
+        // combined order-independently, so iteration order does not matter.
+        let dict_fingerprint = cfg
+            .mutable_dictionary
+            .words_iter()
+            .fold(0usize, |acc, word| {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::hash::DefaultHasher::new();
+                word.hash(&mut hasher);
+                acc.wrapping_add(hasher.finish() as usize)
+            });
         let dialect = cfg.dialect;
         let rule_epoch = LINTER_RULE_EPOCH.load(std::sync::atomic::Ordering::Relaxed);
         let cache_mutex = CACHED_STUDIO_LINTER.get_or_init(|| std::sync::Mutex::new(None));
-        if let Ok(mut guard) = cache_mutex.lock() {
-            let needs_rebuild = guard.as_ref().is_none_or(|(d, len, ep, _, _)| {
-                *d != dialect || *len != dict_len || *ep != rule_epoch
-            });
-            if needs_rebuild {
-                let dict = Config::dictionary_from_user_dictionary(cfg.mutable_dictionary.clone());
-                let linter = cfg.create_linter();
-                *guard = Some((dialect, dict_len, rule_epoch, linter, dict));
-            }
+        let mut guard = cache_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let needs_rebuild = guard.as_ref().is_none_or(|(d, fingerprint, ep, _, _)| {
+            *d != dialect || *fingerprint != dict_fingerprint || *ep != rule_epoch
+        });
+        if needs_rebuild {
+            let dict = Config::dictionary_from_user_dictionary(cfg.mutable_dictionary.clone());
+            let linter = cfg.create_linter();
+            *guard = Some((dialect, dict_fingerprint, rule_epoch, linter, dict));
         }
         cfg.ignored_lints.clone()
     };
 
-    let (mut organized_lints, doc) = {
+    // Linting a long document takes real CPU time, so it runs on the blocking
+    // pool rather than an async worker. A panic inside the linter poisons the
+    // cache mutex; the poisoned entry is dropped and rebuilt on the next call
+    // instead of failing every check until the app restarts.
+    let lint_text = text.clone();
+    let linted = tauri::async_runtime::spawn_blocking(move || {
         let cache_mutex = CACHED_STUDIO_LINTER.get_or_init(|| std::sync::Mutex::new(None));
-        let mut guard = cache_mutex
-            .lock()
-            .map_err(|e| format!("Could not lock studio linter: {e}"))?;
-        let Some((_, _, _, ref mut linter, ref dictionary)) = *guard else {
-            return Ok(Vec::new());
-        };
-        let doc = harper_core::Document::new_markdown_default(&text, dictionary);
+        let mut guard = cache_mutex.lock().unwrap_or_else(|poisoned| {
+            let mut guard = poisoned.into_inner();
+            *guard = None;
+            guard
+        });
+        let (_, _, _, linter, dictionary) = guard.as_mut()?;
+        let doc = harper_core::Document::new_markdown_default(&lint_text, dictionary);
         let organized = linter.organized_lints(&doc);
-        (organized, doc)
+        Some((organized, doc))
+    })
+    .await
+    .map_err(|error| format!("The local check failed: {error}"))?;
+    let Some((mut organized_lints, doc)) = linted else {
+        return Ok(Vec::new());
     };
 
     for lints in organized_lints.values_mut() {
@@ -2493,7 +2561,7 @@ async fn elo_rewrite_focused_text(
             && (cfg.provider_base_url.contains("localhost")
                 || cfg.provider_base_url.contains("127.0.0.1"));
         let key_ok = is_local_endpoint
-            || openrouter::key_status_for(cfg.provider_kind)
+            || openrouter::key_status_for(&provider_from(&cfg))
                 .map(|s| s.present)
                 .unwrap_or(false);
         let tone = match mode.as_str() {

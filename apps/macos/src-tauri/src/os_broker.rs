@@ -4,8 +4,6 @@ use std::collections::BTreeMap;
 
 use crate::rect::ActionableLint;
 
-pub type LintText = Box<dyn FnMut(&str) -> BTreeMap<String, Vec<Lint>>>;
-
 #[derive(Debug, Clone, Serialize)]
 pub struct FocusedText {
     pub pid: i32,
@@ -59,12 +57,6 @@ pub trait OsBroker {
     fn integration_display_name(&self, bundle_id: &str) -> String {
         bundle_id.to_owned()
     }
-
-    /// Returns the bundle identifiers for installed graphical applications.
-    ///
-    /// Implementations should return stable bundle ID strings, sorted and deduplicated where
-    /// possible. Platforms that do not support bundle IDs should return an error.
-    fn installed_application_bundle_ids(&self) -> Result<Vec<String>, String>;
 
     /// Returns the application icon for `bundle_id` encoded as PNG bytes.
     ///
@@ -162,10 +154,6 @@ impl OsBroker for NoopBroker {
 
     fn request_accessibility_permission(&self) -> AccessibilityPermissionStatus {
         AccessibilityPermissionStatus::Unsupported
-    }
-
-    fn installed_application_bundle_ids(&self) -> Result<Vec<String>, String> {
-        Ok(Vec::new())
     }
 
     fn application_icon_png(&self, _bundle_id: &str) -> Result<Vec<u8>, String> {

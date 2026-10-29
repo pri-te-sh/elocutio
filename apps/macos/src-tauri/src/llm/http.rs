@@ -6,7 +6,7 @@
 
 use elocutio_llm::{ChatRequest, ChatResponse, Provider, ProviderError};
 
-use super::{MAX_ATTEMPTS, REQUEST_TIMEOUT, backoff_delay, is_retryable};
+use super::{CONNECT_TIMEOUT, MAX_ATTEMPTS, REQUEST_TIMEOUT, backoff_delay, is_retryable};
 
 /// The headers OpenRouter wants on every request.
 pub const APP_URL: &str = "https://github.com/pri-te-sh/elocutio";
@@ -23,12 +23,47 @@ pub struct Endpoint {
     pub send_attribution_headers: bool,
 }
 
-/// Build an HTTP client.
+/// The shared HTTP client.
+///
+/// One client is reused for every request so connections (and their TLS
+/// sessions) are pooled; building a client per request paid a fresh
+/// handshake every time.
 pub fn client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
+        .connect_timeout(CONNECT_TIMEOUT)
         .build()
-        .map_err(|error| format!("Could not create the HTTP client: {error}"))
+        .map_err(|error| format!("Could not create the HTTP client: {error}"))?;
+    Ok(CLIENT.get_or_init(|| client).clone())
+}
+
+/// The shared client for streamed responses, which has a connect timeout but
+/// no total ceiling; the reader enforces an idle timeout per chunk instead.
+pub fn streaming_client() -> Result<reqwest::Client, String> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let client = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .build()
+        .map_err(|error| format!("Could not create the HTTP client: {error}"))?;
+    Ok(CLIENT.get_or_init(|| client).clone())
+}
+
+/// The `Retry-After` header in seconds, when it is a plain number.
+pub fn retry_after_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
 }
 
 /// Send a chat request and return the parsed response.
@@ -118,6 +153,7 @@ async fn attempt_once(
         .map_err(|error| adapter.map_transport_error(&error.to_string()))?;
 
     let status = response.status();
+    let retry_after = retry_after_seconds(response.headers());
     let raw = response.text().await.map_err(|error| {
         adapter.map_transport_error(&format!("could not read the response: {error}"))
     })?;
@@ -126,7 +162,9 @@ async fn attempt_once(
         return adapter.parse_response(&raw);
     }
 
-    Err(adapter.map_http_error(status.as_u16(), &raw))
+    Err(adapter
+        .map_http_error(status.as_u16(), &raw)
+        .with_retry_after(retry_after))
 }
 
 #[cfg(test)]
@@ -139,6 +177,39 @@ mod tests {
     fn the_retry_delay_grows_with_the_attempt() {
         let error = ProviderError::new(ErrorKind::Server, "boom");
         assert!(backoff_delay(&error, 1) > backoff_delay(&error, 0));
+    }
+
+    #[test]
+    fn a_timed_out_post_is_not_retried() {
+        // The request may have reached the model; retrying could bill twice.
+        assert!(!super::super::is_retryable(&ProviderError::new(
+            ErrorKind::Timeout,
+            "slow"
+        )));
+        assert!(super::super::is_retryable(&ProviderError::new(
+            ErrorKind::RateLimit,
+            "busy"
+        )));
+    }
+
+    #[test]
+    fn a_long_retry_after_is_not_waited_out() {
+        let short = ProviderError::new(ErrorKind::RateLimit, "busy").with_retry_after(Some(5));
+        let long = ProviderError::new(ErrorKind::RateLimit, "busy").with_retry_after(Some(600));
+        assert!(super::super::is_retryable(&short));
+        assert!(!super::super::is_retryable(&long));
+        assert_eq!(backoff_delay(&short, 0), std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn retry_after_is_read_from_the_headers() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        assert_eq!(retry_after_seconds(&headers), None);
+        headers.insert(
+            reqwest::header::RETRY_AFTER,
+            "12".parse().expect("a header"),
+        );
+        assert_eq!(retry_after_seconds(&headers), Some(12));
     }
 
     #[test]

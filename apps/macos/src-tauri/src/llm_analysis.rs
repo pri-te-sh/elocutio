@@ -104,10 +104,11 @@ pub async fn analyze_text_with_config(
 
     let key = crate::coalesce::RequestKey::new(&model, &focused.text, dialect_code);
     let coalescer = crate::coalesce::shared();
-    if !coalescer.allows(&key, MIN_ANALYSIS_INTERVAL) {
+    // Check and record in one step, so two callers cannot both pass the
+    // interval check and both send the same request.
+    let Some(generation) = coalescer.try_acquire(&key, MIN_ANALYSIS_INTERVAL) else {
         return Ok(0);
-    }
-    let generation = coalescer.record(&key);
+    };
 
     let custom_opt = (!custom_instruction.trim().is_empty()).then_some(custom_instruction.as_str());
     let mut suggestions = Vec::new();
@@ -205,18 +206,20 @@ pub fn rank_suggestions(
     document: &str,
     suggestions: Vec<(usize, usize, Suggestion)>,
 ) -> Vec<CachedSuggestion> {
-    // Map a character offset in the document to its UTF-16 offset.
-    let utf16_prefix: Vec<usize> = document
-        .char_indices()
-        .map(|(index, _)| document[..index].encode_utf16().count())
-        .chain(std::iter::once(document.encode_utf16().count()))
-        .collect();
+    // Map a character offset in the document to its UTF-16 offset. A running
+    // sum keeps this linear; re-encoding the prefix for every character was
+    // quadratic in the document length.
+    let mut utf16_prefix: Vec<usize> = Vec::with_capacity(document.len() + 1);
+    let mut utf16_offset = 0;
+    for c in document.chars() {
+        utf16_prefix.push(utf16_offset);
+        utf16_offset += c.len_utf16();
+    }
+    utf16_prefix.push(utf16_offset);
+    let utf16_len = utf16_offset;
 
     let char_to_utf16 = |char_offset: usize| -> usize {
-        utf16_prefix
-            .get(char_offset)
-            .copied()
-            .unwrap_or_else(|| document.encode_utf16().count())
+        utf16_prefix.get(char_offset).copied().unwrap_or(utf16_len)
     };
 
     // The character offsets are authoritative, so the document-level UTF-16

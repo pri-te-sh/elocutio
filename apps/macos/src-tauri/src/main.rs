@@ -1,45 +1,26 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod debug_broker;
 mod tray;
 mod undo;
 mod voice;
 mod windows;
 
-use self::debug_broker::DebugBroker;
-use self::highlighter::Highlighter;
 use self::highlighter_service::HighlighterService;
 use self::tray::set_up_tray_menu;
-use crate::args::{Args, Command};
-use crate::communication::{Client, ProtocolError};
-use crate::config::{Config, Integration};
-use crate::debounce::{DebounceState, DebounceStatus};
+use crate::args::Args;
+use crate::config::Config;
 use clap::Parser;
-use harper_core::{
-    Dialect, DictWordMetadata, Document, IgnoredLints,
-    linting::{Lint, LintGroup},
-    spell::MutableDictionary,
-};
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::io::stderr;
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex as StdMutex, RwLock},
-};
+use std::sync::{Arc, RwLock};
 use tauri::Manager as _;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tracing::{Level, error};
 use tracing_subscriber::FmtSubscriber;
 
 use crate::os_broker::{AccessibilityPermissionStatus, OsBroker};
-use tokio::{
-    io::{Stdin, Stdout},
-    runtime::{Builder, Runtime},
-    sync::Mutex,
-};
+use tokio::{runtime::Builder, sync::Mutex};
 
 pub mod app_matrix;
 mod app_matrix_consistency;
@@ -48,13 +29,10 @@ mod auto_analyze;
 mod coalesce;
 pub mod color;
 mod commands;
-pub mod communication;
 pub mod config;
-mod debounce;
 pub mod elo_overlay;
 pub mod events;
 pub mod gate;
-pub mod highlighter;
 pub mod highlighter_service;
 pub mod lint_kind_color;
 mod llm_analysis;
@@ -271,28 +249,33 @@ fn register_card_shortcuts(app: &tauri::AppHandle) {
     }
 }
 
-/// Asks the highlighter to run a card command.
+/// Asks the overlay to run a card command.
 ///
-/// The command is held in the shared configuration in memory, and the
-/// highlighter fetches it on its fast poll. It is deliberately not written to
-/// disk: a keypress is not a setting, and the highlighter polls for it every
-/// 40 milliseconds.
+/// The command is held in the shared configuration in memory and the overlay
+/// loop consumes it on its next poll, which is triggered immediately. It is
+/// deliberately not written to disk: a keypress is not a setting.
 fn request_card_command(app: &tauri::AppHandle, command: crate::config::CardCommand) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let state = app.state::<Arc<Mutex<Config>>>();
         let mut config = state.lock().await;
         config.card_command = Some(command);
+        drop(config);
+        elo_overlay::request_refresh();
     });
 }
 
-fn warm_app_search_cache(app: tauri::AppHandle) {
+/// Fills the installed-app catalog in the background.
+///
+/// The catalog is a process-wide cache that does not live in the broker, so it is built without
+/// holding the broker lock: enumerating installed apps spawns Spotlight queries per app and would
+/// otherwise block every settings command that needs the broker for seconds.
+fn warm_app_search_cache() {
     tauri::async_runtime::spawn_blocking(move || {
-        let broker = app.state::<RwLock<PlatformBroker>>();
-        let result = broker
-            .read()
-            .map_err(|error| format!("failed to read platform broker: {error}"))
-            .and_then(|broker| broker.search_apps("").map(|_| ()));
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        let result = PlatformBroker::warm_app_catalog();
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let result: Result<(), String> = Ok(());
 
         if let Err(error) = result {
             eprintln!("failed to warm app search cache: {error}");
@@ -300,15 +283,15 @@ fn warm_app_search_cache(app: tauri::AppHandle) {
     });
 }
 
-/// Restarts the highlighter if it dies.
+/// Restarts the overlay loop if it dies or wedges.
 ///
-/// The highlighter runs as a separate process because the Accessibility and
-/// AppKit work it does is not safe on the main thread, and because a crash
-/// there must not take the app with it. A crash therefore costs the user the
-/// overlay until it is restarted, so this watchdog restarts it.
+/// The overlay loop runs on its own thread and restarts itself after a panic
+/// (up to a small budget). Once that budget is spent, or when the loop stops
+/// heartbeating because it is stuck, [`HighlighterService::is_running`] turns
+/// false and this watchdog respawns it.
 ///
-/// The restart is rate-limited: a highlighter that crashes immediately on
-/// every start would otherwise become a restart loop.
+/// The restart is rate-limited: a loop that dies immediately on every start
+/// would otherwise become a restart loop.
 fn watch_highlighter(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         const WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
@@ -381,13 +364,9 @@ pub fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Unable to set up tracing subscriber.");
 
-    let args = Args::parse();
-
-    match args.command {
-        Some(Command::Highlighter { no_parent }) => run_highlighter(!no_parent),
-        Some(Command::PopupDebug) => popup_debug(),
-        None => run_tauri(),
-    }
+    // The app takes no subcommands; parsing still rejects stray arguments and serves `--help`.
+    let _args = Args::parse();
+    run_tauri();
 }
 
 pub fn run_tauri() {
@@ -461,11 +440,7 @@ pub fn run_tauri() {
         .invoke_handler(commands::application_message_handler())
         .setup(move |app| {
             let suggestion_count = std::sync::Arc::new(crate::config::SuggestionCount::default());
-            let highlighter_service = HighlighterService::new(
-                config.clone(),
-                app.handle().clone(),
-                suggestion_count.clone(),
-            );
+            let highlighter_service = HighlighterService::new(suggestion_count.clone());
             elo_overlay::start(app.handle().clone(), config, suggestion_count);
             if should_start_highlighter {
                 match highlighter_service.start() {
@@ -480,7 +455,7 @@ pub fn run_tauri() {
             #[cfg(target_os = "macos")]
             apple_fm_bridge::start();
             auto_analyze::start(app.handle().clone());
-            warm_app_search_cache(app.handle().clone());
+            warm_app_search_cache();
             watch_highlighter(app.handle().clone());
 
             let _ = is_first_launch;
@@ -506,6 +481,11 @@ pub fn run_tauri() {
                     .inspect_err(|err| error!("Could not update Dock visibility: {err}"));
             }
 
+            // Hand the target app back its accessibility settings before the process goes away.
+            if let tauri::RunEvent::Exit = event {
+                elo_overlay::shutdown();
+            }
+
             // Keep the tray and service alive after the last window closes, but allow Quit.
             if let tauri::RunEvent::ExitRequested {
                 code: None, api, ..
@@ -514,479 +494,4 @@ pub fn run_tauri() {
                 api.prevent_exit();
             }
         });
-}
-
-pub fn popup_debug() {
-    let highlighter = Highlighter::new(
-        DebugBroker,
-        |_| BTreeMap::new(),
-        |_, _| {},
-        |_| {},
-        |_| {},
-        || {},
-        || {},
-        || {},
-        || {},
-        |_| None,
-        || None,
-        || None,
-        |_| {},
-    )
-    .unwrap();
-    highlighter.run_window_for_each_monitor().unwrap();
-}
-
-/// Run as a highlighter process.
-/// Can configure whether to run standalone, or with a parent Tauri process
-pub fn run_highlighter(has_parent: bool) {
-    std::panic::set_hook(Box::new(|info| {
-        eprintln!("Elocutio highlighter panic: {info}");
-    }));
-    eprintln!("Elocutio highlighter starting (has_parent={has_parent})");
-
-    let client = Arc::new(StdMutex::new(Client::current_process()));
-    let sync_runtime = Arc::new(
-        Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("failed to build highlighter protocol runtime"),
-    );
-
-    let startup_config = if has_parent {
-        fetch_highlighter_config(
-            &mut client.lock().expect("IPC client lock poisoned"),
-            &sync_runtime,
-        )
-    } else {
-        Ok(Config::default())
-    };
-
-    let startup_config = match startup_config {
-        Ok(config) => config,
-        Err(error) => {
-            eprintln!("failed to hydrate highlighter config, using defaults: {error}");
-            Config::new()
-        }
-    };
-
-    let startup_linter = startup_config.create_linter();
-    let ignored_lints = Rc::new(RefCell::new(startup_config.ignored_lints));
-    let user_dictionary = Rc::new(RefCell::new(startup_config.mutable_dictionary));
-    let dialect = Rc::new(RefCell::new(startup_config.dialect));
-    let integrations = Arc::new(StdMutex::new(IntegrationState {
-        integrations: startup_config.integrations,
-        auto_enable_new_apps: startup_config.auto_enable_new_apps,
-    }));
-    let debounce_ms = Rc::new(RefCell::new(startup_config.debounce_ms));
-    let linter = Rc::new(RefCell::new(startup_linter));
-
-    let integration_client = client.clone();
-    let integration_runtime = sync_runtime.clone();
-    let is_integration_enabled = integration_callback(integrations.clone(), move |bundle_id| {
-        if !has_parent {
-            return true;
-        }
-        match integration_runtime.block_on(
-            integration_client
-                .lock()
-                .expect("IPC client lock poisoned")
-                .resolve_integration(bundle_id),
-        ) {
-            Ok(enabled) => enabled,
-            Err(error) => {
-                eprintln!("failed to register integration: {error}");
-                false
-            }
-        }
-    });
-    let broker = platform_broker(is_integration_enabled);
-
-    let lint_ignored_lints = ignored_lints.clone();
-    let lint_linter = linter.clone();
-    let lint_user_dictionary = user_dictionary.clone();
-    let lint_debounce_ms = debounce_ms.clone();
-    let lint_debounce_state = Rc::new(RefCell::new(DebounceState::default()));
-
-    let ignore_client = client.clone();
-    let ignore_runtime = sync_runtime.clone();
-    let ignore_ignored_lints = ignored_lints.clone();
-
-    let dictionary_client = client.clone();
-    let dictionary_runtime = sync_runtime.clone();
-    let dictionary_user_dictionary = user_dictionary.clone();
-    let dictionary_linter = linter.clone();
-    let dictionary_dialect = dialect.clone();
-    let dictionary_debounce_ms = debounce_ms.clone();
-
-    let disable_client = client.clone();
-    let disable_runtime = sync_runtime.clone();
-    let disable_linter = linter.clone();
-
-    let settings_client = client.clone();
-    let settings_runtime = sync_runtime.clone();
-    let analyze_client = client.clone();
-    let analyze_runtime = sync_runtime.clone();
-    let preview_client = client.clone();
-    let preview_runtime = sync_runtime.clone();
-
-    let refresh_client = client.clone();
-    // The card command the main process asked for, waiting to be applied.
-    let refresh_card_command = Rc::new(RefCell::new(None));
-    let refresh_runtime = sync_runtime.clone();
-    let refresh_ignored_lints = ignored_lints.clone();
-    let refresh_user_dictionary = user_dictionary.clone();
-    let refresh_dialect = dialect.clone();
-    let refresh_integrations = integrations.clone();
-    let refresh_debounce_ms = debounce_ms.clone();
-    let refresh_linter = linter.clone();
-
-    let lint_text = move |text: &str| {
-        let debounce_ms = *lint_debounce_ms.borrow();
-        let mut debounce_state = lint_debounce_state.borrow_mut();
-
-        match debounce_state.status(text, debounce_ms) {
-            DebounceStatus::Cached(lints) => return lints,
-            DebounceStatus::Ready => {}
-        }
-
-        let dictionary =
-            Config::dictionary_from_user_dictionary(lint_user_dictionary.borrow().clone());
-        let doc = Document::new_markdown_default(text, &dictionary);
-        let mut organized_lints = lint_linter.borrow_mut().organized_lints(&doc);
-
-        for lints in organized_lints.values_mut() {
-            lint_ignored_lints.borrow().remove_ignored(lints, &doc);
-        }
-
-        debounce_state.store_lints(text, debounce_ms, &organized_lints);
-
-        organized_lints
-    };
-
-    let ignore_lint = move |lint: &Lint, document: &Document| {
-        {
-            ignore_ignored_lints
-                .borrow_mut()
-                .ignore_lint(lint, document);
-        }
-
-        let snapshot = ignore_ignored_lints.borrow().clone();
-        if let Err(error) = ignore_runtime.block_on(
-            ignore_client
-                .lock()
-                .expect("IPC client lock poisoned")
-                .ignore_lint(&snapshot),
-        ) {
-            eprintln!("failed to sync ignored lints: {error}");
-        }
-    };
-
-    let add_to_dictionary = move |word: &str| {
-        dictionary_user_dictionary
-            .borrow_mut()
-            .append_word_str(word, DictWordMetadata::default());
-
-        let lint_config = dictionary_linter.borrow().config.clone();
-        let config = Config {
-            mutable_dictionary: dictionary_user_dictionary.borrow().clone(),
-            dialect: *dictionary_dialect.borrow(),
-            ignored_lints: IgnoredLints::new(),
-            lint_config,
-            integrations: Vec::new(),
-            auto_enable_new_apps: true,
-            onboarding_completed: false,
-            debounce_ms: *dictionary_debounce_ms.borrow(),
-            last_update_check: None,
-            highlighter_service_enabled: true,
-            provider_kind: crate::openrouter::ProviderKind::OpenRouter,
-            provider_base_url: crate::openrouter::DEFAULT_OPENAI_BASE_URL.to_string(),
-            provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
-            auto_analyze: false,
-            budget_usd: None,
-            cost_cap_usd: None,
-            learn_from_edits: false,
-            rewrite_tone: crate::openrouter::RewriteTone::Neutral,
-            custom_instruction: String::new(),
-            card_command: None,
-            card_suggestion_count: 0,
-            widget_anchors: crate::widget_anchor::WidgetAnchors::default(),
-            local_only: false,
-            blocklist: Vec::new(),
-        };
-        *dictionary_linter.borrow_mut() = config.create_linter();
-
-        if let Err(error) = dictionary_runtime.block_on(
-            dictionary_client
-                .lock()
-                .expect("IPC client lock poisoned")
-                .add_to_dictionary(word),
-        ) {
-            eprintln!("failed to sync dictionary update: {error}");
-        }
-    };
-
-    let disable_rule = move |rule_name: &str| match disable_runtime.block_on(
-        disable_client
-            .lock()
-            .expect("IPC client lock poisoned")
-            .disable_rule(rule_name),
-    ) {
-        Ok(config) => disable_linter.borrow_mut().config = config,
-        Err(error) => eprintln!("failed to disable rule {rule_name}: {error}"),
-    };
-
-    // The user asked what would be sent, so the request preview is shown in
-    // the settings window. The highlighter cannot open a window itself, so
-    // the request goes through the parent process.
-    let preview_request = move || {
-        if !has_parent {
-            return;
-        }
-        if let Err(error) = preview_runtime.block_on(
-            preview_client
-                .lock()
-                .expect("IPC client lock poisoned")
-                .preview_request(),
-        ) {
-            eprintln!("failed to request the request preview: {error}");
-        }
-    };
-
-    let analyze_field = move || {
-        if !has_parent {
-            return;
-        }
-
-        if let Err(error) = analyze_runtime.block_on(
-            analyze_client
-                .lock()
-                .expect("IPC client lock poisoned")
-                .analyze_field(),
-        ) {
-            eprintln!("failed to request field analysis: {error}");
-        }
-    };
-
-    let open_settings = move || {
-        if !has_parent {
-            eprintln!("cannot open settings without a parent app");
-            return;
-        }
-
-        if let Err(error) = settings_runtime.block_on(
-            settings_client
-                .lock()
-                .expect("IPC client lock poisoned")
-                .open_settings(),
-        ) {
-            eprintln!("failed to request settings window: {error}");
-        }
-    };
-
-    let refresh_card_command_for_poll = refresh_card_command.clone();
-    let refresh_config = move || {
-        if !has_parent {
-            return;
-        }
-
-        match fetch_highlighter_config(
-            &mut refresh_client.lock().expect("IPC client lock poisoned"),
-            &refresh_runtime,
-        ) {
-            Ok(config) => {
-                let card_command = config.card_command;
-                apply_highlighter_config(
-                    config,
-                    &refresh_ignored_lints,
-                    &refresh_user_dictionary,
-                    &refresh_dialect,
-                    &refresh_integrations,
-                    &refresh_debounce_ms,
-                    &refresh_linter,
-                );
-                // A card command travels with the configuration poll, because
-                // the card lives in this process and the hotkey lives in the
-                // other one.
-                if let Some(command) = card_command {
-                    refresh_card_command_for_poll.borrow_mut().replace(command);
-                }
-            }
-            Err(error) => {
-                eprintln!("failed to refresh highlighter config: {error}");
-                std::process::exit(1);
-            }
-        }
-    };
-
-    // The widget position and the tone badge belong to the app that is
-    // focused, so the highlighter asks the main process for both. The
-    // protocol client is async, and the highlighter has a current-thread
-    // runtime for exactly this.
-    let widget_settings_client = client.clone();
-    let widget_settings_runtime = sync_runtime.clone();
-    // The card command travels from the main process to this one, and the
-    // window manager applies it on the next frame.
-    let card_command_cell = refresh_card_command.clone();
-    let card_command = move || card_command_cell.borrow_mut().take();
-
-    // The card is polled for a command on a fast interval, because a
-    // keypress has to feel immediate.
-    let fetch_card_client = client.clone();
-    let fetch_card_runtime = sync_runtime.clone();
-    let fetch_card_command = move || {
-        let mut client = fetch_card_client.lock().expect("IPC client lock poisoned");
-        fetch_card_runtime
-            .block_on(client.get_card_command())
-            .ok()
-            .flatten()
-    };
-
-    // The highlighter reports what the card is showing, so the menu bar and
-    // the settings window can say how many suggestions there are.
-    let report_card_client = client.clone();
-    let report_card_runtime = sync_runtime.clone();
-    let report_card_state = move |suggestions: usize| {
-        let mut client = report_card_client.lock().expect("IPC client lock poisoned");
-        if let Err(error) = report_card_runtime.block_on(client.report_card_state(suggestions)) {
-            eprintln!("Could not report the card state: {error}");
-        }
-    };
-
-    let widget_settings = move |bundle_id: &str| {
-        let mut client = widget_settings_client
-            .lock()
-            .expect("IPC client lock poisoned");
-        widget_settings_runtime
-            .block_on(client.get_widget_anchor(bundle_id))
-            .ok()
-            .flatten()
-    };
-
-    if let Err(error) = Highlighter::new(
-        broker,
-        lint_text,
-        ignore_lint,
-        add_to_dictionary,
-        disable_rule,
-        preview_request,
-        refresh_config,
-        open_settings,
-        analyze_field,
-        widget_settings,
-        card_command,
-        fetch_card_command,
-        report_card_state,
-    )
-    .and_then(Highlighter::run_window_for_each_monitor)
-    {
-        eprintln!("failed to run highlighter: {error}");
-    }
-}
-
-/// Highlighter-local app policy snapshot, replaced on each config poll.
-/// Also caches discovery decisions (including denials) until the next poll to avoid per-frame IPC.
-struct IntegrationState {
-    integrations: Vec<Integration>,
-    auto_enable_new_apps: bool,
-}
-
-/// Builds the broker's policy callback. Known apps are checked locally; only unknown apps with
-/// automatic enablement on reach `resolve`, which persists registration in the parent process.
-/// Elocutio itself is excluded from discovery, but explicitly configured entries are respected.
-/// Standalone callers can approve registration locally without IPC.
-fn integration_callback(
-    state: Arc<StdMutex<IntegrationState>>,
-    mut resolve: impl FnMut(&str) -> bool + Send + Sync + 'static,
-) -> impl FnMut(&str) -> bool + Send + Sync + 'static {
-    move |bundle_id| {
-        let bundle_id = bundle_id.trim();
-        if bundle_id.is_empty() {
-            return false;
-        }
-        let mut state = state.lock().expect("integration state lock poisoned");
-        if let Some(integration) = state
-            .integrations
-            .iter()
-            .find(|item| item.bundle_id == bundle_id)
-        {
-            return integration.enabled;
-        }
-        if !state.auto_enable_new_apps || PlatformBroker::is_elocutio(bundle_id) {
-            return false;
-        }
-        let enabled = resolve(bundle_id);
-        state.integrations.push(Integration {
-            bundle_id: bundle_id.to_owned(),
-            enabled,
-        });
-        enabled
-    }
-}
-
-fn fetch_highlighter_config(
-    client: &mut Client<Stdin, Stdout>,
-    runtime: &Runtime,
-) -> Result<Config, ProtocolError> {
-    runtime.block_on(async {
-        let dialect = client.get_dialect().await?;
-        let mutable_dictionary = client.get_dictionary().await?;
-        let ignored_lints = client.get_ignored_lints().await?;
-        let lint_config = client.get_lint_config().await?;
-        let integrations = client.get_integrations().await?;
-        let auto_enable_new_apps = client.get_auto_enable_new_apps().await?;
-        let debounce_ms = client.get_debounce_ms().await?;
-
-        Ok(Config {
-            dialect,
-            mutable_dictionary,
-            ignored_lints,
-            lint_config,
-            integrations,
-            auto_enable_new_apps,
-            onboarding_completed: false,
-            debounce_ms,
-            last_update_check: None,
-            highlighter_service_enabled: true,
-            provider_kind: crate::openrouter::ProviderKind::OpenRouter,
-            provider_base_url: crate::openrouter::DEFAULT_OPENAI_BASE_URL.to_string(),
-            provider_model: crate::openrouter::DEFAULT_MODEL.to_string(),
-            auto_analyze: false,
-            budget_usd: None,
-            cost_cap_usd: None,
-            learn_from_edits: false,
-            rewrite_tone: crate::openrouter::RewriteTone::Neutral,
-            custom_instruction: String::new(),
-            card_command: None,
-            card_suggestion_count: 0,
-            widget_anchors: crate::widget_anchor::WidgetAnchors::default(),
-            local_only: false,
-            blocklist: Vec::new(),
-        })
-    })
-}
-
-fn apply_highlighter_config(
-    config: Config,
-    ignored_lints: &Rc<RefCell<IgnoredLints>>,
-    user_dictionary: &Rc<RefCell<MutableDictionary>>,
-    dialect: &Rc<RefCell<Dialect>>,
-    integrations: &Arc<StdMutex<IntegrationState>>,
-    debounce_ms: &Rc<RefCell<u64>>,
-    linter: &Rc<RefCell<LintGroup>>,
-) {
-    let linter_config = config.create_linter();
-    *ignored_lints.borrow_mut() = config.ignored_lints;
-    *user_dictionary.borrow_mut() = config.mutable_dictionary;
-    *dialect.borrow_mut() = config.dialect;
-    match integrations.lock() {
-        Ok(mut integrations) => {
-            *integrations = IntegrationState {
-                integrations: config.integrations,
-                auto_enable_new_apps: config.auto_enable_new_apps,
-            }
-        }
-        Err(error) => eprintln!("failed to update integrations: {error}"),
-    }
-    *debounce_ms.borrow_mut() = config.debounce_ms;
-    *linter.borrow_mut() = linter_config;
 }

@@ -118,7 +118,10 @@ pub fn run_m1_gate() -> GateReport {
             CheckState::Fail
         },
         detail: if unprobeable.is_empty() {
-            "Every target app is probe-safe; a crash is recovered by the restart watchdog."
+            "Every target app is probe-safe. Accessibility calls time out after 250 ms, a panic \
+             in the overlay loop restarts it, and the watchdog respawns a loop that dies or \
+             stops heartbeating. A native crash still takes the app down: the overlay runs \
+             in-process."
                 .to_string()
         } else {
             format!("Not probe-safe: {}.", unprobeable.join(", "))

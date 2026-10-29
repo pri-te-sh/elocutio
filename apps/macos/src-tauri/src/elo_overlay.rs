@@ -79,6 +79,42 @@ pub struct EloAlert {
     pub char_start: usize,
     pub char_end: usize,
     pub rect: EloRect,
+    /// The whole-sentence correction this alert belongs to, when its sentence has one.
+    pub sentence_fix_id: Option<String>,
+}
+
+/// The text the user has selected in the active field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EloSelection {
+    pub char_start: usize,
+    pub char_end: usize,
+    pub text: String,
+    pub rect: EloRect,
+}
+
+/// One run of a sentence correction's diff: text kept, removed, or inserted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EloDiffSegment {
+    /// `"equal"`, `"delete"` or `"insert"`.
+    pub kind: String,
+    pub text: String,
+}
+
+/// A correction of a whole sentence, built from every fixable alert inside it.
+///
+/// Offered when a sentence holds several alerts, so the user can accept the corrected sentence in
+/// one step instead of fixing each word in turn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EloSentenceFix {
+    pub id: String,
+    /// Char offset of the sentence in the field's text.
+    pub char_start: usize,
+    /// Char offset (exclusive) of the sentence in the field's text.
+    pub char_end: usize,
+    pub original: String,
+    pub corrected: String,
+    pub alert_ids: Vec<String>,
+    pub segments: Vec<EloDiffSegment>,
 }
 
 /// Complete snapshot of the system-wide `"elo"` overlay state.
@@ -97,6 +133,10 @@ pub struct EloOverlaySnapshot {
     pub score: u32,
     pub word_count: usize,
     pub source_text: String,
+    /// The selection in the active field; the widget only shows while there is one.
+    pub selection: Option<EloSelection>,
+    /// Whole-sentence corrections for sentences with several alerts.
+    pub sentence_fixes: Vec<EloSentenceFix>,
     /// A card shortcut to run, present only on the one snapshot event that delivers it.
     pub card_command: Option<String>,
     /// Incremented for every card command, so the frontend can run each command exactly once
@@ -124,6 +164,18 @@ enum OverlayCommand {
     ReplaceFieldText {
         new_text: String,
     },
+    ApplySentenceFix {
+        fix_id: String,
+    },
+    DismissSentenceFix {
+        fix_id: String,
+    },
+    ReplaceSelection {
+        char_start: usize,
+        char_end: usize,
+        original: String,
+        new_text: String,
+    },
     RefreshNow,
 }
 
@@ -132,7 +184,6 @@ struct SharedOverlayState {
     frontend_widget_rect: Option<EloRect>,
     frontend_card_rect: Option<EloRect>,
     is_dragging: bool,
-    widget_offsets: HashMap<String, (f64, f64)>,
     monitor_origin: (f64, f64),
     monitor_size: (f64, f64),
     main_display_height: f64,
@@ -151,7 +202,6 @@ impl Default for SharedOverlayState {
             frontend_widget_rect: None,
             frontend_card_rect: None,
             is_dragging: false,
-            widget_offsets: HashMap::new(),
             monitor_origin: (0.0, 0.0),
             monitor_size: (1728.0, 1117.0),
             main_display_height: 1117.0,
@@ -461,23 +511,6 @@ pub fn open_studio_window(tab: Option<String>, import_focused_text: bool) -> Res
     crate::windows::show_settings_window(app).map_err(|e| e.to_string())
 }
 
-/// Saves the user-dragged `(dx, dy)` offset for the `"elo"` floating widget in an app.
-pub fn save_widget_offset(bundle_id: &str, offset_x: f64, offset_y: f64) {
-    let key = if bundle_id.trim().is_empty() {
-        "default".to_string()
-    } else {
-        bundle_id.trim().to_string()
-    };
-    let mut guard = lock_state();
-    guard.widget_offsets.insert(key, (offset_x, offset_y));
-    if let Some(field_rect) = guard.snapshot.field_rect {
-        let (mon_w, mon_h) = guard.monitor_size;
-        guard.snapshot.widget_rect = Some(compute_widget_rect(
-            field_rect, offset_x, offset_y, mon_w, mon_h,
-        ));
-    }
-}
-
 /// Sends a command to the overlay loop thread.
 fn send_command(command: OverlayCommand) -> Result<(), String> {
     let tx = lock_state()
@@ -513,6 +546,34 @@ pub fn request_replace_field_text(new_text: String) -> Result<bool, String> {
 }
 
 /// Triggers an immediate re-poll on the overlay worker thread.
+/// Asks the overlay loop to replace a whole sentence with its correction.
+pub fn request_apply_sentence_fix(fix_id: String) -> Result<bool, String> {
+    send_command(OverlayCommand::ApplySentenceFix { fix_id })?;
+    Ok(true)
+}
+
+/// Asks the overlay loop to dismiss every alert in a sentence correction.
+pub fn request_dismiss_sentence_fix(fix_id: String) -> Result<bool, String> {
+    send_command(OverlayCommand::DismissSentenceFix { fix_id })?;
+    Ok(true)
+}
+
+/// Asks the overlay loop to replace the selected text (a rewrite of the selection).
+pub fn request_replace_selection(
+    char_start: usize,
+    char_end: usize,
+    original: String,
+    new_text: String,
+) -> Result<bool, String> {
+    send_command(OverlayCommand::ReplaceSelection {
+        char_start,
+        char_end,
+        original,
+        new_text,
+    })?;
+    Ok(true)
+}
+
 pub fn request_refresh() {
     let _ = send_command(OverlayCommand::RefreshNow);
 }
@@ -1088,57 +1149,166 @@ fn set_window_ignore_cursor(app: &AppHandle, ignore: bool) {
     }
 }
 
-fn compute_widget_rect(
-    field_rect: EloRect,
-    offset_x: f64,
-    offset_y: f64,
-    mon_w: f64,
-    mon_h: f64,
-) -> EloRect {
-    let w = 104.0;
-    let h = 38.0;
-    let screen_max_x = (mon_w - w - 8.0).max(8.0);
-    let screen_max_y = (mon_h - h - 8.0).max(32.0);
-    let min_x = clamp_between(field_rect.x + 6.0, 8.0, screen_max_x);
-    let max_x = (field_rect.x + field_rect.width - w - 8.0)
-        .max(min_x)
-        .min(screen_max_x);
-    let base_x = max_x;
+/// The selection widget's size: two icon buttons in a pill.
+const PILL_WIDTH: f64 = 92.0;
+const PILL_HEIGHT: f64 = 42.0;
+/// The gap between the selection and the widget.
+const PILL_GAP: f64 = 6.0;
 
-    let (min_y, max_y, base_y) = if field_rect.height < 56.0 {
-        let by = clamp_between(field_rect.y + field_rect.height + 4.0, 32.0, screen_max_y);
-        (
-            (field_rect.y - h - 4.0).max(32.0),
-            (field_rect.y + field_rect.height + 12.0).min(screen_max_y),
-            by,
-        )
+/// Where the widget sits for a selection: just below its bottom-left corner, or above it when
+/// there is no room below. Always on screen, whatever the selection geometry.
+fn compute_selection_pill_rect(selection: EloRect, mon_w: f64, mon_h: f64) -> EloRect {
+    let screen_max_x = (mon_w - PILL_WIDTH - 8.0).max(8.0);
+    let screen_max_y = (mon_h - PILL_HEIGHT - 8.0).max(32.0);
+    let below = selection.y + selection.height + PILL_GAP;
+    let y = if below <= screen_max_y {
+        below
     } else {
-        let top_bound = clamp_between(field_rect.y + 6.0, 32.0, screen_max_y);
-        let bottom_bound = (field_rect.y + field_rect.height - h - 8.0)
-            .max(top_bound)
-            .min(screen_max_y);
-        (top_bound, bottom_bound, bottom_bound)
+        selection.y - PILL_HEIGHT - PILL_GAP
     };
-
-    // A short field partly off the top or bottom of the screen leaves `min_y > max_y`, where
-    // `f64::clamp` would panic (while holding the overlay state lock). The field-relative range
-    // is applied first, then the screen range, which is never inverted, keeps "elo" on screen.
-    let x = clamp_between(
-        clamp_between(base_x + offset_x, min_x, max_x),
-        8.0,
-        screen_max_x,
-    );
-    let y = clamp_between(
-        clamp_between(base_y + offset_y, min_y, max_y),
-        32.0,
-        screen_max_y,
-    );
     EloRect {
-        x,
-        y,
-        width: w,
-        height: h,
+        x: clamp_between(selection.x, 8.0, screen_max_x),
+        y: clamp_between(y, 32.0, screen_max_y),
+        width: PILL_WIDTH,
+        height: PILL_HEIGHT,
     }
+}
+
+/// The sentences of `chars` as `(start, end)` char ranges, without surrounding whitespace.
+///
+/// A sentence ends after `.`, `!` or `?` followed by whitespace (or the end of the text), and at
+/// every line break. That is deliberately simple: an abbreviation such as "e.g. this" splits a
+/// sentence, which only means a sentence correction is offered for a shorter span.
+fn sentence_ranges(chars: &[char]) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut start = 0usize;
+    let push = |start: usize, end: usize, ranges: &mut Vec<(usize, usize)>| {
+        let mut s = start;
+        let mut e = end;
+        while s < e && chars[s].is_whitespace() {
+            s += 1;
+        }
+        while e > s && chars[e - 1].is_whitespace() {
+            e -= 1;
+        }
+        if s < e {
+            ranges.push((s, e));
+        }
+    };
+    for (index, &c) in chars.iter().enumerate() {
+        let ends_sentence = c == '\n'
+            || (matches!(c, '.' | '!' | '?')
+                && chars.get(index + 1).is_none_or(|next| next.is_whitespace()));
+        if ends_sentence {
+            push(start, index + 1, &mut ranges);
+            start = index + 1;
+        }
+    }
+    push(start, chars.len(), &mut ranges);
+    ranges
+}
+
+/// Builds a whole-sentence correction for every sentence that holds at least two alerts with a
+/// suggestion, and links those alerts to it.
+///
+/// The corrected sentence applies each alert's first suggestion. The diff segments come straight
+/// from those edits rather than from a text diff, so they show exactly what each fix changes.
+fn build_sentence_fixes(source_text: &str, alerts: &mut [EloAlert]) -> Vec<EloSentenceFix> {
+    const MIN_ALERTS: usize = 2;
+    let chars: Vec<char> = source_text.chars().collect();
+    let mut fixes = Vec::new();
+
+    for (start, end) in sentence_ranges(&chars) {
+        let mut members: Vec<usize> = alerts
+            .iter()
+            .enumerate()
+            .filter(|(_, alert)| {
+                alert.char_start >= start
+                    && alert.char_end <= end
+                    && alert.char_start < alert.char_end
+                    && !alert.suggestions.is_empty()
+            })
+            .map(|(index, _)| index)
+            .collect();
+        if members.len() < MIN_ALERTS {
+            continue;
+        }
+        members.sort_by_key(|&index| alerts[index].char_start);
+
+        let mut segments: Vec<EloDiffSegment> = Vec::new();
+        let mut push = |kind: &str, text: String| {
+            if text.is_empty() {
+                return;
+            }
+            match segments.last_mut() {
+                Some(last) if last.kind == kind => last.text.push_str(&text),
+                _ => segments.push(EloDiffSegment {
+                    kind: kind.to_string(),
+                    text,
+                }),
+            }
+        };
+        let mut cursor = start;
+        let mut overlapping = false;
+        for &index in &members {
+            let alert = &alerts[index];
+            if alert.char_start < cursor {
+                overlapping = true;
+                break;
+            }
+            push("equal", chars[cursor..alert.char_start].iter().collect());
+            let original: String = chars[alert.char_start..alert.char_end].iter().collect();
+            let suggestion = &alert.suggestions[0];
+            match suggestion.kind.as_str() {
+                // An insertion keeps the flagged text and adds after it.
+                "insert_after" => {
+                    let added = suggestion
+                        .replacement
+                        .strip_prefix(original.as_str())
+                        .unwrap_or(&suggestion.replacement)
+                        .to_string();
+                    push("equal", original);
+                    push("insert", added);
+                }
+                _ => {
+                    push("delete", original);
+                    push("insert", suggestion.replacement.clone());
+                }
+            }
+            cursor = alert.char_end;
+        }
+        if overlapping {
+            continue;
+        }
+        push("equal", chars[cursor..end].iter().collect());
+
+        let corrected: String = segments
+            .iter()
+            .filter(|segment| segment.kind != "delete")
+            .map(|segment| segment.text.as_str())
+            .collect();
+        let original: String = chars[start..end].iter().collect();
+        if corrected == original {
+            continue;
+        }
+        let id = format!("sentence:{start}:{end}");
+        for &index in &members {
+            alerts[index].sentence_fix_id = Some(id.clone());
+        }
+        fixes.push(EloSentenceFix {
+            id,
+            char_start: start,
+            char_end: end,
+            original,
+            corrected,
+            alert_ids: members
+                .iter()
+                .map(|&index| alerts[index].id.clone())
+                .collect(),
+            segments,
+        });
+    }
+    fixes
 }
 
 /// Clamps `value` to `[low, high]` without ever panicking.
@@ -1448,30 +1618,7 @@ fn handle_command(
             remove_alert_from_snapshot(&alert_id);
             true
         }
-        OverlayCommand::DismissAlert { alert_id } => {
-            let Some(pos) = active_lints.iter().position(|(id, _, _)| *id == alert_id) else {
-                return false;
-            };
-            let (_, actionable, suggestions) = active_lints.remove(pos);
-            let chars: Vec<char> = actionable.source_text.chars().collect();
-            let original = actionable.lint.get_str(&chars);
-            let category = actionable.lint.lint_kind.to_string();
-            let first_repl = suggestions
-                .first()
-                .map(|s| suggestion_replacement(&original, s))
-                .unwrap_or_default();
-            let _ = crate::voice::record_dismissed(&original, &first_repl, &category);
-            let _ = crate::voice::refresh_feedback();
-            crate::events::record_suggestion_event(
-                crate::events::EventKind::Dismissed,
-                &actionable.rule_name,
-                actionable.lint.span.len(),
-                0,
-            );
-            ignore_lint_in_config(config, actionable.lint, actionable.source_text);
-            remove_alert_from_snapshot(&alert_id);
-            true
-        }
+        OverlayCommand::DismissAlert { alert_id } => dismiss_alert(&alert_id, active_lints, config),
         OverlayCommand::ReplaceFieldText { new_text } => {
             #[cfg(target_os = "macos")]
             {
@@ -1488,8 +1635,167 @@ fn handle_command(
             guard.snapshot.alerts.clear();
             true
         }
+        OverlayCommand::ApplySentenceFix { fix_id } => {
+            let (fix, source_text) = {
+                let guard = lock_state();
+                (
+                    guard
+                        .snapshot
+                        .sentence_fixes
+                        .iter()
+                        .find(|fix| fix.id == fix_id)
+                        .cloned(),
+                    guard.snapshot.source_text.clone(),
+                )
+            };
+            let Some(fix) = fix else {
+                return false;
+            };
+            #[cfg(target_os = "macos")]
+            {
+                let edit = crate::mac_broker::SpanEdit {
+                    start: fix.char_start,
+                    end: fix.char_end,
+                    text: fix.corrected.clone(),
+                    voice_replacement: Some(fix.corrected.clone()),
+                    category: "SentenceCorrection".to_string(),
+                    rule_name: "SentenceCorrection",
+                };
+                if let Err(error) = broker.replace_target_span(&source_text, edit) {
+                    eprintln!("Could not apply the sentence correction: {error}");
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = (&broker, &source_text);
+            }
+            active_lints.retain(|(id, _, _)| !fix.alert_ids.contains(id));
+            let _ = crate::voice::refresh_feedback();
+            let mut guard = lock_state();
+            guard
+                .snapshot
+                .alerts
+                .retain(|alert| !fix.alert_ids.contains(&alert.id));
+            guard
+                .snapshot
+                .sentence_fixes
+                .retain(|other| other.id != fix.id);
+            if guard.snapshot.alerts.is_empty() {
+                guard.frontend_card_rect = None;
+            }
+            true
+        }
+        OverlayCommand::DismissSentenceFix { fix_id } => {
+            let alert_ids = {
+                let mut guard = lock_state();
+                let ids = guard
+                    .snapshot
+                    .sentence_fixes
+                    .iter()
+                    .find(|fix| fix.id == fix_id)
+                    .map(|fix| fix.alert_ids.clone())
+                    .unwrap_or_default();
+                guard.snapshot.sentence_fixes.retain(|fix| fix.id != fix_id);
+                ids
+            };
+            let mut changed = false;
+            for alert_id in alert_ids {
+                changed |= dismiss_alert(&alert_id, active_lints, config);
+            }
+            changed
+        }
+        OverlayCommand::ReplaceSelection {
+            char_start,
+            char_end,
+            original,
+            new_text,
+        } => {
+            let source_text = lock_state().snapshot.source_text.clone();
+            let Some((start, end)) =
+                locate_selection(&source_text, char_start, char_end, &original)
+            else {
+                eprintln!("The selection changed before the rewrite could be applied");
+                return true;
+            };
+            #[cfg(target_os = "macos")]
+            {
+                let edit = crate::mac_broker::SpanEdit {
+                    start,
+                    end,
+                    text: new_text,
+                    // A generative rewrite is not a correction to learn word choices from.
+                    voice_replacement: None,
+                    category: "SelectionRewrite".to_string(),
+                    rule_name: "SelectionRewrite",
+                };
+                if let Err(error) = broker.replace_target_span(&source_text, edit) {
+                    eprintln!("Could not apply the selection rewrite: {error}");
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = (&broker, start, end, new_text);
+            }
+            true
+        }
         OverlayCommand::RefreshNow => true,
     }
+}
+
+/// Dismisses one alert: records the dismissal, ignores the lint from now on, and removes it from
+/// the snapshot. Returns whether the alert was found.
+fn dismiss_alert(
+    alert_id: &str,
+    active_lints: &mut ActiveLints,
+    config: &Arc<AsyncMutex<Config>>,
+) -> bool {
+    let Some(pos) = active_lints.iter().position(|(id, _, _)| id == alert_id) else {
+        return false;
+    };
+    let (_, actionable, suggestions) = active_lints.remove(pos);
+    let chars: Vec<char> = actionable.source_text.chars().collect();
+    let original = actionable.lint.get_str(&chars);
+    let category = actionable.lint.lint_kind.to_string();
+    let first_repl = suggestions
+        .first()
+        .map(|s| suggestion_replacement(&original, s))
+        .unwrap_or_default();
+    let _ = crate::voice::record_dismissed(&original, &first_repl, &category);
+    let _ = crate::voice::refresh_feedback();
+    crate::events::record_suggestion_event(
+        crate::events::EventKind::Dismissed,
+        &actionable.rule_name,
+        actionable.lint.span.len(),
+        0,
+    );
+    ignore_lint_in_config(config, actionable.lint, actionable.source_text);
+    remove_alert_from_snapshot(alert_id);
+    true
+}
+
+/// Where a selection the frontend saw now sits in `source_text`: at the same offsets when the
+/// text there is unchanged, otherwise at the one place the selected text occurs.
+fn locate_selection(
+    source_text: &str,
+    char_start: usize,
+    char_end: usize,
+    original: &str,
+) -> Option<(usize, usize)> {
+    let chars: Vec<char> = source_text.chars().collect();
+    let wanted: Vec<char> = original.chars().collect();
+    if wanted.is_empty() {
+        return None;
+    }
+    if char_start <= char_end && chars.get(char_start..char_end) == Some(wanted.as_slice()) {
+        return Some((char_start, char_end));
+    }
+    let mut matches = (0..=chars.len().saturating_sub(wanted.len()))
+        .filter(|&position| chars[position..].starts_with(&wanted));
+    let position = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some((position, position + wanted.len()))
 }
 
 /// The global cursor position in screen points.
@@ -1854,6 +2160,7 @@ fn run_overlay_loop(
                     char_start: actionable.lint.span.start,
                     char_end: actionable.lint.span.end,
                     rect,
+                    sentence_fix_id: None,
                 });
 
                 new_active_lints.push((id, actionable, raw_suggestions));
@@ -1874,6 +2181,22 @@ fn run_overlay_loop(
         {
             source_text = ft.text;
         }
+
+        let sentence_fixes = build_sentence_fixes(&source_text, &mut alerts);
+
+        // The selection is only meaningful against the text it was read with.
+        #[cfg(target_os = "macos")]
+        let selection = broker
+            .active_selection()
+            .filter(|_| has_active_field)
+            .map(|selection| EloSelection {
+                char_start: selection.char_start,
+                char_end: selection.char_end,
+                text: selection.text,
+                rect: EloRect::from_rect(selection.rect, mon_x, mon_y),
+            });
+        #[cfg(not(target_os = "macos"))]
+        let selection: Option<EloSelection> = None;
 
         let word_count = source_text.split_whitespace().count();
         let score = calculate_writing_score(word_count, &alerts);
@@ -1897,45 +2220,20 @@ fn run_overlay_loop(
 
         let snapshot = {
             let mut guard = lock_state();
-            let offset_key = if bundle_id.is_empty() {
-                "default"
-            } else {
-                bundle_id.as_str()
-            };
-            let (ox, oy) = guard
-                .widget_offsets
-                .get(offset_key)
-                .copied()
-                .unwrap_or((0.0, 0.0));
-            let widget_rect = if has_active_field {
-                field_rect.and_then(|fr| {
-                    let mut wr = compute_widget_rect(fr, ox, oy, mon_w, mon_h);
-                    // If an occluding window covers the right side of the field where "elo" sits,
-                    // shift "elo" left into the visible portion of the field, or hide it if covered.
-                    for occ in &occluders {
-                        let overlaps = wr.x < occ.x + occ.width
-                            && wr.x + wr.width > occ.x
-                            && wr.y < occ.y + occ.height
-                            && wr.y + wr.height > occ.y;
-                        if overlaps {
-                            if occ.x > fr.x + wr.width + 16.0 {
-                                wr.x = (occ.x - wr.width - 10.0).max(fr.x + 6.0);
-                            } else {
-                                return None;
-                            }
-                        }
-                    }
-                    let still_occluded = occluders.iter().any(|occ| {
+            // The widget shows only while text is selected, just under the selection, and hides
+            // when another window covers it.
+            let widget_rect = selection
+                .as_ref()
+                .filter(|_| has_active_field)
+                .map(|selection| compute_selection_pill_rect(selection.rect, mon_w, mon_h))
+                .filter(|wr| {
+                    !occluders.iter().any(|occ| {
                         wr.x < occ.x + occ.width
                             && wr.x + wr.width > occ.x
                             && wr.y < occ.y + occ.height
                             && wr.y + wr.height > occ.y
-                    });
-                    (!still_occluded).then_some(wr)
-                })
-            } else {
-                None
-            };
+                    })
+                });
 
             let snap = EloOverlaySnapshot {
                 service_enabled,
@@ -1951,6 +2249,8 @@ fn run_overlay_loop(
                 score,
                 word_count,
                 source_text,
+                selection,
+                sentence_fixes,
                 card_command: None,
                 card_command_seq: guard.snapshot.card_command_seq,
             };
@@ -1985,6 +2285,14 @@ fn run_overlay_loop(
             if let Some(wr) = snapshot.widget_rect {
                 (wr.x as i32).hash(&mut hasher);
                 (wr.y as i32).hash(&mut hasher);
+            }
+            if let Some(selection) = &snapshot.selection {
+                selection.char_start.hash(&mut hasher);
+                selection.char_end.hash(&mut hasher);
+            }
+            for fix in &snapshot.sentence_fixes {
+                fix.id.hash(&mut hasher);
+                fix.corrected.hash(&mut hasher);
             }
             hasher.finish()
         };
@@ -2057,34 +2365,170 @@ mod tests {
     }
 
     #[test]
-    fn the_widget_sits_inside_the_bottom_right_of_a_tall_field() {
-        let widget = compute_widget_rect(rect(100.0, 100.0, 600.0, 300.0), 0.0, 0.0, MON_W, MON_H);
-        assert_eq!(widget.x, 100.0 + 600.0 - widget.width - 8.0);
-        assert_eq!(widget.y, 100.0 + 300.0 - widget.height - 8.0);
+    fn the_widget_sits_just_below_the_selection() {
+        let widget = compute_selection_pill_rect(rect(200.0, 300.0, 240.0, 22.0), MON_W, MON_H);
+        assert_eq!(widget.x, 200.0);
+        assert_eq!(widget.y, 300.0 + 22.0 + PILL_GAP);
     }
 
     #[test]
-    fn short_fields_at_the_screen_edges_do_not_panic() {
-        // Each of these made a `clamp` range inverted, which used to panic while the overlay
-        // state lock was held and poison it for good.
-        for field in [
+    fn the_widget_flips_above_a_selection_at_the_bottom_of_the_screen() {
+        let widget = compute_selection_pill_rect(rect(200.0, 1090.0, 240.0, 20.0), MON_W, MON_H);
+        assert_eq!(widget.y, 1090.0 - PILL_HEIGHT - PILL_GAP);
+        assert_on_screen(widget);
+    }
+
+    #[test]
+    fn selections_at_the_screen_edges_do_not_panic() {
+        for selection in [
             rect(100.0, -50.0, 400.0, 10.0),
             rect(100.0, 1200.0, 400.0, 20.0),
-            rect(100.0, 0.0, 400.0, 20.0),
             rect(-500.0, 1100.0, 50.0, 17.0),
             rect(5000.0, 500.0, 50.0, 17.0),
+            rect(f64::NAN, f64::NAN, 10.0, 10.0),
         ] {
-            for (dx, dy) in [(0.0, 0.0), (-9999.0, -9999.0), (9999.0, 9999.0)] {
-                assert_on_screen(compute_widget_rect(field, dx, dy, MON_W, MON_H));
+            let widget = compute_selection_pill_rect(selection, MON_W, MON_H);
+            assert!(widget.x.is_finite() && widget.y.is_finite(), "{widget:?}");
+            if selection.x.is_finite() {
+                assert_on_screen(widget);
             }
         }
     }
 
+    fn sentences(text: &str) -> Vec<String> {
+        let chars: Vec<char> = text.chars().collect();
+        sentence_ranges(&chars)
+            .into_iter()
+            .map(|(start, end)| chars[start..end].iter().collect())
+            .collect()
+    }
+
     #[test]
-    fn nan_geometry_does_not_panic() {
-        let widget =
-            compute_widget_rect(rect(f64::NAN, f64::NAN, 10.0, 10.0), 0.0, 0.0, MON_W, MON_H);
-        assert!(widget.x.is_finite() && widget.y.is_finite());
+    fn text_splits_into_sentences() {
+        assert_eq!(
+            sentences("lets go. I want this! Done?  Yes\nNext line"),
+            ["lets go.", "I want this!", "Done?", "Yes", "Next line"]
+        );
+        // A full stop inside a number or a file name does not end a sentence.
+        assert_eq!(
+            sentences("Pay 3.50 for v1.2 now."),
+            ["Pay 3.50 for v1.2 now."]
+        );
+        assert!(sentences("   ").is_empty());
+    }
+
+    fn alert(
+        id: &str,
+        start: usize,
+        end: usize,
+        original: &str,
+        kind: &str,
+        repl: &str,
+    ) -> EloAlert {
+        EloAlert {
+            id: id.to_string(),
+            rule_name: "Test".to_string(),
+            category: "correctness".to_string(),
+            category_label: "Correctness".to_string(),
+            subcategory: "Spelling".to_string(),
+            color: "#E5484D".to_string(),
+            original: original.to_string(),
+            message: String::new(),
+            context_before: String::new(),
+            context_after: String::new(),
+            suggestions: vec![EloSuggestion {
+                kind: kind.to_string(),
+                label: repl.to_string(),
+                replacement: repl.to_string(),
+            }],
+            char_start: start,
+            char_end: end,
+            rect: EloRect::default(),
+            sentence_fix_id: None,
+        }
+    }
+
+    #[test]
+    fn a_sentence_with_several_alerts_gets_one_correction() {
+        let text = "lets worry about it later. It appears when someone select text.";
+        let select_start = text.find("select").expect("the word is in the text");
+        let text_start = text.find("text.").expect("the word is in the text");
+        let mut alerts = vec![
+            alert("a", 0, 4, "lets", "replace", "Let's"),
+            alert(
+                "b",
+                select_start,
+                select_start + 6,
+                "select",
+                "replace",
+                "selects",
+            ),
+            alert(
+                "c",
+                text_start,
+                text_start + 4,
+                "text",
+                "insert_after",
+                "text,",
+            ),
+        ];
+        let fixes = build_sentence_fixes(text, &mut alerts);
+
+        // The first sentence has a single alert, so it keeps the word-level card.
+        assert_eq!(fixes.len(), 1);
+        let fix = &fixes[0];
+        assert_eq!(fix.original, "It appears when someone select text.");
+        assert_eq!(fix.corrected, "It appears when someone selects text,.");
+        assert_eq!(fix.alert_ids, ["b", "c"]);
+        assert_eq!(alerts[0].sentence_fix_id, None);
+        assert_eq!(alerts[1].sentence_fix_id.as_deref(), Some(fix.id.as_str()));
+        assert_eq!(alerts[2].sentence_fix_id.as_deref(), Some(fix.id.as_str()));
+
+        let kinds: Vec<(&str, &str)> = fix
+            .segments
+            .iter()
+            .map(|segment| (segment.kind.as_str(), segment.text.as_str()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("equal", "It appears when someone "),
+                ("delete", "select"),
+                ("insert", "selects"),
+                ("equal", " text"),
+                ("insert", ","),
+                ("equal", "."),
+            ]
+        );
+    }
+
+    #[test]
+    fn alerts_without_suggestions_do_not_make_a_sentence_correction() {
+        let text = "teh cat sat on teh mat.";
+        let mut alerts = vec![
+            alert("a", 0, 3, "teh", "replace", "the"),
+            alert("b", 15, 18, "teh", "replace", "the"),
+        ];
+        alerts[1].suggestions.clear();
+        assert!(build_sentence_fixes(text, &mut alerts).is_empty());
+
+        alerts[1] = alert("b", 15, 18, "teh", "replace", "the");
+        let fixes = build_sentence_fixes(text, &mut alerts);
+        assert_eq!(fixes[0].corrected, "the cat sat on the mat.");
+    }
+
+    #[test]
+    fn a_selection_is_relocated_or_refused() {
+        let text = "one two three two";
+        // Unchanged offsets are trusted as they are.
+        assert_eq!(locate_selection(text, 4, 7, "two"), Some((4, 7)));
+        // Moved, and the text occurs twice: refused rather than guessed.
+        assert_eq!(locate_selection(text, 0, 3, "two"), None);
+        assert_eq!(locate_selection(text, 4, 13, "two three"), Some((4, 13)));
+        // The text moved: found again at its one occurrence.
+        assert_eq!(locate_selection(text, 0, 5, "three"), Some((8, 13)));
+        assert_eq!(locate_selection(text, 0, 3, "four"), None);
+        assert_eq!(locate_selection(text, 0, 0, ""), None);
     }
 
     #[test]

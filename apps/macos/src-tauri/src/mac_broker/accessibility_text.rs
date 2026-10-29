@@ -299,6 +299,19 @@ fn estimate_rect_within_frame(
 }
 
 /// Collects lint rectangles while walking supported text elements in an AX tree.
+/// The text the user has selected in the active field.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldSelection {
+    /// Char offset of the selection in the field's text.
+    pub char_start: usize,
+    /// Char offset (exclusive) of the selection in the field's text.
+    pub char_end: usize,
+    /// The selected text.
+    pub text: String,
+    /// Screen bounds of the selection, clipped to the visible field.
+    pub rect: Rect,
+}
+
 pub struct RectCollector<'a> {
     rects: RefCell<Vec<ActionableLint>>,
     expected_rect_count: Cell<usize>,
@@ -317,6 +330,8 @@ pub struct RectCollector<'a> {
     tone: RefCell<Option<String>>,
     /// Text of the first supported editable text element visited.
     source_text: RefCell<Option<String>>,
+    /// The non-empty selection in that element, with its on-screen bounds.
+    selection: RefCell<Option<FieldSelection>>,
 }
 
 impl TreeVisitor for RectCollector<'_> {
@@ -351,6 +366,8 @@ impl TreeVisitor for RectCollector<'_> {
 
         if self.source_text.borrow().is_none() {
             *self.source_text.borrow_mut() = Some(string.clone());
+            *self.selection.borrow_mut() =
+                read_field_selection(element, &string, element_visible_rect);
         }
 
         if !string.trim().is_empty() && self.tone.borrow().is_none() {
@@ -516,7 +533,13 @@ impl<'a> RectCollector<'a> {
             lint_text: RefCell::new(lint_text),
             tone: RefCell::new(None),
             source_text: RefCell::new(None),
+            selection: RefCell::new(None),
         }
+    }
+
+    /// The non-empty selection in the active field, if any.
+    pub fn selection(&self) -> Option<FieldSelection> {
+        self.selection.borrow().clone()
     }
 
     /// Whether at least one supported editable text element was visited.
@@ -658,6 +681,56 @@ fn utf16_range(chars: &[char], start: usize, end: usize) -> (isize, isize) {
     let utf16_len =
         |chars: &[char]| -> isize { chars.iter().map(|c| c.len_utf16() as isize).sum() };
     (utf16_len(&chars[..start]), utf16_len(&chars[start..end]))
+}
+
+/// The char index of UTF-16 offset `utf16` in `chars`, rounding a split surrogate pair forward.
+fn char_index_for_utf16(chars: &[char], utf16: usize) -> usize {
+    let mut units = 0usize;
+    for (index, c) in chars.iter().enumerate() {
+        if units >= utf16 {
+            return index;
+        }
+        units += c.len_utf16();
+    }
+    chars.len()
+}
+
+/// Reads the field's selection and where it sits on screen.
+///
+/// Returns `None` for a collapsed caret, a range the field cannot place on screen, or a
+/// selection entirely outside the visible part of the field.
+fn read_field_selection(
+    element: &AXUIElement,
+    text: &str,
+    visible_rect: Option<Rect>,
+) -> Option<FieldSelection> {
+    let (location, length) = get_selected_utf16_range(element)?;
+    if location < 0 || length <= 0 {
+        return None;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let char_start = char_index_for_utf16(&chars, location as usize);
+    let char_end = char_index_for_utf16(&chars, (location + length) as usize).max(char_start);
+    let selected: String = chars[char_start..char_end].iter().collect();
+    if selected.trim().is_empty() {
+        return None;
+    }
+    let raw_rect = element_rect_for_text_range_with_fallback(
+        element,
+        text,
+        char_start,
+        char_end - char_start,
+    )?;
+    let rect = match visible_rect {
+        Some(visible) => raw_rect.intersection(visible)?,
+        None => raw_rect,
+    };
+    Some(FieldSelection {
+        char_start,
+        char_end,
+        text: selected,
+        rect,
+    })
 }
 
 /// Finds where a span checked against `source` now sits in the field's `live` text.
@@ -869,40 +942,81 @@ fn apply_suggestion_to_element(
     let span_start = lint.span.start.min(source_chars.len());
     let span_end = lint.span.end.min(source_chars.len()).max(span_start);
     let original: String = source_chars[span_start..span_end].iter().collect();
-    let replacement = match &suggestion {
+    let voice_replacement = match &suggestion {
         Suggestion::ReplaceWith(chars) => Some(chars.iter().collect::<String>()),
         Suggestion::Remove => Some(String::new()),
         Suggestion::InsertAfter(_) => None,
     };
-    let span_paste_text = match &suggestion {
+    let text = match &suggestion {
         Suggestion::ReplaceWith(chars) => chars.iter().collect::<String>(),
         Suggestion::Remove => String::new(),
         Suggestion::InsertAfter(chars) => {
             format!("{original}{}", chars.iter().collect::<String>())
         }
     };
-    let category = format!("{:?}", lint.lint_kind);
+    apply_span_edit(
+        &element,
+        &source_text,
+        SpanEdit {
+            start: span_start,
+            end: span_end,
+            text,
+            voice_replacement,
+            category: format!("{:?}", lint.lint_kind),
+            rule_name,
+        },
+    );
+}
+
+/// One replacement of a char span in a field, and what to record once it lands.
+pub struct SpanEdit<'a> {
+    /// Char offset in the text the edit was computed against.
+    pub start: usize,
+    /// Char offset (exclusive) in the text the edit was computed against.
+    pub end: usize,
+    /// The text that replaces the span.
+    pub text: String,
+    /// The replacement to teach the voice profile; `None` when the edit is not a plain
+    /// replacement of the span (an insertion after it, a generative rewrite).
+    pub voice_replacement: Option<String>,
+    /// The category recorded with the accepted edit.
+    pub category: String,
+    /// The rule recorded in the suggestion event log.
+    pub rule_name: &'a str,
+}
+
+/// Replaces chars `edit.start..edit.end` of `source_text` in the field, touching nothing else.
+///
+/// Used for single lint fixes, whole-sentence corrections, and rewrites of a selection. Returns
+/// whether the edit landed; when the field changed so the span can no longer be placed safely,
+/// nothing is written and the overlay is asked to re-read the field.
+pub fn apply_span_edit(element: &AXUIElement, source_text: &str, edit: SpanEdit) -> bool {
+    let source_chars = source_text.chars().collect::<Vec<_>>();
+    let span_start = edit.start.min(source_chars.len());
+    let span_end = edit.end.min(source_chars.len()).max(span_start);
+    let original: String = source_chars[span_start..span_end].iter().collect();
+    let span_paste_text = edit.text;
 
     let mut pid: pid_t = 0;
     let pid_error = unsafe { AXUIElementGetPid(element.as_concrete_TypeRef(), &mut pid) };
 
     // 1. Re-read the field. Polling freezes while the suggestion card is open, so `source_text`
     // can be stale; writing an edit built from it would erase whatever was typed since.
-    let direct_value = read_ax_value(&element);
+    let direct_value = read_ax_value(element);
     let value_readable = direct_value.is_some();
-    let Some(live_text) = direct_value.or_else(|| read_element_text(&element)) else {
-        eprintln!("Could not read the field before applying the suggestion; nothing was changed");
+    let Some(live_text) = direct_value.or_else(|| read_element_text(element)) else {
+        eprintln!("Could not read the field before applying the edit; nothing was changed");
         crate::elo_overlay::request_refresh();
-        return;
+        return false;
     };
     let live_chars = live_text.chars().collect::<Vec<_>>();
     let Some((start, end)) = relocate_span(&source_chars, &live_chars, span_start, span_end) else {
         eprintln!(
-            "The field changed since it was checked and the suggestion no longer lines up; \
+            "The field changed since it was checked and the edit no longer lines up; \
              nothing was changed"
         );
         crate::elo_overlay::request_refresh();
-        return;
+        return false;
     };
 
     let mut updated: String = live_chars[..start].iter().collect();
@@ -912,7 +1026,7 @@ fn apply_suggestion_to_element(
     let replacement_utf16_len = span_paste_text.encode_utf16().count() as isize;
     let total_updated_utf16_len = updated.encode_utf16().count() as isize;
 
-    let prev_selection = get_selected_utf16_range(&element);
+    let prev_selection = get_selected_utf16_range(element);
     let target_caret = match prev_selection {
         Some((loc, 0)) if loc >= utf16_start + utf16_len => {
             (loc - utf16_len + replacement_utf16_len).clamp(0, total_updated_utf16_len)
@@ -922,7 +1036,7 @@ fn apply_suggestion_to_element(
     };
 
     eprintln!(
-        "Applying suggestion via AX (span {start}:{}, replacement {} chars)",
+        "Applying edit via AX (span {start}:{}, replacement {} chars)",
         end - start,
         span_paste_text.chars().count()
     );
@@ -932,11 +1046,11 @@ fn apply_suggestion_to_element(
 
     // 2. Preferred: select exactly the span and replace the selection. This touches nothing
     // outside the span, so it cannot lose concurrent edits elsewhere in the field.
-    if select_span(&element, utf16_start, utf16_len, &original)
-        && set_selected_text_attribute(&element, &span_paste_text)
+    if select_span(element, utf16_start, utf16_len, &original)
+        && set_selected_text_attribute(element, &span_paste_text)
     {
         applied =
-            wait_for_edit(&element, &live_text, &updated, value_readable) != EditOutcome::Unchanged;
+            wait_for_edit(element, &live_text, &updated, value_readable) != EditOutcome::Unchanged;
     }
 
     // 3. Fallback: write the whole value, built from the live `AXValue` read above, and only
@@ -944,34 +1058,34 @@ fn apply_suggestion_to_element(
     // children is never rewritten wholesale.
     if !applied
         && value_readable
-        && read_ax_value(&element).as_deref() == Some(live_text.as_str())
+        && read_ax_value(element).as_deref() == Some(live_text.as_str())
         && element
             .set_value(CFString::new(&updated).as_CFType())
             .is_ok()
     {
-        applied = wait_for_edit(&element, &live_text, &updated, true) != EditOutcome::Unchanged;
+        applied = wait_for_edit(element, &live_text, &updated, true) != EditOutcome::Unchanged;
     }
 
     // 4. Last resort: paste over the selected span, once the target app is frontmost.
     if !applied
-        && select_span(&element, utf16_start, utf16_len, &original)
+        && select_span(element, utf16_start, utf16_len, &original)
         && super::activate_and_wait_until_frontmost(pid)
         && let Ok(snapshot) = crate::pasteboard::write_transient(&span_paste_text)
     {
         if super::paste_command_v().is_ok() {
             std::thread::sleep(Duration::from_millis(120));
-            applied = wait_for_edit(&element, &live_text, &updated, value_readable)
+            applied = wait_for_edit(element, &live_text, &updated, value_readable)
                 != EditOutcome::Unchanged;
         }
         crate::pasteboard::restore(snapshot);
     }
 
     if !applied {
-        eprintln!("Unable to apply suggestion via AX write or pasteboard fallback");
-        return;
+        eprintln!("Unable to apply the edit via AX write or pasteboard fallback");
+        return false;
     }
 
-    let _ = set_selected_utf16_range(&element, target_caret, 0);
+    let _ = set_selected_utf16_range(element, target_caret, 0);
 
     if pid_error == kAXErrorSuccess
         && let Err(error) = crate::undo::record(pid, &live_text, &updated)
@@ -979,17 +1093,18 @@ fn apply_suggestion_to_element(
         eprintln!("Could not record undo: {error}");
     }
     // Recorded here, once, and only after the edit landed.
-    if let Some(replacement) = replacement
-        && let Err(error) = crate::voice::record_accepted(&original, &replacement, &category)
+    if let Some(replacement) = edit.voice_replacement
+        && let Err(error) = crate::voice::record_accepted(&original, &replacement, &edit.category)
     {
         eprintln!("Could not record accepted edit: {error}");
     }
     crate::events::record_suggestion_event(
         crate::events::EventKind::Accepted,
-        rule_name,
+        edit.rule_name,
         original.chars().count(),
         span_paste_text.chars().count(),
     );
+    true
 }
 
 /// Returns whether an accessibility element has a boolean `AXEditable` attribute set to true.
@@ -1230,6 +1345,18 @@ mod tests {
 
     fn chars(text: &str) -> Vec<char> {
         text.chars().collect()
+    }
+
+    #[test]
+    fn utf16_offsets_map_back_to_char_indices() {
+        let text = chars("😀 teh cat");
+        assert_eq!(char_index_for_utf16(&text, 0), 0);
+        // After the emoji's two UTF-16 units comes char 1.
+        assert_eq!(char_index_for_utf16(&text, 2), 1);
+        assert_eq!(char_index_for_utf16(&text, 3), 2);
+        // An offset inside the surrogate pair rounds forward.
+        assert_eq!(char_index_for_utf16(&text, 1), 1);
+        assert_eq!(char_index_for_utf16(&text, 99), text.len());
     }
 
     #[test]

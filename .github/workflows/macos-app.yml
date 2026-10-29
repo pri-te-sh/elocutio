@@ -1,29 +1,18 @@
 name: macOS app
 
 # The macOS app is a separate cargo workspace (`apps/macos/src-tauri` is
-# excluded from the root workspace), so it needs its own job. It used to run
-# only on demand, which left the product outside every automatic gate; it now
-# also runs automatically whenever the app, the shared crates, or the toolchain
-# change. The `paths` filter keeps it off unrelated doc-only changes, because
-# GitHub Free bills macOS runners at 10x the Linux rate.
+# excluded from the root workspace), so it needs its own job on a macOS runner,
+# the slowest and most expensive kind (10x the Linux rate on private repos).
 #
-# Run it by:
-#   - Actions → macOS app → Run workflow, or
-#   - adding the `macos-app` label to a pull request, or
-#   - pushing a `v*` release tag.
+# It runs once per change, on the pull request, and only when the app, the
+# shared crates, or the toolchain change. It does not run again when the pull
+# request merges to main (the PR run already tested that code) or on release
+# tags (the release workflow builds the app itself). Run it by hand from
+# Actions → macOS app → Run workflow.
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-    paths:
-      - "apps/macos/**"
-      - "crates/**"
-      - "vendor/harper/**"
-      - ".github/workflows/macos-app.yml"
-      - "rust-toolchain.toml"
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
     paths:
       - "apps/macos/**"
       - "crates/**"
@@ -46,11 +35,6 @@ env:
 jobs:
   macos-app:
     name: macOS app (check, frontend, tests, bundle)
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      github.event_name == 'pull_request' ||
-      github.event.label.name == 'macos-app'
     runs-on: macos-15
     timeout-minutes: 45
     steps:

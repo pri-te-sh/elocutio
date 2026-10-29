@@ -3,18 +3,27 @@ updates:
   - package-ecosystem: cargo
     directory: "/"
     schedule:
-      interval: weekly
+      interval: monthly
+    # Open PRs are not rebased each time main moves: every rebase re-runs CI.
+    # Comment "@dependabot rebase" on a PR to refresh it before merging.
+    rebase-strategy: disabled
     groups:
       rust-dependencies:
         patterns: ["*"]
   - package-ecosystem: npm
     directory: "/"
     schedule:
-      interval: weekly
+      interval: monthly
+    # Open PRs are not rebased each time main moves: every rebase re-runs CI.
+    # Comment "@dependabot rebase" on a PR to refresh it before merging.
+    rebase-strategy: disabled
     groups:
       js-dependencies:
         patterns: ["*"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: weekly
+      interval: monthly
+    # Open PRs are not rebased each time main moves: every rebase re-runs CI.
+    # Comment "@dependabot rebase" on a PR to refresh it before merging.
+    rebase-strategy: disabled

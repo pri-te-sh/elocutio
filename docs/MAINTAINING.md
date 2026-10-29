@@ -39,20 +39,28 @@ architecture live in [`PLAN.md`](PLAN.md) and [`ARCHITECTURE.md`](ARCHITECTURE.m
 
 ## CI minutes (GitHub Free)
 
-GitHub Free includes 2,000 Actions minutes/month, and **macOS runners count at
-10×**. Keep routine CI cheap:
+The repository is public, so GitHub Actions minutes on standard runners are
+free, macOS included. On a private repository GitHub Free includes 2,000
+minutes a month and **macOS runners count at 10×**. Either way, keep runs to
+what catches problems:
 
-- `ci.yml` runs only on Ubuntu: root Rust checks, docs, Prettier, and the
-  Svelte frontend check/build.
-- `macos-app.yml` is manual, label-triggered (`macos-app`), or tag-triggered.
-  Never make it a required check or run it on every push.
+- `ci.yml` runs only on Ubuntu (root Rust checks, docs, Prettier, Svelte
+  check/build) on pull requests and pushes to `main`, and skips changes that
+  only touch the website (`index.html`, `assets/site`, `assets/video`,
+  `assets/screenshots`).
+- `macos-app.yml` runs once per change: on pull requests that touch the app,
+  the shared crates, or the toolchain. It does not re-run on the merge to
+  `main` or on release tags (the release workflow builds the app itself). Run
+  it by hand from Actions → macOS app → Run workflow.
+- `release.yml` runs only on `v*` tags, or by hand for a dry run.
 - Run `just macos-check` locally before opening a macOS PR.
-- Keep `timeout-minutes` on every job; cancel superseded runs with the existing
+- Keep `timeout-minutes` on every job; superseded runs are cancelled by the
   concurrency groups.
 - Do not add macOS matrix builds or a macOS job to routine CI without a budget
   review.
-- Dependabot PRs use the cheap routine CI; label `macos-app` only when the
-  dependency needs a full Tauri check.
+- Dependabot checks monthly, one grouped PR per ecosystem, and does not rebase
+  open PRs when `main` moves (each rebase would re-run CI). Comment
+  `@dependabot rebase` on a PR to refresh it before merging.
 
 ## Discussions
 

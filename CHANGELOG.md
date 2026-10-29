@@ -146,6 +146,17 @@ to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The overlay's floating widget now appears only while text is selected, as a
+  two-button pill (rewrite, suggestions) attached under the selection; a rewrite
+  started from it replaces just the selected text. Pausing elo for an app moved
+  to the suggestions card.
+- Hovering an underlined word in a sentence with several issues opens a
+  "Correct the sentence" card that shows the whole corrected sentence as an
+  inline diff and applies it in one edit.
+- The suggestion card's top bar fits on one row: pause, full editor, and
+  settings moved into a "⋯" menu, and the selection pill's icons use the
+  brand accents (Ink Indigo, Soft Indigo).
+
 - The macOS shell now lives in `apps/macos`; the root Cargo workspace excludes
   it and `vendor/harper`.
 - Config moved to `~/Library/Application Support/elocutio/`; bundle ID is

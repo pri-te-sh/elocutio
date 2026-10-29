@@ -38,6 +38,19 @@ macos-build:
 	pnpm --filter @elocutio/macos build
 	cd apps/macos && pnpm exec tauri build --debug --bundles app
 
+# Build a debug Elocutio.app signed with a local identity, so macOS keeps its
+# Accessibility grant and Keychain access across rebuilds. List identities with
+# `security find-identity -v -p codesigning`.
+#   just macos-build-signed "Apple Development: Your Name (TEAMID)"
+macos-build-signed identity:
+	just macos-build
+	just macos-sign "{{identity}}"
+
+# Re-sign the existing debug Elocutio.app with a local identity.
+macos-sign identity:
+	codesign --force --deep --sign "{{identity}}" apps/macos/src-tauri/target/debug/bundle/macos/Elocutio.app
+	codesign --verify --strict apps/macos/src-tauri/target/debug/bundle/macos/Elocutio.app
+
 # Build an optimized unsigned app and DMG.
 macos-release:
 	pnpm --filter @elocutio/macos build

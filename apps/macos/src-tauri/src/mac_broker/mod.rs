@@ -8,6 +8,8 @@ mod focused_target;
 mod focused_window_pid;
 mod window_stability;
 
+pub use accessibility_text::{FieldSelection, SpanEdit};
+
 use accessibility::TreeWalker;
 use accessibility::attribute::AXUIElementAttributes;
 use accessibility::ui_element::AXUIElement;
@@ -123,6 +125,8 @@ pub struct MacBroker {
     active_field_rect: Option<crate::rect::Rect>,
     /// Text of the active text field captured during the last `get_boxes` pass.
     active_field_text: Option<String>,
+    /// The non-empty selection in the active field during the last `get_boxes` pass.
+    active_selection: Option<FieldSelection>,
     /// Screen-space rectangles of any windows sitting in front of the target window.
     occluding_rects: Vec<crate::rect::Rect>,
     /// The LLM suggestion cache as last parsed, keyed by the file's modification time and length,
@@ -148,6 +152,7 @@ impl MacBroker {
             has_active_field: false,
             active_field_rect: None,
             active_field_text: None,
+            active_selection: None,
             occluding_rects: Vec::new(),
             llm_cache_memo: None,
         }
@@ -218,6 +223,32 @@ impl MacBroker {
     /// Text of the active text field from the most recent `get_boxes` pass.
     pub fn active_field_text(&self) -> Option<String> {
         self.active_field_text.clone()
+    }
+
+    /// The selection in the active field from the most recent `get_boxes` pass.
+    pub fn active_selection(&self) -> Option<FieldSelection> {
+        self.active_selection.clone()
+    }
+
+    /// Replaces chars `edit.start..edit.end` of `source_text` in the remembered target field,
+    /// leaving the rest of the field untouched.
+    ///
+    /// The span is relocated against the field's live text first, so an edit computed before the
+    /// user typed elsewhere still lands on the right characters, or is refused.
+    pub fn replace_target_span(&mut self, source_text: &str, edit: SpanEdit) -> Result<(), String> {
+        let element = if let Some(target) = self.last_focused.as_deref()
+            && let Some(ref el) = target.element
+            && is_supported_text_element(el)
+        {
+            el.clone()
+        } else {
+            focused_text_element()?
+        };
+        if accessibility_text::apply_span_edit(&element, source_text, edit) {
+            Ok(())
+        } else {
+            Err("The text changed before the edit could be applied.".to_string())
+        }
     }
 
     /// Replaces the entire text of the currently remembered target text field (`last_focused` or
@@ -513,6 +544,7 @@ impl MacBroker {
     fn clear_target_state(&mut self, keep_activation: bool) {
         self.window_movement = None;
         self.has_active_field = false;
+        self.active_selection = None;
         self.active_field_rect = None;
         self.detected_tone = None;
         if !keep_activation {
@@ -683,6 +715,7 @@ impl OsBroker for MacBroker {
 
         self.has_active_field = collector.found_text_element();
         self.active_field_text = collector.source_text();
+        self.active_selection = collector.selection();
         let field_candidate = collector.field_rect();
         let win_frame = window_stability::window_frame_for_pid(&windows, pid, field_candidate);
         let raw_field = match (field_candidate, win_frame) {

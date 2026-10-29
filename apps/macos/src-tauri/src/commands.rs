@@ -136,7 +136,9 @@ pub fn application_message_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool {
         analyze_studio_text,
         get_elo_overlay_snapshot,
         set_elo_overlay_regions,
-        save_elo_widget_offset,
+        apply_elo_sentence_fix,
+        dismiss_elo_sentence_fix,
+        apply_elo_selection_rewrite,
         apply_elo_alert,
         dismiss_elo_alert,
         disable_elo_rule,
@@ -2226,8 +2228,24 @@ fn set_elo_overlay_regions(
 }
 
 #[tauri::command]
-fn save_elo_widget_offset(bundle_id: String, offset_x: f64, offset_y: f64) {
-    crate::elo_overlay::save_widget_offset(&bundle_id, offset_x, offset_y);
+fn apply_elo_sentence_fix(fix_id: String) -> Result<bool, String> {
+    crate::elo_overlay::request_apply_sentence_fix(fix_id)
+}
+
+#[tauri::command]
+fn dismiss_elo_sentence_fix(fix_id: String) -> Result<bool, String> {
+    crate::elo_overlay::request_dismiss_sentence_fix(fix_id)
+}
+
+/// Replaces the selection the rewrite was made from with the rewritten text.
+#[tauri::command]
+fn apply_elo_selection_rewrite(
+    char_start: usize,
+    char_end: usize,
+    original: String,
+    text: String,
+) -> Result<bool, String> {
+    crate::elo_overlay::request_replace_selection(char_start, char_end, original, text)
 }
 
 #[tauri::command]

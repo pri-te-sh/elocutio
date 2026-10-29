@@ -34,6 +34,30 @@
     char_start: number;
     char_end: number;
     rect: EloRect;
+    // The whole-sentence correction this alert belongs to, when its sentence has one.
+    sentence_fix_id?: string | null;
+  }
+
+  interface EloSelection {
+    char_start: number;
+    char_end: number;
+    text: string;
+    rect: EloRect;
+  }
+
+  interface EloDiffSegment {
+    kind: "equal" | "delete" | "insert";
+    text: string;
+  }
+
+  interface EloSentenceFix {
+    id: string;
+    char_start: number;
+    char_end: number;
+    original: string;
+    corrected: string;
+    alert_ids: string[];
+    segments: EloDiffSegment[];
   }
 
   interface EloOverlaySnapshot {
@@ -50,6 +74,9 @@
     score: number;
     word_count: number;
     source_text: string;
+    // The widget only shows while text is selected; optional for older builds.
+    selection?: EloSelection | null;
+    sentence_fixes?: EloSentenceFix[];
     card_command: string | null;
     // Incremented by Rust each time a new card command is queued. Optional so the
     // overlay keeps working against builds that do not send it yet.
@@ -229,17 +256,26 @@
   // - "mini": compact inline quick-fix card under hovered/clicked word (Image 3)
   // - "rewrite": "What do you want to do?" generative rewrite card (Image 5)
   // - "full": full multi-alert suggestion card with context sentence & 5 categories
-  type OverlayPopoverMode = "closed" | "mini" | "rewrite" | "full";
+  // - "sentence": "Correct the sentence" card, the whole corrected sentence as a diff
+  type OverlayPopoverMode = "closed" | "mini" | "rewrite" | "full" | "sentence";
   let overlayPopoverMode = $state<OverlayPopoverMode>("closed");
   let overlayActiveAlertId = $state<string | null>(null);
   let overlayHoveredAlertId = $state<string | null>(null);
   let overlayCategoryFilter = $state<string>("all");
   let overlayMoreMenuOpen = $state(false);
+  // The suggestion card's top-bar "⋯" menu (pause, full editor, settings).
+  let overlayTopMenuOpen = $state(false);
 
-  // Hover-expanded "elo" pill toolbar state (Images 1, 2, 4)
-  let eloPillHovered = $state(false);
-  let eloPillHoveredBtn = $state<"power" | "tone" | "rewrite" | "count" | null>(null);
-  let eloPowerMenuOpen = $state(false);
+  // The selection widget: two buttons under the selected text, each with a tooltip.
+  let eloPillHoveredBtn = $state<"rewrite" | "suggestions" | null>(null);
+
+  // "Correct the sentence" card: the open correction and its measured height.
+  let overlayActiveSentenceFixId = $state<string | null>(null);
+  let sentenceCardHeight = $state(0);
+
+  // The selection a rewrite was started from. The rewrite replaces only that text;
+  // null means the rewrite covers the whole field.
+  let rewriteScope = $state<EloSelection | null>(null);
 
   // "What do you want to do?" Rewrite card state (Image 5)
   let rewriteMoreIdeasOpen = $state(false);
@@ -248,13 +284,6 @@
   let rewriteError = $state<string | null>(null);
   let rewritePreview = $state<EloRewriteResponse | null>(null);
   let rewriteHistory = $state<EloRewriteResponse[]>([]);
-
-  // Dragging state for system-wide "elo" widget
-  let isDraggingElo = $state(false);
-  let dragStartPointer = $state({ x: 0, y: 0 });
-  let dragStartWidget = $state({ x: 0, y: 0 });
-  let dragCurrentOffset = $state({ x: 0, y: 0 });
-  let draggedDuringPress = $state(false);
 
   // ---------------------------------------------------------------------------
   // Desktop Studio & Settings State
@@ -488,39 +517,30 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     return idx >= 0 ? idx : 0;
   });
 
-  // Base resting widget rect (right-edge anchored)
+  let activeSentenceFix = $derived.by((): EloSentenceFix | null => {
+    if (!overlayActiveSentenceFixId) return null;
+    return (
+      (overlaySnap.sentence_fixes ?? []).find((f) => f.id === overlayActiveSentenceFixId) ?? null
+    );
+  });
+
+  // The selection widget sits just under the selected text; Rust only sends a rect while
+  // there is a selection.
   let baseWidgetRect = $derived.by((): EloRect | null => {
-    if (!overlaySnap.widget_rect || !overlaySnap.field_rect) return null;
-    if (isDraggingElo) {
-      const fr = overlaySnap.field_rect;
-      const w = overlaySnap.widget_rect.width;
-      const h = overlaySnap.widget_rect.height;
-      const minX = fr.x + 6;
-      const maxX = Math.max(minX, fr.x + fr.width - w - 8);
-      const minY = fr.height < 56 ? Math.max(32, fr.y - h - 4) : fr.y + 6;
-      const maxY =
-        fr.height < 56 ? fr.y + fr.height + 12 : Math.max(minY, fr.y + fr.height - h - 8);
-      return {
-        x: Math.max(minX, Math.min(maxX, dragStartWidget.x + dragCurrentOffset.x)),
-        y: Math.max(minY, Math.min(maxY, dragStartWidget.y + dragCurrentOffset.y)),
-        width: w,
-        height: h,
-      };
-    }
+    if (!overlaySnap.selection || !overlaySnap.widget_rect) return null;
     return overlaySnap.widget_rect;
   });
 
-  // Interactive hit rect reported to Rust (includes leftward hover expansion + top tooltip)
+  // Interactive hit rect reported to Rust: the pill, plus room above it for the tooltip.
   let effectiveWidgetRect = $derived.by((): EloRect | null => {
     if (!baseWidgetRect) return null;
-    if (eloPillHovered || eloPowerMenuOpen) {
-      const extraLeft = 74;
-      const extraTop = eloPowerMenuOpen ? 120 : 44;
+    if (eloPillHoveredBtn) {
+      const extraTop = 40;
       return {
-        x: Math.max(4, baseWidgetRect.x - extraLeft),
+        x: Math.max(4, baseWidgetRect.x - 40),
         y: Math.max(24, baseWidgetRect.y - extraTop),
-        width: baseWidgetRect.width + extraLeft + 8,
-        height: baseWidgetRect.height + extraTop + 6,
+        width: baseWidgetRect.width + 80,
+        height: baseWidgetRect.height + extraTop,
       };
     }
     return baseWidgetRect;
@@ -554,15 +574,32 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       return { x, y, width: cardW, height: cardH };
     }
 
+    if (overlayPopoverMode === "sentence" && activeSentenceFix) {
+      const cardW = 380;
+      // Measured once rendered; the estimate only places the first frame.
+      const estimate = 118 + Math.ceil(activeSentenceFix.original.length / 38) * 25;
+      const cardH = sentenceCardHeight > 0 ? sentenceCardHeight : estimate;
+      const anchor = activeOverlayAlert?.rect;
+      if (!anchor) return null;
+      const x = Math.max(12, Math.min(anchor.x - 24, winW - cardW - 12));
+      let y = anchor.y + anchor.height + 8;
+      if (y + cardH > winH - 16) {
+        y = Math.max(32, anchor.y - cardH - 8);
+      }
+      return { x, y, width: cardW, height: cardH };
+    }
+
     if (overlayPopoverMode === "rewrite") {
       const cardW = 368;
       const cardH = rewriteLoading ? 162 : rewritePreview ? 345 : rewriteMoreIdeasOpen ? 412 : 308;
+      // A selection rewrite opens under the selection widget, left-aligned with it; a
+      // whole-field rewrite opens over the field.
       const anchor = baseWidgetRect ?? overlaySnap.field_rect;
       if (!anchor) return null;
-      const x = Math.max(16, Math.min(anchor.x + anchor.width - cardW, winW - cardW - 16));
-      let y = anchor.y - cardH - 12;
-      if (y < 36) {
-        y = Math.min(winH - cardH - 16, anchor.y + anchor.height + 10);
+      const x = Math.max(16, Math.min(anchor.x, winW - cardW - 16));
+      let y = anchor.y + anchor.height + 8;
+      if (y + cardH > winH - 16) {
+        y = Math.max(36, anchor.y - cardH - 8);
       }
       return { x, y, width: cardW, height: cardH };
     }
@@ -570,14 +607,10 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     // "full" multi-alert card
     const cardW = 410;
     const cardH = overlaySnap.alerts.length > 1 ? 370 : 250;
-    const anchor = activeOverlayAlert?.rect ?? baseWidgetRect;
+    const anchor = activeOverlayAlert?.rect ?? baseWidgetRect ?? overlaySnap.field_rect;
     if (!anchor) return null;
 
-    let x = anchor.x;
-    if (anchor === baseWidgetRect) {
-      x = anchor.x + anchor.width - cardW;
-    }
-    x = Math.max(16, Math.min(x, winW - cardW - 16));
+    const x = Math.max(16, Math.min(anchor.x, winW - cardW - 16));
 
     let y = anchor.y + anchor.height + 10;
     if (y + cardH > winH - 20) {
@@ -691,14 +724,6 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       overlayCategoryCounts,
       overlayCategoryScores,
     ),
-  );
-
-  let hasStyleOrClarityAlerts = $derived(
-    (overlayCategoryCounts.clarity ?? 0) +
-      (overlayCategoryCounts.engagement ?? 0) +
-      (overlayCategoryCounts.delivery ?? 0) +
-      (overlayCategoryCounts.style ?? 0) >
-      0,
   );
 
   // ---------------------------------------------------------------------------
@@ -933,7 +958,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     void refreshOverlaySnapshot();
 
     const onCaptPointerUp = (e: PointerEvent) => {
-      if (!e.isTrusted || e.button !== 0 || isDraggingElo || draggedDuringPress) {
+      if (!e.isTrusted || e.button !== 0) {
         return;
       }
       const target = e.target as HTMLElement | null;
@@ -946,7 +971,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         return;
       }
       const btn = target.closest(
-        ".elo-rewrite-card button, .elo-floating-card button, .elo-mini-card button",
+        ".elo-rewrite-card button, .elo-floating-card button, .elo-mini-popover button, .elo-sentence-card button, .elo-selection-pill button",
       ) as HTMLButtonElement | null;
       if (!btn || btn.disabled) return;
       const upTime = Date.now();
@@ -981,9 +1006,6 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     });
 
     const unlistenClickPromise = listen<{ x: number; y: number }>("elo-overlay-click", (event) => {
-      if (isDraggingElo || draggedDuringPress) {
-        return;
-      }
       const { x, y } = event.payload;
       const hit = document.elementFromPoint(x, y) as HTMLElement | null;
       if (!hit) return;
@@ -1004,8 +1026,6 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         } else {
           btn.click();
         }
-      } else if (hit.closest(".elo-teardrop-widget")) {
-        toggleFullEloCard();
       }
     });
 
@@ -1013,7 +1033,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       releaseOverlayPromptInput();
       overlayPopoverMode = "closed";
       overlayMoreMenuOpen = false;
-      eloPowerMenuOpen = false;
+      overlayTopMenuOpen = false;
       syncOverlayRegions();
     });
 
@@ -1040,10 +1060,6 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
     return () => {
       clearInterval(pollTimer);
-      if (dragMoveFrame !== null) {
-        cancelAnimationFrame(dragMoveFrame);
-        dragMoveFrame = null;
-      }
       window.removeEventListener("pointerup", onCaptPointerUp, true);
       window.removeEventListener("click", onCaptClick, true);
       unlistenPromise.then((unlisten) => unlisten());
@@ -1113,11 +1129,22 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     if (!snap.field_active) {
       overlayPopoverMode = "closed";
       overlayMoreMenuOpen = false;
-      eloPillHovered = false;
-      eloPowerMenuOpen = false;
+      overlayTopMenuOpen = false;
+      eloPillHoveredBtn = null;
     } else if (prevBundle !== snap.app_bundle_id) {
-      dragCurrentOffset = { x: 0, y: 0 };
       overlayPopoverMode = "closed";
+    }
+    if (!snap.selection) {
+      eloPillHoveredBtn = null;
+    }
+
+    // A sentence correction that was applied, dismissed, or invalidated by typing closes.
+    if (
+      overlayPopoverMode === "sentence" &&
+      !(snap.sentence_fixes ?? []).some((f) => f.id === overlayActiveSentenceFixId)
+    ) {
+      overlayPopoverMode = "closed";
+      overlayActiveSentenceFixId = null;
     }
 
     if (overlayActiveAlertId && !snap.alerts.some((a) => a.id === overlayActiveAlertId)) {
@@ -1156,7 +1183,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   let lastSentRegionsKey = "";
 
   function overlayRegionsKey(): string {
-    return JSON.stringify([effectiveWidgetRect, effectiveCardRect, isDraggingElo]);
+    return JSON.stringify([effectiveWidgetRect, effectiveCardRect]);
   }
 
   // `force = false` skips the IPC when Rust was already sent these exact regions.
@@ -1169,7 +1196,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       await invoke("set_elo_overlay_regions", {
         widgetRect: effectiveWidgetRect,
         cardRect: effectiveCardRect,
-        isDragging: isDraggingElo,
+        isDragging: false,
       });
     } catch {
       lastSentRegionsKey = "";
@@ -1180,10 +1207,8 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     if (isOverlayWindow) {
       const _w = effectiveWidgetRect;
       const _c = effectiveCardRect;
-      const _d = isDraggingElo;
       void _w;
       void _c;
-      void _d;
       // Derived rects are rebuilt on every snapshot; only send when the values moved.
       syncOverlayRegions(false);
       if (overlayPopoverMode !== "rewrite" && overlayInputFocused) {
@@ -1192,104 +1217,18 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     }
   });
 
-  let pointerDownOnElo = $state(false);
-
   function toggleFullEloCard(e?: MouseEvent) {
     if (e) e.stopPropagation();
-    if (draggedDuringPress) return;
     const now = Date.now();
     if (now - lastToggleCardAt < 220) return;
     lastToggleCardAt = now;
     overlayPopoverMode = overlayPopoverMode === "full" ? "closed" : "full";
     overlayMoreMenuOpen = false;
-    eloPowerMenuOpen = false;
+    overlayTopMenuOpen = false;
     if (overlayPopoverMode === "full" && !overlayActiveAlertId && overlaySnap.alerts[0]) {
       overlayActiveAlertId = overlaySnap.alerts[0].id;
     }
     syncOverlayRegions();
-  }
-
-  function onEloWidgetPointerDown(e: PointerEvent) {
-    if (e.button !== 0 || !baseWidgetRect) return;
-    const targetEl = e.target as HTMLElement;
-    if (targetEl.closest(".elo-sub-action-btn") || targetEl.closest(".elo-power-menu")) {
-      return;
-    }
-    pointerDownOnElo = true;
-    draggedDuringPress = false;
-    dragStartPointer = { x: e.clientX, y: e.clientY };
-    dragStartWidget = {
-      x: baseWidgetRect.x,
-      y: baseWidgetRect.y,
-    };
-    dragCurrentOffset = { x: 0, y: 0 };
-    pendingDragOffset = { x: 0, y: 0 };
-  }
-
-  // Pointer moves arrive far faster than frames; each offset change re-derives the widget
-  // rect and sends regions to Rust, so apply at most one offset per animation frame.
-  let pendingDragOffset = { x: 0, y: 0 };
-  let dragMoveFrame: number | null = null;
-
-  function onEloWidgetPointerMove(e: PointerEvent) {
-    if (!pointerDownOnElo) return;
-    const dx = e.clientX - dragStartPointer.x;
-    const dy = e.clientY - dragStartPointer.y;
-    if (!isDraggingElo && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
-      isDraggingElo = true;
-      draggedDuringPress = true;
-      const current = e.currentTarget as HTMLElement;
-      current.setPointerCapture(e.pointerId);
-      syncOverlayRegions();
-    }
-    if (isDraggingElo) {
-      pendingDragOffset = { x: dx, y: dy };
-      if (dragMoveFrame === null) {
-        dragMoveFrame = requestAnimationFrame(() => {
-          dragMoveFrame = null;
-          if (isDraggingElo) dragCurrentOffset = pendingDragOffset;
-        });
-      }
-    }
-  }
-
-  async function onEloWidgetPointerUp(e: PointerEvent) {
-    if (!pointerDownOnElo) return;
-    pointerDownOnElo = false;
-    if (dragMoveFrame !== null) {
-      cancelAnimationFrame(dragMoveFrame);
-      dragMoveFrame = null;
-    }
-    const current = e.currentTarget as HTMLElement;
-    if (current.hasPointerCapture(e.pointerId)) {
-      current.releasePointerCapture(e.pointerId);
-    }
-    const wasDragging = isDraggingElo && draggedDuringPress;
-    isDraggingElo = false;
-
-    try {
-      if (wasDragging && overlaySnap.field_rect) {
-        const w = 104;
-        const h = 38;
-        const fr = overlaySnap.field_rect;
-        const baseX = Math.max(fr.x + 6, fr.x + fr.width - w - 8);
-        const baseY = fr.height < 56 ? fr.y + fr.height + 4 : fr.y + fr.height - h - 8;
-        const finalX = dragStartWidget.x + pendingDragOffset.x;
-        const finalY = dragStartWidget.y + pendingDragOffset.y;
-        await invoke("save_elo_widget_offset", {
-          bundleId: overlaySnap.app_bundle_id || "default",
-          offsetX: finalX - baseX,
-          offsetY: finalY - baseY,
-        });
-        await refreshOverlaySnapshot();
-      }
-    } catch {
-      // Ignore: the widget falls back to its saved position
-    } finally {
-      dragCurrentOffset = { x: 0, y: 0 };
-      pendingDragOffset = { x: 0, y: 0 };
-      syncOverlayRegions();
-    }
   }
 
   function openRewritePopover(e: MouseEvent) {
@@ -1297,10 +1236,11 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     const now = Date.now();
     if (now - lastToggleCardAt < 220) return;
     lastToggleCardAt = now;
-    eloPowerMenuOpen = false;
     rewriteError = null;
     rewritePreview = null;
     overlayPopoverMode = overlayPopoverMode === "rewrite" ? "closed" : "rewrite";
+    // Opened with text selected, the rewrite works on (and replaces) just that text.
+    rewriteScope = overlayPopoverMode === "rewrite" ? (overlaySnap.selection ?? null) : null;
     syncOverlayRegions();
   }
 
@@ -1313,7 +1253,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
       const resp = await invoke<EloRewriteResponse>("elo_rewrite_focused_text", {
         mode,
         customPrompt: customPrompt ?? null,
-        sourceOverride: null,
+        sourceOverride: rewriteScope?.text ?? null,
       });
       const elapsed = Date.now() - startedAt;
       if (elapsed < 450) {
@@ -1331,11 +1271,22 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   async function applyOverlayRewriteToApp() {
     if (!rewritePreview) return;
     const newText = rewritePreview.rewritten;
+    const scope = rewriteScope;
     rewritePreview = null;
+    rewriteScope = null;
     overlayPopoverMode = "closed";
     syncOverlayRegions();
     try {
-      await invoke("apply_elo_field_rewrite", { text: newText });
+      if (scope) {
+        await invoke("apply_elo_selection_rewrite", {
+          charStart: scope.char_start,
+          charEnd: scope.char_end,
+          original: scope.text,
+          text: newText,
+        });
+      } else {
+        await invoke("apply_elo_field_rewrite", { text: newText });
+      }
       await refreshOverlaySnapshot();
     } catch {
       // Ignore
@@ -1343,7 +1294,6 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   }
 
   async function pauseEloForCurrentApp() {
-    eloPowerMenuOpen = false;
     overlayPopoverMode = "closed";
     try {
       if (overlaySnap.app_bundle_id) {
@@ -1363,17 +1313,69 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   // Hovering or clicking an inline word underline opens the Compact Quick-Fix Mini-Popover (Image 3)
   function onUnderlineClick(alert: EloAlert) {
     overlayActiveAlertId = alert.id;
-    overlayPopoverMode = "mini";
+    overlayPopoverMode = popoverModeFor(alert);
     overlayMoreMenuOpen = false;
     syncOverlayRegions();
   }
 
+  // Words in a sentence that has a whole-sentence correction open that card instead of the
+  // single-word one, so the fix reads as one sentence rather than word by word.
+  function popoverModeFor(alert: EloAlert): OverlayPopoverMode {
+    const fixId = alert.sentence_fix_id;
+    if (fixId && (overlaySnap.sentence_fixes ?? []).some((f) => f.id === fixId)) {
+      overlayActiveSentenceFixId = fixId;
+      sentenceCardHeight = 0;
+      return "sentence";
+    }
+    return "mini";
+  }
+
   function onUnderlineHover(alert: EloAlert) {
     overlayHoveredAlertId = alert.id;
-    if (overlayPopoverMode === "closed" || overlayPopoverMode === "mini") {
+    if (
+      overlayPopoverMode === "closed" ||
+      overlayPopoverMode === "mini" ||
+      overlayPopoverMode === "sentence"
+    ) {
+      // Moving between words of the same sentence keeps the open card where it is.
+      if (
+        overlayPopoverMode === "sentence" &&
+        alert.sentence_fix_id === overlayActiveSentenceFixId
+      ) {
+        return;
+      }
       overlayActiveAlertId = alert.id;
-      overlayPopoverMode = "mini";
+      overlayPopoverMode = popoverModeFor(alert);
       syncOverlayRegions();
+    }
+  }
+
+  async function applySentenceFix(fixId: string) {
+    const fix = (overlaySnap.sentence_fixes ?? []).find((f) => f.id === fixId);
+    if (!fix) return;
+    overlaySnap.alerts = overlaySnap.alerts.filter((a) => !fix.alert_ids.includes(a.id));
+    overlaySnap.sentence_fixes = (overlaySnap.sentence_fixes ?? []).filter((f) => f.id !== fixId);
+    overlaySnapKey = "";
+    overlayPopoverMode = "closed";
+    overlayActiveSentenceFixId = null;
+    syncOverlayRegions();
+    try {
+      await invoke("apply_elo_sentence_fix", { fixId });
+      await refreshOverlaySnapshot();
+    } catch {
+      // Ignore: the next snapshot shows the alerts again if the edit did not land
+    }
+  }
+
+  async function dismissSentenceFix(fixId: string) {
+    overlayPopoverMode = "closed";
+    overlayActiveSentenceFixId = null;
+    syncOverlayRegions();
+    try {
+      await invoke("dismiss_elo_sentence_fix", { fixId });
+      await refreshOverlaySnapshot();
+    } catch {
+      // Ignore
     }
   }
 
@@ -2474,7 +2476,9 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
   {/if}
 {/snippet}
 
-{#snippet sparkleBulbIcon(size = 20)}
+<!-- The Studio widget keeps the green bulb; the overlay's selection pill passes the brand
+     accents (Ink Indigo body, Soft Indigo base). -->
+{#snippet sparkleBulbIcon(size = 20, body = "#10B981", base = "#0F7B55")}
   <svg
     width={size}
     height={size}
@@ -2487,14 +2491,45 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     <!-- Bulb body -->
     <path
       d="M12 2C7.86 2 4.5 5.36 4.5 9.5C4.5 12.12 5.84 14.42 7.88 15.74C8.42 16.09 8.75 16.7 8.75 17.35V18C8.75 18.55 9.2 19 9.75 19H14.25C14.8 19 15.25 18.55 15.25 18V17.35C15.25 16.7 15.58 16.09 16.12 15.74C18.16 14.42 19.5 12.12 19.5 9.5C19.5 5.36 16.14 2 12 2Z"
-      fill="#10B981"
+      fill={body}
     />
     <!-- Bulb base -->
-    <rect x="9.2" y="20.2" width="5.6" height="2" rx="1" fill="#0F7B55" />
+    <rect x="9.2" y="20.2" width="5.6" height="2" rx="1" fill={base} />
     <!-- 4-point Sparkle star inside bulb -->
     <path
       d="M12 5.4L13.15 8.35L16.1 9.5L13.15 10.65L12 13.6L10.85 10.65L7.9 9.5L10.85 8.35L12 5.4Z"
       fill="#FFFFFF"
+    />
+  </svg>
+{/snippet}
+
+{#snippet sparklePencilIcon(size = 22)}
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+    style="flex-shrink: 0;"
+  >
+    <!-- Pencil body, tip and eraser in the brand accents: Ink Indigo and Soft Indigo -->
+    <path d="M17.6 3.9L20.1 6.4L9.4 17.1L6.9 14.6L17.6 3.9Z" fill="#191F70" />
+    <path d="M6.9 14.6L9.4 17.1L5.6 18.4L6.9 14.6Z" fill="#B8BEFF" />
+    <path d="M5.6 18.4L6.1 16.9L7.1 17.9L5.6 18.4Z" fill="#171717" />
+    <path
+      d="M17.6 3.9L18.6 2.9C19 2.5 19.6 2.5 20 2.9L21.1 4C21.5 4.4 21.5 5 21.1 5.4L20.1 6.4L17.6 3.9Z"
+      fill="#B8BEFF"
+    />
+    <!-- Sparkles -->
+    <path d="M6 2.5L6.7 4.3L8.5 5L6.7 5.7L6 7.5L5.3 5.7L3.5 5L5.3 4.3L6 2.5Z" fill="#191F70" />
+    <path
+      d="M10.5 6.5L10.9 7.6L12 8L10.9 8.4L10.5 9.5L10.1 8.4L9 8L10.1 7.6L10.5 6.5Z"
+      fill="#191F70"
+    />
+    <path
+      d="M3.5 9.5L3.8 10.2L4.5 10.5L3.8 10.8L3.5 11.5L3.2 10.8L2.5 10.5L3.2 10.2L3.5 9.5Z"
+      fill="#B8BEFF"
     />
   </svg>
 {/snippet}
@@ -2537,49 +2572,19 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
         {/each}
       </div>
 
-      <!-- 2. Teardrop "elo" Floating Widget (Images 1, 2, 4: Resting [💡✨ | 2] -> Hover [⏻ | 📢 | 💡✨ | 2]) -->
+      <!-- 2. Selection widget: shown only while text is selected, attached under the selection -->
       {#if baseWidgetRect}
         <div
-          role="group"
-          aria-label="elo floating writing widget"
-          class="elo-teardrop-widget"
-          class:is-expanded={eloPillHovered || eloPowerMenuOpen}
-          class:is-dragging={isDraggingElo}
-          class:is-rewriting={rewriteLoading}
-          style="
-            left: {eloPillHovered || eloPowerMenuOpen
-            ? Math.max(8, baseWidgetRect.x - 68)
-            : baseWidgetRect.x}px;
-            top: {baseWidgetRect.y}px;
-          "
-          onmouseenter={() => {
-            eloPillHovered = true;
-            syncOverlayRegions();
-          }}
-          onmouseleave={() => {
-            eloPillHovered = false;
-            eloPillHoveredBtn = null;
-            eloPowerMenuOpen = false;
-            syncOverlayRegions();
-          }}
-          onpointerdown={onEloWidgetPointerDown}
-          onpointermove={onEloWidgetPointerMove}
-          onpointerup={onEloWidgetPointerUp}
+          role="toolbar"
+          aria-label="elo selection tools"
+          class="elo-selection-pill"
+          style="left: {baseWidgetRect.x}px; top: {baseWidgetRect.y}px;"
         >
-          <!-- Dark Tooltip Above Hovered Button (Image 4: "Rewrite with elo") -->
           {#if rewriteLoading && overlayPopoverMode !== "rewrite"}
-            <div class="elo-dark-tooltip is-rewriting-tip">✨ Rewriting with elo…</div>
+            <div class="elo-dark-tooltip">Rewriting with elo…</div>
           {:else if eloPillHoveredBtn === "rewrite"}
-            <div class="elo-dark-tooltip">
-              {rewriteLoading ? "Rewriting with elo…" : "Rewrite with elo"}
-            </div>
-          {:else if eloPillHoveredBtn === "tone"}
-            <div class="elo-dark-tooltip">
-              Tone: {overlaySnap.tone || "Neutral"}
-            </div>
-          {:else if eloPillHoveredBtn === "power"}
-            <div class="elo-dark-tooltip">Pause or disable elo</div>
-          {:else if eloPillHoveredBtn === "count"}
+            <div class="elo-dark-tooltip">Rewrite selection</div>
+          {:else if eloPillHoveredBtn === "suggestions"}
             <div class="elo-dark-tooltip">
               {overlaySnap.alerts.length > 0
                 ? `${overlaySnap.alerts.length} ${overlaySnap.alerts.length === 1 ? "suggestion" : "suggestions"} · Score ${overlayScore}`
@@ -2587,68 +2592,11 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
             </div>
           {/if}
 
-          <!-- Quick Power Menu when ⏻ is clicked -->
-          {#if eloPowerMenuOpen}
-            <div class="elo-power-menu">
-              <button type="button" onclick={pauseEloForCurrentApp}>
-                Pause elo in {overlaySnap.app_name || "this app"}
-              </button>
-              <button type="button" onclick={() => openStudioFromOverlay("apps", false)}>
-                Manage app settings…
-              </button>
-            </div>
-          {/if}
-
-          <!-- Hover-Only Left Icons: Power (⏻) & Tone Megaphone (📢) (Image 2) -->
-          {#if eloPillHovered || eloPowerMenuOpen}
-            <button
-              type="button"
-              class="elo-sub-action-btn"
-              aria-label="Pause or disable elo"
-              onmouseenter={() => (eloPillHoveredBtn = "power")}
-              onmouseleave={() => (eloPillHoveredBtn = null)}
-              onclick={(e) => {
-                e.stopPropagation();
-                eloPowerMenuOpen = !eloPowerMenuOpen;
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 3V12M18.36 6.64C19.99 8.27 21 10.52 21 13C21 17.97 16.97 22 12 22C7.03 22 3 17.97 3 13C3 10.52 4.01 8.27 5.64 6.64"
-                  stroke="#525668"
-                  stroke-width="2.1"
-                  stroke-linecap="round"
-                />
-              </svg>
-            </button>
-
-            <button
-              type="button"
-              class="elo-sub-action-btn"
-              aria-label="Detected tone"
-              onmouseenter={() => (eloPillHoveredBtn = "tone")}
-              onmouseleave={() => (eloPillHoveredBtn = null)}
-              onclick={(e) => openRewritePopover(e)}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M3 11L19 4V20L3 13V11ZM19 9C20.66 9 22 10.34 22 12C22 13.66 20.66 15 19 15M6 14.5L7.5 20H10L8.8 15.5"
-                  stroke="#525668"
-                  stroke-width="1.9"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
-          {/if}
-
-          <!-- Always-Visible Sparkle Lightbulb Button ("Rewrite with elo", Images 1, 2, 4) -->
           <button
             type="button"
-            class="elo-sub-action-btn bulb-btn"
-            class:is-hovered={eloPillHoveredBtn === "rewrite"}
+            class="elo-pill-btn"
             class:is-busy={rewriteLoading}
-            aria-label="Rewrite with elo"
+            aria-label="Rewrite selection with elo"
             aria-busy={rewriteLoading}
             onmouseenter={() => (eloPillHoveredBtn = "rewrite")}
             onmouseleave={() => (eloPillHoveredBtn = null)}
@@ -2660,44 +2608,24 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
                   aria-label="Rewriting text with elo"
                   class="loading-spinner elo-bulb-spinner"
                 ></progress>
-                {@render sparkleBulbIcon(16)}
+                {@render sparklePencilIcon(16)}
               </span>
             {:else}
-              {@render sparkleBulbIcon(20)}
+              {@render sparklePencilIcon(22)}
             {/if}
           </button>
-
-          <!-- Always-Visible Editorial Wink Mark + Count Badge (Brand Guide + Images 1 & 2) -->
-          {#if overlaySnap.alerts.length > 0}
-            <button
-              type="button"
-              class="elo-pill-wink-mark"
-              aria-label="Open elo suggestions"
-              onmouseenter={() => (eloPillHoveredBtn = "count")}
-              onmouseleave={() => (eloPillHoveredBtn = null)}
-              onclick={(e) => toggleFullEloCard(e)}
-            >
-              {@render editorialWinkLogo(19, "transparent", "#191F70")}
-            </button>
-          {/if}
+          <span class="elo-pill-divider" aria-hidden="true"></span>
           <button
             type="button"
-            class="elo-count-badge-btn"
-            class:style-only={overlaySnap.alerts.length > 0 &&
-              (overlayCategoryCounts.correctness ?? 0) === 0}
-            class:zero={overlaySnap.alerts.length === 0}
-            aria-label="Review suggestions"
-            onmouseenter={() => (eloPillHoveredBtn = "count")}
+            class="elo-pill-btn"
+            aria-label="Show elo suggestions"
+            onmouseenter={() => (eloPillHoveredBtn = "suggestions")}
             onmouseleave={() => (eloPillHoveredBtn = null)}
             onclick={(e) => toggleFullEloCard(e)}
           >
+            {@render sparkleBulbIcon(22, "#191F70", "#B8BEFF")}
             {#if overlaySnap.alerts.length > 0}
-              <span>{overlaySnap.alerts.length}</span>
-              {#if hasStyleOrClarityAlerts && (overlayCategoryCounts.correctness ?? 0) > 0}
-                <span class="elo-badge-corner-dot"></span>
-              {/if}
-            {:else}
-              {@render editorialWinkLogo(26, "#191F70", "#FFFFFF")}
+              <span class="elo-pill-count">{overlaySnap.alerts.length}</span>
             {/if}
           </button>
         </div>
@@ -2741,6 +2669,63 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
             class="mini-action-row"
             onclick={() => dismissOverlayAlert(activeOverlayAlert.id)}
           >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 7H20M10 11V17M14 11V17M5 7L6 19C6 20.1 6.9 21 8 21H16C17.1 21 18 20.1 18 19L19 7M9 7V4C9 3.45 9.45 3 10 3H14C14.55 3 15 3.45 15 4V7"
+                stroke="#64687a"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span>Dismiss</span>
+          </button>
+
+          <button
+            type="button"
+            class="mini-action-row"
+            onclick={() => {
+              overlayPopoverMode = "full";
+              syncOverlayRegions();
+            }}
+          >
+            {@render editorialWinkLogo(18, "#191F70", "#FFFFFF")}
+            <span>See more in elo</span>
+          </button>
+        </section>
+      {/if}
+
+      <!-- 3A'. "CORRECT THE SENTENCE" CARD: the whole corrected sentence as an inline diff -->
+      {#if overlayPopoverMode === "sentence" && activeSentenceFix && effectiveCardRect}
+        {@const fix = activeSentenceFix}
+        <section
+          class="elo-sentence-card"
+          style="
+            left: {effectiveCardRect.x}px;
+            top: {effectiveCardRect.y}px;
+            width: {effectiveCardRect.width}px;
+          "
+          aria-label="Correct the sentence"
+          bind:offsetHeight={sentenceCardHeight}
+        >
+          <button
+            type="button"
+            class="sentence-diff"
+            aria-label="Accept the corrected sentence: {fix.corrected}"
+            onclick={() => applySentenceFix(fix.id)}
+          >
+            <span class="sentence-diff-title">Correct the sentence</span>
+            <!-- Segments sit on one line: whitespace between them would show up in the text. -->
+            <span class="sentence-diff-text"
+              >{#each fix.segments as seg, i (i)}{#if seg.kind === "delete"}<del class="seg-del"
+                    >{seg.text}</del
+                  >{:else if seg.kind === "insert"}<ins class="seg-ins">{seg.text}</ins>{:else}<span
+                    >{seg.text}</span
+                  >{/if}{/each}</span
+            >
+          </button>
+
+          <button type="button" class="mini-action-row" onclick={() => dismissSentenceFix(fix.id)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path
                 d="M4 7H20M10 11V17M14 11V17M5 7L6 19C6 20.1 6.9 21 8 21H16C17.1 21 18 20.1 18 19L19 7M9 7V4C9 3.45 9.45 3 10 3H14C14.55 3 15 3.45 15 4V7"
@@ -3020,13 +3005,12 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
             <div class="elo-card-brand">
               {@render editorialWinkLogo(22, "#191F70", "#FFFFFF")}
               <span class="elo-card-brand-name">elo</span>
-              {#if overlaySnap.app_name}
-                <span class="elo-card-app-pill">{overlaySnap.app_name}</span>
-              {/if}
               <span
                 class="elo-card-score-pill"
                 style="--score-accent: {scoreColorHex(overlayScore)};"
-                title="Overall writing score"
+                title={overlaySnap.app_name
+                  ? `Writing score in ${overlaySnap.app_name}`
+                  : "Overall writing score"}
               >
                 Score {overlayScore}
               </span>
@@ -3065,22 +3049,53 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
               >
                 ✨
               </button>
-              <button
-                type="button"
-                class="elo-icon-btn"
-                title="Open in Elocutio Full Editor"
-                onclick={() => openStudioFromOverlay("editor", true)}
-              >
-                ⤢
-              </button>
-              <button
-                type="button"
-                class="elo-icon-btn"
-                title="Elocutio Settings"
-                onclick={() => openStudioFromOverlay("apps", false)}
-              >
-                ⚙
-              </button>
+              <!-- Less frequent actions live in one menu so the bar stays to a single row -->
+              <div class="elo-more-wrap">
+                <button
+                  type="button"
+                  class="elo-icon-btn"
+                  title="More"
+                  aria-haspopup="menu"
+                  aria-expanded={overlayTopMenuOpen}
+                  onclick={() => (overlayTopMenuOpen = !overlayTopMenuOpen)}
+                >
+                  ⋯
+                </button>
+                {#if overlayTopMenuOpen}
+                  <div class="elo-more-dropdown elo-top-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onclick={() => {
+                        overlayTopMenuOpen = false;
+                        pauseEloForCurrentApp();
+                      }}
+                    >
+                      Pause elo in {overlaySnap.app_name || "this app"}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onclick={() => {
+                        overlayTopMenuOpen = false;
+                        openStudioFromOverlay("editor", true);
+                      }}
+                    >
+                      Open in full editor
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onclick={() => {
+                        overlayTopMenuOpen = false;
+                        openStudioFromOverlay("apps", false);
+                      }}
+                    >
+                      Settings
+                    </button>
+                  </div>
+                {/if}
+              </div>
               <button
                 type="button"
                 class="elo-icon-btn"
@@ -5586,19 +5601,140 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     z-index: 30;
   }
 
-  .elo-power-menu button {
-    border: none;
-    background: transparent;
-    text-align: left;
-    padding: 7px 10px;
-    font-size: 12.5px;
-    color: #171717;
-    border-radius: 6px;
-    cursor: pointer;
+  /* Selection widget: two icon buttons in a white pill under the selected text */
+  .elo-selection-pill {
+    position: fixed;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 42px;
+    padding: 0 6px;
+    background: #ffffff;
+    border: 1px solid rgba(23, 23, 23, 0.12);
+    border-radius: 999px;
+    box-shadow:
+      0 8px 24px rgba(23, 23, 23, 0.16),
+      0 1px 4px rgba(25, 31, 112, 0.08);
+    pointer-events: auto;
+    z-index: 9998;
   }
 
-  .elo-power-menu button:hover {
-    background: #f7f7f3;
+  .elo-selection-pill .elo-dark-tooltip {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .elo-pill-btn {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 36px;
+    height: 34px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+
+  .elo-pill-btn:hover {
+    /* Soft Indigo at low strength: the accent's tint on a white surface. */
+    background: rgba(184, 190, 255, 0.28);
+  }
+
+  .elo-selection-pill progress.loading-spinner.elo-bulb-spinner:indeterminate {
+    --spinner-color: #191f70;
+    --track-color: rgba(184, 190, 255, 0.45);
+  }
+
+  .elo-pill-divider {
+    width: 1px;
+    height: 22px;
+    background: rgba(23, 23, 23, 0.14);
+  }
+
+  .elo-pill-count {
+    position: absolute;
+    top: 1px;
+    right: 0;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #e5484d;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 15px;
+  }
+
+  /* "Correct the sentence" card */
+  .elo-sentence-card {
+    position: fixed;
+    background: #ffffff;
+    color: #171717;
+    border: 1px solid rgba(23, 23, 23, 0.1);
+    border-radius: 14px;
+    box-shadow:
+      0 14px 36px rgba(23, 23, 23, 0.16),
+      0 2px 8px rgba(23, 23, 23, 0.08);
+    padding: 8px 8px 6px;
+    pointer-events: auto;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .sentence-diff {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px 14px;
+    border: none;
+    border-radius: 10px;
+    background: #eef1fa;
+    text-align: left;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+
+  .sentence-diff:hover {
+    background: #e4e9f7;
+  }
+
+  .sentence-diff-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #687082;
+  }
+
+  .sentence-diff-text {
+    font-size: 16px;
+    line-height: 1.55;
+    color: #171717;
+  }
+
+  .seg-del {
+    color: #e5484d;
+    text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+  }
+
+  .seg-ins {
+    color: #4f6bdc;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  /* A replaced word reads "old new", like a correction mark. */
+  .seg-del + .seg-ins {
+    margin-left: 0.28em;
+  }
+
+  .elo-sentence-card .mini-action-row {
+    padding: 7px 8px;
   }
 
   /* Compact Inline Quick-Fix Mini-Popover (Image 3) */
@@ -5996,16 +6132,6 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     letter-spacing: -0.02em;
   }
 
-  .elo-card-app-pill {
-    font-size: 11px;
-    font-weight: 500;
-    color: #64687a;
-    background: #f7f7f3;
-    padding: 2px 8px;
-    border-radius: 999px;
-    border: 1px solid rgba(23, 23, 23, 0.08);
-  }
-
   .elo-card-score-pill {
     font-size: 11px;
     font-weight: 700;
@@ -6015,6 +6141,7 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--score-accent, #191f70) 24%, transparent);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .elo-card-top-actions {
@@ -6219,6 +6346,13 @@ For a fast, inexpensive kitchen transformation, consider painting the cabinets. 
 
   .elo-more-dropdown button:hover {
     background: #f7f7f3;
+  }
+
+  /* The top-bar menu opens downward, inside the card. */
+  .elo-more-dropdown.elo-top-menu {
+    top: 30px;
+    bottom: auto;
+    min-width: 190px;
   }
 
   .elo-compact-alert-list {

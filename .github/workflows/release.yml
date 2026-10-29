@@ -1,26 +1,151 @@
 name: Release
 
-# Placeholder until M5. The release pipeline will build a universal macOS app,
-# sign it with Developer ID, notarize it, staple the DMG, generate Tauri updater
-# artifacts, and publish a GitHub Release.
+# Builds a universal (Apple silicon + Intel) Elocutio.app, packages it as a
+# DMG, and publishes it to a GitHub Release when a version tag is pushed:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The tag must match `version` in apps/macos/src-tauri/tauri.conf.json.
+#
+# The DMG is always uploaded as `Elocutio-macOS.dmg`, so the website and README
+# can link to https://github.com/pri-te-sh/elocutio/releases/latest/download/Elocutio-macOS.dmg
+# and always get the newest release.
+#
+# Signing: when the Developer ID secrets below are set, Tauri signs the app with
+# Developer ID and notarizes it, and macOS opens it without a warning. Without
+# them the app is ad-hoc signed, and users approve it once in System Settings
+# → Privacy & Security → Open Anyway.
+#
+#   APPLE_CERTIFICATE           base64 of the Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD  password of that .p12
+#   APPLE_SIGNING_IDENTITY      e.g. "Developer ID Application: Name (TEAMID)"
+#   APPLE_ID                    Apple ID email used for notarization
+#   APPLE_PASSWORD              app-specific password for that Apple ID
+#   APPLE_TEAM_ID               the 10-character team ID
+
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (for example v0.1.0)"
-        required: true
+        description: "Existing tag to (re)build and publish, for example v0.1.0 (leave empty for a dry run)"
+        required: false
         type: string
+      dry_run:
+        description: "Build and package only; attach the DMG to this run instead of publishing a release"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  placeholder:
-    name: Release pipeline (not implemented yet)
+  release:
+    name: Build and publish the macOS release
     runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
     steps:
-      - name: Explain
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add both Mac targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/macos/src-tauri -> target
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check the tag matches the app version
         run: |
-          echo "The signed/notarized release pipeline is scheduled for M5."
-          echo "Requested tag: ${{ inputs.tag }}"
-          echo "See docs/PLAN.md and docs/ARCHITECTURE.md section 17."
+          version="$(node -p "require('./apps/macos/src-tauri/tauri.conf.json').version")"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "Dry run of version $version from $TAG: nothing will be published."
+            exit 0
+          fi
+          if [[ "$TAG" != "v$version" ]]; then
+            echo "::error::Tag $TAG does not match the app version $version in tauri.conf.json"
+            exit 1
+          fi
+
+      - name: Build the universal app
+        working-directory: apps/macos
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Tauri signs (and notarizes) whenever these variables exist, even
+          # when empty, so they are removed unless a certificate is configured.
+          if [[ -z "$APPLE_CERTIFICATE" || -z "$APPLE_SIGNING_IDENTITY" ]]; then
+            echo "No Developer ID secrets: building an ad-hoc signed app."
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          elif [[ -z "$APPLE_ID" || -z "$APPLE_PASSWORD" || -z "$APPLE_TEAM_ID" ]]; then
+            echo "Developer ID signing without notarization (notarization secrets are missing)."
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          pnpm exec tauri build --target universal-apple-darwin --bundles app
+
+      - name: Package the DMG
+        run: |
+          ./scripts/package-macos.sh \
+            apps/macos/src-tauri/target/universal-apple-darwin/release/bundle/macos/Elocutio.app \
+            release/Elocutio-macOS.dmg
+
+      - name: Attach the DMG to this run (dry run)
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Elocutio-macOS
+          path: |
+            release/Elocutio-macOS.dmg
+            release/Elocutio-macOS.dmg.sha256
+          retention-days: 7
+
+      - name: Publish the GitHub Release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(cut -d' ' -f1 release/Elocutio-macOS.dmg.sha256)"
+          cat > release/notes.md <<EOF
+          **Elocutio $VERSION** for macOS 14 or later, Apple silicon and Intel. Pre-alpha: expect rough edges.
+
+          ### Install
+          1. Download **Elocutio-macOS.dmg** below, open it, and drag **Elocutio** to **Applications**.
+          2. Open Elocutio from Applications. If macOS says it cannot verify the app, open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** (once).
+          3. Grant **Accessibility** when asked, so Elocutio can read and edit the field you are typing in.
+          4. Optional: add an API key in Elocutio Studio → Privacy & AI, or pick a local model.
+
+          SHA-256 of \`Elocutio-macOS.dmg\`: \`$sha\`
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/Elocutio-macOS.dmg release/Elocutio-macOS.dmg.sha256 --clobber
+          else
+            gh release create "$TAG" release/Elocutio-macOS.dmg release/Elocutio-macOS.dmg.sha256 \
+              --verify-tag --title "Elocutio $VERSION" --notes-file release/notes.md --generate-notes
+          fi

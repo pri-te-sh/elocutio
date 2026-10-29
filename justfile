@@ -51,13 +51,12 @@ macos-sign identity:
 	codesign --force --deep --sign "{{identity}}" apps/macos/src-tauri/target/debug/bundle/macos/Elocutio.app
 	codesign --verify --strict apps/macos/src-tauri/target/debug/bundle/macos/Elocutio.app
 
-# Build an optimized unsigned app and DMG.
+# Build an optimized app for this Mac's architecture and package it as a DMG,
+# the same way the release workflow packages the universal build.
 macos-release:
 	pnpm --filter @elocutio/macos build
 	cd apps/macos && pnpm exec tauri build --bundles app
-	cd apps/macos/src-tauri/target/release/bundle/macos && \
-		codesign --force --deep --sign - Elocutio.app && \
-		hdiutil create -volname Elocutio -srcfolder Elocutio.app -ov -format UDZO Elocutio.dmg
+	./scripts/package-macos.sh apps/macos/src-tauri/target/release/bundle/macos/Elocutio.app apps/macos/src-tauri/target/release/bundle/macos/Elocutio-macOS.dmg
 
 # Run the macOS shell in development mode.
 macos-dev:

@@ -3,7 +3,8 @@ name: CI
 # Routine CI runs on Linux. The macOS app lives in its own workspace
 # (`apps/macos/src-tauri` is excluded from the root cargo workspace) and needs
 # a macOS runner to compile, so the app checks live in
-# `.github/workflows/macos-app.yml`.
+# `.github/workflows/macos-app.yml`. Its Windows path is checked in
+# `.github/workflows/windows-app.yml`.
 #
 # Changes that only touch the website (the single-page site and its media) skip
 # CI: nothing here builds or tests them, and GitHub Pages deploys them anyway.

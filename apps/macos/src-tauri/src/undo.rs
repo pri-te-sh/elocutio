@@ -33,6 +33,10 @@ fn can_restore(record: &UndoRecord, pid: i32, text: &str) -> bool {
     record.pid == pid && record.after == text
 }
 
+#[cfg_attr(
+    not(target_os = "macos"),
+    expect(dead_code, reason = "only the macOS broker records edits so far")
+)]
 pub fn record(pid: i32, before: &str, after: &str) -> Result<(), String> {
     let record = UndoRecord {
         pid,

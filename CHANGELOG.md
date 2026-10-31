@@ -8,6 +8,10 @@ to follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Windows build check**: a `windows-app.yml` CI job runs clippy and the
+  tests for the desktop app on Windows. API keys on Windows are stored in
+  Credential Manager (`keyring` `windows-native`) instead of an in-memory
+  fallback.
 - **Elocutio Editorial Atelier UI (`apps/macos/src/App.svelte`)**:
   - Redesigned the macOS studio into a 6-pillar workspace: **Manuscript**, **Analytics**, **Apps**, **Lexicon**, **Voice DNA**, and **Privacy & AI**.
   - **Writing & AI Analytics (`get_writing_analytics`)**: Added an executive writing & AI telemetry dashboard featuring the **Prose Craft Index (0–100)**, **Editorial Time Saved**, **AI Co-Pilot Lift**, **AI Cost Efficiency**, **Hybrid Intelligence Split** (On-Device Harper vs. AI Co-Pilot), **4-Pillar Writing Mastery**, **7-Day Editorial Cadence**, **Active Manuscript Vital Signs**, **AI Model Efficiency Ledger**, and **Signature Refinements**.

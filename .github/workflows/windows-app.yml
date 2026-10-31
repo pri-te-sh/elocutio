@@ -1,0 +1,65 @@
+name: Windows app
+
+# The desktop app (`apps/macos/src-tauri`) is one Tauri shell for every
+# desktop platform; its Windows code (`windows_broker`, UI Automation) only
+# compiles on Windows. This job keeps that path building while the Windows
+# port is in progress. It does not package or sign anything yet.
+#
+# Like the macOS job, it runs once per change, on the pull request, and only
+# when the app, the shared crates, or the toolchain change. Windows runners
+# cost 2x the Linux rate on private repos. Formatting and the frontend type
+# check are platform-independent and already run in the macOS job, so they are
+# skipped here. Run it by hand from Actions → Windows app → Run workflow.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "apps/macos/**"
+      - "crates/**"
+      - "vendor/harper/**"
+      - ".github/workflows/windows-app.yml"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  windows-app:
+    name: Windows app (clippy, tests)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/macos/src-tauri -> target
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Frontend build
+        # `tauri::generate_context!` embeds `apps/macos/dist`, so it must exist
+        # before the Rust crate compiles.
+        run: pnpm --filter @elocutio/macos build
+      - name: Rust clippy
+        run: cargo clippy --manifest-path apps/macos/src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Rust tests
+        # Also links the binary, which `cargo check` and clippy do not.
+        run: cargo test --manifest-path apps/macos/src-tauri/Cargo.toml

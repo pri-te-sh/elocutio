@@ -1,6 +1,6 @@
 # Elocutio for Windows
 
-**Status: planned after the macOS v1.**
+**Status: in progress.** The desktop app's Windows path compiles and is checked in CI (`.github/workflows/windows-app.yml`). The Windows text broker still lacks selection rewrite, field analysis, undo, and the non-activating overlay window, and there is no installer yet.
 
 The Windows shell will reuse the shared Rust crates and the same provider/voice/analysis pipeline. The platform layer differs:
 

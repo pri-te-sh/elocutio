@@ -41,7 +41,7 @@ architecture live in [`PLAN.md`](PLAN.md) and [`ARCHITECTURE.md`](ARCHITECTURE.m
 
 The repository is public, so GitHub Actions minutes on standard runners are
 free, macOS included. On a private repository GitHub Free includes 2,000
-minutes a month and **macOS runners count at 10×**. Either way, keep runs to
+minutes a month, **macOS runners count at 10×**, and Windows runners at 2×. Either way, keep runs to
 what catches problems:
 
 - `ci.yml` runs only on Ubuntu (root Rust checks, docs, Prettier, Svelte
@@ -52,6 +52,10 @@ what catches problems:
   the shared crates, or the toolchain. It does not re-run on the merge to
   `main` or on release tags (the release workflow builds the app itself). Run
   it by hand from Actions → macOS app → Run workflow.
+- `windows-app.yml` follows the same triggers on a Windows runner. It runs
+  clippy and the tests for the desktop app's Windows path (UI Automation
+  broker, Credential Manager), so the in-progress Windows port keeps building.
+  It does not package or sign anything yet.
 - `release.yml` runs only on `v*` tags, or by hand for a dry run.
 - Run `just macos-check` locally before opening a macOS PR.
 - Keep `timeout-minutes` on every job; superseded runs are cancelled by the
